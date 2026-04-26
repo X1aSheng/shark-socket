@@ -1,13 +1,16 @@
-#!/usr/bash
+#!/usr/bin/env bash
 #
-# shark-socket test runner with log recording
+# shark-socket test runner (Unix / Linux / macOS / Git Bash)
 #
 # Usage:
-#   bash scripts/run_tests.sh              # run all tests
-#   bash scripts/run_tests.sh --unit       # unit tests only
-#   bash scripts/run_tests.sh --integration # integration tests only
-#   bash scripts/run_tests.sh --benchmark  # benchmarks only
-#   bash scripts/run_tests.sh --all        # same as default
+#   bash scripts/run_tests.sh                # run all tests
+#   bash scripts/run_tests.sh --unit         # unit tests only
+#   bash scripts/run_tests.sh --integration  # integration tests only
+#   bash scripts/run_tests.sh --benchmark    # benchmarks only
+#   bash scripts/run_tests.sh --cover        # coverage report
+#   bash scripts/run_tests.sh --all          # same as default
+#
+# All logs are saved under ./logs/ with timestamped filenames.
 #
 
 set -euo pipefail
@@ -18,7 +21,7 @@ LOGDIR="$PROJECT_DIR/logs"
 
 mkdir -p "$LOGDIR"
 
-TIMESTAMP=$(date +%Y-%m%d_%H%M%S)
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # Colors
 RED='\033[0;31m'
@@ -60,7 +63,24 @@ run_and_log() {
     echo ""
 }
 
-MODE="${1:-all}"
+run_coverage() {
+    local logfile="$LOGDIR/${TIMESTAMP}_cover.log"
+
+    echo ""
+    echo -e "${YELLOW}========================================${NC}"
+    echo -e "${YELLOW}  Coverage Report${NC}"
+    echo -e "${YELLOW}  $(date '+%Y-%m-%d %H:%M:%S')${NC}"
+    echo -e "${YELLOW}========================================${NC}"
+    echo ""
+
+    cd "$PROJECT_DIR"
+    go test ./... -count=1 -cover -timeout 300s 2>&1 | tee "$logfile"
+
+    echo ""
+    echo -e "${GREEN}>>> Coverage log: $logfile${NC}"
+}
+
+MODE="${1:---all}"
 
 case "$MODE" in
     --unit)
@@ -77,6 +97,9 @@ case "$MODE" in
             ./tests/benchmark/... ./internal/protocol/tcp/... \
             ./internal/infra/bufferpool/... ./internal/session/... \
             ./internal/plugin/...
+        ;;
+    --cover)
+        run_coverage
         ;;
     --all)
         echo -e "${YELLOW}========================================${NC}"
@@ -100,11 +123,11 @@ case "$MODE" in
         echo -e "${GREEN}========================================${NC}"
         echo -e "${GREEN}  All tests complete.${NC}"
         echo -e "${GREEN}  Logs in: $LOGDIR/${NC}"
-        ls -la "$LOGDIR/${TIMESTAMP}"* 2>/dev/null || true
+        ls -lh "$LOGDIR/${TIMESTAMP}"* 2>/dev/null || true
         echo -e "${GREEN}========================================${NC}"
         ;;
     *)
-        echo "Usage: bash scripts/run_tests.sh [--unit|--integration|--benchmark|--all]"
+        echo "Usage: bash scripts/run_tests.sh [--unit|--integration|--benchmark|--cover|--all]"
         exit 1
         ;;
 esac
