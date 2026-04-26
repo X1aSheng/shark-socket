@@ -94,6 +94,36 @@ func TestSetState_SameState_ReturnsFalse(t *testing.T) {
 	}
 }
 
+func TestSetState_InvalidTransitions(t *testing.T) {
+	// Closed → Active is invalid
+	b := newTestBase()
+	b.SetState(types.Active)
+	b.SetState(types.Closed)
+
+	if b.SetState(types.Active) {
+		t.Fatal("SetState(Active) from Closed should be rejected")
+	}
+	if b.State() != types.Closed {
+		t.Fatalf("state should remain Closed, got %v", b.State())
+	}
+
+	// Connecting → Closing is invalid
+	b2 := newTestBase()
+	if b2.SetState(types.Closing) {
+		t.Fatal("SetState(Closing) from Connecting should be rejected")
+	}
+	if b2.State() != types.Connecting {
+		t.Fatalf("state should remain Connecting, got %v", b2.State())
+	}
+
+	// Active → Connecting is invalid
+	b3 := newTestBase()
+	b3.SetState(types.Active)
+	if b3.SetState(types.Connecting) {
+		t.Fatal("SetState(Connecting) from Active should be rejected")
+	}
+}
+
 // --- IsAlive only true when Active ---
 
 func TestIsAlive_OnlyActive(t *testing.T) {

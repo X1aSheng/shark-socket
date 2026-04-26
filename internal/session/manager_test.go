@@ -3,6 +3,7 @@ package session
 import (
 	"errors"
 	"net"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -292,5 +293,67 @@ func TestManager_Close_Idempotent(t *testing.T) {
 	// Session should only be closed once
 	if sess.closeCount.Load() != 1 {
 		t.Errorf("session closed %d times, want 1", sess.closeCount.Load())
+	}
+}
+
+// --- Concurrent stress tests ---
+
+func TestManager_ConcurrentRegisterUnregister(t *testing.T) {
+	m := NewManager(WithMaxSessions(100000))
+	defer m.Close()
+
+	const goroutines = 64
+	const perGoroutine = 500
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	for g := 0; g < goroutines; g++ {
+		go func() {
+			defer wg.Done()
+			ids := make([]uint64, 0, perGoroutine)
+			for i := 0; i < perGoroutine; i++ {
+				sess := newTestSession(m.NextID())
+				if err := m.Register(sess); err == nil {
+					ids = append(ids, sess.ID())
+				}
+			}
+			for _, id := range ids {
+				m.Unregister(id)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if m.Count() != 0 {
+		t.Errorf("Count() after concurrent register/unregister = %d, want 0", m.Count())
+	}
+}
+
+func TestManager_ConcurrentRegisterWithCapacityLimit(t *testing.T) {
+	const maxSess = 100
+	m := NewManager(WithMaxSessions(maxSess))
+	defer m.Close()
+
+	const goroutines = 32
+	const perGoroutine = 50
+	var wg sync.WaitGroup
+	var registered atomic.Int64
+	wg.Add(goroutines)
+
+	for g := 0; g < goroutines; g++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < perGoroutine; i++ {
+				sess := newTestSession(m.NextID())
+				if err := m.Register(sess); err == nil {
+					registered.Add(1)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	if m.Count() > maxSess {
+		t.Errorf("Count() = %d exceeds maxSess = %d", m.Count(), maxSess)
 	}
 }

@@ -28,9 +28,14 @@ func NewLRUList() *LRUList {
 }
 
 // Touch moves the node for id to the head (most recently used).
+// If id is not in the list, it is inserted at the head.
 func (l *LRUList) Touch(id uint64) {
 	node, ok := l.index[id]
 	if !ok {
+		node = l.nodePool.Get().(*lruNode)
+		node.id = id
+		l.index[id] = node
+		l.pushFront(node)
 		return
 	}
 	if node == l.head {

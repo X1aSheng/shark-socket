@@ -68,26 +68,22 @@ func (m *Manager) Register(sess types.RawSession) error {
 	si := m.shardIndex(id)
 	s := &m.shards[si]
 
-	// Atomically reserve a slot
-	newTotal := m.total.Add(1)
-
 	s.mu.Lock()
 	if _, exists := s.sessions[id]; exists {
-		m.total.Add(-1) // rollback reservation
 		s.mu.Unlock()
 		return errs.ErrDuplicateSession
 	}
-	// If over capacity after reservation, evict
-	if newTotal > m.maxSess {
-		m.evictGlobal(s, si)
-	}
 	s.sessions[id] = sess
 	s.lru.Touch(id)
+	if m.total.Add(1) > m.maxSess {
+		m.evictGlobal(s, si)
+	}
 	s.mu.Unlock()
 	return nil
 }
 
 // evictGlobal tries local shard first, then searches other shards for LRU victim.
+// Uses TryLock to avoid deadlock when multiple shards compete.
 func (m *Manager) evictGlobal(localShard *shard, localIdx int) {
 	// Try local shard first
 	evicted := localShard.lru.Evict(1)
@@ -101,13 +97,15 @@ func (m *Manager) evictGlobal(localShard *shard, localIdx int) {
 		}
 	}
 
-	// Local shard empty — search other shards for a victim
+	// Local shard empty — search other shards for a victim (non-blocking)
 	for i := 0; i < numShards; i++ {
 		if i == localIdx {
 			continue
 		}
 		other := &m.shards[i]
-		other.mu.Lock()
+		if !other.mu.TryLock() {
+			continue
+		}
 		evicted := other.lru.Evict(1)
 		for _, eid := range evicted {
 			if old, ok := other.sessions[eid]; ok {

@@ -6,28 +6,28 @@ import (
 
 // --- Touch moves to head ---
 
-func TestLRUList_Touch_MovesToHead(t *testing.T) {
+func TestLRUList_Touch_InsertsNew(t *testing.T) {
 	l := NewLRUList()
 
-	// Insert by touching unknown IDs does nothing
-	l.Touch(1) // not yet in the list; no-op
-
-	// Simulate insert: we use Evict internals indirectly.
-	// Since there is no Insert/Push, we need to use the LRU from Manager or
-	// test Touch on nodes that are in the list.
-	// LRUList has no public Insert method, but nodes get added via manager usage.
-	// We can verify Touch on an empty list is a no-op.
-	if l.Len() != 0 {
-		t.Errorf("Len() = %d, want 0 after Touch on empty", l.Len())
+	// Touch on unknown ID should insert it
+	l.Touch(1)
+	if l.Len() != 1 {
+		t.Errorf("Len() = %d after Touch(1), want 1", l.Len())
+	}
+	if _, ok := l.index[1]; !ok {
+		t.Error("id 1 not in index after Touch")
+	}
+	if l.head == nil || l.head.id != 1 {
+		t.Error("head should be node 1")
 	}
 
-	// Use a trick: build the list via the internal index.
-	// Since we can't insert directly, we'll test via the exported methods.
-	// Actually, LRUList has no Insert — it only indexes what's in the Manager.
-	// Let's test Evict on an empty list.
-	evicted := l.Evict(5)
-	if evicted != nil {
-		t.Errorf("Evict on empty list = %v, want nil", evicted)
+	// Evict should return the inserted node
+	evicted := l.Evict(1)
+	if len(evicted) != 1 || evicted[0] != 1 {
+		t.Errorf("Evict(1) = %v, want [1]", evicted)
+	}
+	if l.Len() != 0 {
+		t.Errorf("Len() after Evict = %d, want 0", l.Len())
 	}
 }
 

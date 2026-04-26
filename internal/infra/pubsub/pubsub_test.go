@@ -151,3 +151,55 @@ func TestPublish_NoSubscribers_NoError(t *testing.T) {
 		t.Fatalf("Publish to topic with no subscribers returned error: %v", err)
 	}
 }
+
+func TestPublishSubscribe_ConcurrentStress(t *testing.T) {
+	ps := NewChannelPubSub()
+	defer ps.Close()
+
+	const publishers = 8
+	const messagesPerPub = 100
+	const subscribers = 4
+	totalMessages := publishers * messagesPerPub
+
+	var totalReceived atomic.Int32
+
+	// Subscribe
+	for i := 0; i < subscribers; i++ {
+		sub, err := ps.Subscribe(context.Background(), "stress", func(data []byte) {
+			totalReceived.Add(1)
+		})
+		if err != nil {
+			t.Fatalf("Subscribe %d error: %v", i, err)
+		}
+		defer sub.Unsubscribe()
+	}
+
+	// Publish concurrently
+	var pubWg sync.WaitGroup
+	for p := 0; p < publishers; p++ {
+		pubWg.Add(1)
+		go func() {
+			defer pubWg.Done()
+			for i := 0; i < messagesPerPub; i++ {
+				_ = ps.Publish(context.Background(), "stress", []byte("msg"))
+			}
+		}()
+	}
+	pubWg.Wait()
+
+	// Wait for async deliveries
+	minExpected := int32(totalMessages) // at least 1 subscriber gets each message
+	deadline := time.After(5 * time.Second)
+	for {
+		got := totalReceived.Load()
+		if got >= minExpected {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timeout: received %d/%d", got, minExpected)
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+}

@@ -81,15 +81,33 @@ func (b *BaseSession) TouchActive() {
 }
 
 // SetState attempts a CAS state transition. Returns true if successful.
+// Only valid transitions are allowed: Connecting→Active, Connecting→Closed,
+// Active→Closing, Active→Closed, Closing→Closed.
 func (b *BaseSession) SetState(newState types.SessionState) bool {
 	for {
-		current := b.state.Load()
-		if types.SessionState(current) == newState {
+		current := types.SessionState(b.state.Load())
+		if current == newState {
 			return false
 		}
-		if b.state.CompareAndSwap(current, int32(newState)) {
+		if !isValidTransition(current, newState) {
+			return false
+		}
+		if b.state.CompareAndSwap(int32(current), int32(newState)) {
 			return true
 		}
+	}
+}
+
+func isValidTransition(from, to types.SessionState) bool {
+	switch from {
+	case types.Connecting:
+		return to == types.Active || to == types.Closed
+	case types.Active:
+		return to == types.Closing || to == types.Closed
+	case types.Closing:
+		return to == types.Closed
+	default:
+		return false
 	}
 }
 
