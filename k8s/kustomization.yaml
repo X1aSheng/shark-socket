@@ -3,8 +3,10 @@ kind: Kustomization
 
 namespace: shark-socket
 
-commonLabels:
-  app.kubernetes.io/part-of: shark-socket
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: shark-socket
+    includeSelectors: true
 
 resources:
   - namespace.yaml
