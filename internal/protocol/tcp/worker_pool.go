@@ -147,9 +147,7 @@ func (wp *WorkerPool) runTempWorker(first task) {
 
 func (wp *WorkerPool) processTask(t task) {
 	defer func() {
-		if r := recover(); r != nil {
-			// panic recovered, worker continues
-		}
+		recover()
 	}()
 
 	var err error
