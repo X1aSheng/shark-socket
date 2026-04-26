@@ -68,6 +68,10 @@ func (m *Manager) Register(sess types.RawSession) error {
 	s := &m.shards[si]
 
 	s.mu.Lock()
+	if _, exists := s.sessions[id]; exists {
+		s.mu.Unlock()
+		return errs.ErrDuplicateSession
+	}
 	// Check capacity and evict if needed
 	if m.total.Load() >= m.maxSess {
 		evicted := s.lru.Evict(1)

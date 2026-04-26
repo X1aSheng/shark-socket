@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"io"
 	"log"
 	stdhttp "net/http"
 	"sync"
@@ -103,14 +104,22 @@ func (s *Server) handleWithSession(w stdhttp.ResponseWriter, r *stdhttp.Request)
 
 	body := make([]byte, 0)
 	if r.Body != nil {
+		var reader io.Reader = r.Body
+		if s.opts.MaxBodySize > 0 {
+			reader = io.LimitReader(r.Body, s.opts.MaxBodySize+1)
+		}
 		buf := make([]byte, 4096)
 		for {
-			n, err := r.Body.Read(buf)
+			n, err := reader.Read(buf)
 			if n > 0 {
 				body = append(body, buf[:n]...)
 			}
 			if err != nil {
 				break
+			}
+			if s.opts.MaxBodySize > 0 && int64(len(body)) > s.opts.MaxBodySize {
+				stdhttp.Error(w, "Request body too large", stdhttp.StatusRequestEntityTooLarge)
+				return
 			}
 		}
 	}

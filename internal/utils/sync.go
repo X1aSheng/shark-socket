@@ -1,10 +1,14 @@
 package utils
 
-import "sync"
+import (
+	"fmt"
+	"hash/fnv"
+	"sync"
+)
 
 // ShardedMap provides a sharded concurrent map for reduced lock contention.
 type ShardedMap[K comparable, V any] struct {
-	shards []mapShard[K, V]
+	shards    []mapShard[K, V]
 	numShards uint64
 }
 
@@ -62,29 +66,23 @@ func (sm *ShardedMap[K, V]) Len() int {
 	return total
 }
 
-// hashAny provides a simple hash for any comparable key.
+// hashAny provides a hash for any comparable key using FNV-1a.
 func hashAny[K comparable](key K) uint64 {
-	// Simple hash using the Go map runtime hash
-	m := map[K]struct{}{key: {}}
-	for k := range m {
-		_ = k
-	}
-	// Use the address-based approach for a quick shard selection
-	// This is a simplified hash; production code may use a better hash function
-	var h uint64
 	switch v := any(key).(type) {
 	case string:
-		for _, c := range v {
-			h = h*31 + uint64(c)
-		}
+		h := fnv.New64a()
+		_, _ = h.Write([]byte(v))
+		return h.Sum64()
 	case uint64:
-		h = v
+		return v
 	case int:
-		h = uint64(v)
+		return uint64(v)
 	case uint32:
-		h = uint64(v)
+		return uint64(v)
 	default:
-		h = 1
+		h := fnv.New64a()
+		s := fmt.Sprintf("%v", key)
+		_, _ = h.Write([]byte(s))
+		return h.Sum64()
 	}
-	return h
 }

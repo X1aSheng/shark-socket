@@ -2,6 +2,7 @@ package types
 
 import (
 	"crypto/rand"
+	"encoding/hex"
 	"time"
 )
 
@@ -41,5 +42,5 @@ func NewRawMessage(sessionID uint64, proto ProtocolType, payload []byte) RawMess
 func generateID() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
-	return string(b)
+	return hex.EncodeToString(b)
 }

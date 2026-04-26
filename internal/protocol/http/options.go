@@ -14,6 +14,7 @@ type Options struct {
 	ReadTimeout  int // seconds
 	WriteTimeout int // seconds
 	IdleTimeout  int // seconds
+	MaxBodySize  int64
 	TLSConfig    *tls.Config
 	Plugins      []types.Plugin
 }
@@ -25,6 +26,7 @@ func defaultOptions() Options {
 		ReadTimeout:  30,
 		WriteTimeout: 30,
 		IdleTimeout:  120,
+		MaxBodySize:  10 * 1024 * 1024, // 10MB default
 	}
 }
 
@@ -58,4 +60,9 @@ func WithTimeouts(read, write, idle int) Option {
 // WithPlugins adds protocol-level plugins.
 func WithPlugins(p ...types.Plugin) Option {
 	return func(o *Options) { o.Plugins = append(o.Plugins, p...) }
+}
+
+// WithMaxBodySize sets the maximum request body size in bytes (0 = unlimited).
+func WithMaxBodySize(n int64) Option {
+	return func(o *Options) { o.MaxBodySize = n }
 }

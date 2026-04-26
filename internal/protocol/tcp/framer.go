@@ -40,11 +40,11 @@ func (f *LengthPrefixFramer) ReadFrame(r io.Reader) (payload []byte, err error) 
 		return nil, err
 	}
 	size := int(binary.BigEndian.Uint32(header))
-	if size < 0 {
-		return nil, fmt.Errorf("invalid frame size: %d", size)
-	}
 	if f.maxSize > 0 && size > f.maxSize {
 		return nil, fmt.Errorf("frame too large: %d > %d", size, f.maxSize)
+	}
+	if size == 0 {
+		return nil, nil
 	}
 	payload = make([]byte, size)
 	if _, err := io.ReadFull(f.br, payload); err != nil {
@@ -76,7 +76,11 @@ func (f *LineFramer) ReadFrame(r io.Reader) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return line[:len(line)-1], nil
+	data := line[:len(line)-1]
+	if f.maxSize > 0 && len(data) > f.maxSize {
+		return nil, fmt.Errorf("line frame too large: %d > %d", len(data), f.maxSize)
+	}
+	return data, nil
 }
 
 func (f *LineFramer) WriteFrame(w io.Writer, payload []byte) error {

@@ -2,6 +2,7 @@ package coap
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 )
 
@@ -157,9 +158,9 @@ func ParseMessage(data []byte) (*CoAPMessage, error) {
 		val := make([]byte, optLen)
 		copy(val, data[offset:offset+optLen])
 		msg.Options = append(msg.Options, CoAPOption{
-			Delta: uint16(optDelta),
+			Delta:  uint16(optDelta),
 			Length: uint16(optLen),
-			Value: val,
+			Value:  val,
 		})
 		offset += optLen
 	}
@@ -175,9 +176,18 @@ func ParseMessage(data []byte) (*CoAPMessage, error) {
 
 // Serialize serializes a CoAP message to bytes.
 func (m *CoAPMessage) Serialize() ([]byte, error) {
+	if m.TokenLen > 8 {
+		return nil, errors.New("coap: token length exceeds 8")
+	}
+
 	size := 4 + int(m.TokenLen) + len(m.Payload)
 	for _, opt := range m.Options {
 		size += 1 + len(opt.Value)
+		if opt.Delta >= 269 || opt.Length >= 269 {
+			size += 2
+		} else if opt.Delta >= 13 || opt.Length >= 13 {
+			size += 1
+		}
 	}
 	if len(m.Payload) > 0 {
 		size++ // payload marker
@@ -204,7 +214,9 @@ func (m *CoAPMessage) Serialize() ([]byte, error) {
 	prevDelta := uint16(0)
 	for _, opt := range m.Options {
 		delta := opt.Delta - prevDelta
-		buf = append(buf, encodeOptionHeader(delta, opt.Length))
+		encoded, extBytes := encodeOptionHeader(delta, opt.Length)
+		buf = append(buf, encoded)
+		buf = append(buf, extBytes...)
 		buf = append(buf, opt.Value...)
 		prevDelta = opt.Delta
 	}
@@ -218,20 +230,34 @@ func (m *CoAPMessage) Serialize() ([]byte, error) {
 	return buf, nil
 }
 
-func encodeOptionHeader(delta, length uint16) byte {
+func encodeOptionHeader(delta, length uint16) (byte, []byte) {
+	var ext []byte
+
 	d := byte(0)
-	if delta < 13 {
+	switch {
+	case delta < 13:
 		d = byte(delta)
-	} else {
+	case delta < 269:
 		d = 13
+		ext = append(ext, byte(delta-13))
+	default:
+		d = 14
+		ext = binary.BigEndian.AppendUint16(nil, delta-269)
 	}
+
 	l := byte(0)
-	if length < 13 {
+	switch {
+	case length < 13:
 		l = byte(length)
-	} else {
+	case length < 269:
 		l = 13
+		ext = append(ext, byte(length-13))
+	default:
+		l = 14
+		ext = append(ext, binary.BigEndian.AppendUint16(nil, length-269)...)
 	}
-	return (d << 4) | l
+
+	return (d << 4) | l, ext
 }
 
 // NewACK creates an ACK response for a CON message.

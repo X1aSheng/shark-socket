@@ -119,9 +119,12 @@ func (bp *BufferPool) Get(size int) *Buffer {
 
 	if v := bp.pools[level].Get(); v != nil {
 		buf := v.(*Buffer)
-		buf.data = buf.data[:size]
-		bp.hits[level].Add(1)
-		return buf
+		if cap(buf.data) >= size {
+			buf.data = buf.data[:size]
+			bp.hits[level].Add(1)
+			return buf
+		}
+		// Buffer too small (stale from pool), discard and allocate fresh
 	}
 
 	bp.misses[level].Add(1)

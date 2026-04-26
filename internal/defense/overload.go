@@ -1,6 +1,7 @@
 package defense
 
 import (
+	"errors"
 	"log"
 	"sync/atomic"
 	"time"
@@ -55,6 +56,18 @@ func (o *OverloadProtector) checkLoop() {
 // IsOverloaded returns true if the system is in overload mode.
 func (o *OverloadProtector) IsOverloaded() bool {
 	return o.overloaded.Load()
+}
+
+// ErrOverloaded is returned by Guard when the system is overloaded.
+var ErrOverloaded = errors.New("shark: server overloaded")
+
+// Guard checks overload state and returns an error if the system is overloaded.
+// Protocol servers should call this in the accept path to actively reject new connections.
+func (o *OverloadProtector) Guard() error {
+	if o.overloaded.Load() {
+		return ErrOverloaded
+	}
+	return nil
 }
 
 // Stop stops the monitor.

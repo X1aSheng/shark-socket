@@ -13,7 +13,8 @@ var (
 var (
 	ErrSessionNotFound = errors.New("shark: session not found")
 	ErrSessionClosed   = errors.New("shark: session closed")
-	ErrSessionCapacity = errors.New("shark: session capacity exceeded")
+	ErrSessionCapacity  = errors.New("shark: session capacity exceeded")
+	ErrDuplicateSession = errors.New("shark: duplicate session")
 	ErrSessionLimit    = errors.New("shark: session limit reached")
 )
 
