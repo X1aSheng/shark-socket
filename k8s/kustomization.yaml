@@ -12,7 +12,6 @@ resources:
   - deployment.yaml
   - service.yaml
   - hpa.yaml
-  - pdb.yaml
   - networkpolicy.yaml
   - prometheus/deployment.yaml
   - prometheus/service.yaml
