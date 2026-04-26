@@ -6,4 +6,4 @@ issues:
     - path: _test\.go
       linters:
         - errcheck
-      text: "SA1029"
+    - text: "SA1029"
