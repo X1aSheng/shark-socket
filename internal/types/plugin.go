@@ -1,6 +1,6 @@
 package types
 
-import "github.com/yourname/shark-socket/internal/errs"
+import "github.com/X1aSheng/shark-socket/internal/errs"
 
 // Plugin defines the interface for intercepting session lifecycle events.
 // Plugins are ordered by Priority (lower = earlier execution).

@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/yourname/shark-socket/internal/errs"
-	"github.com/yourname/shark-socket/internal/types"
+	"github.com/X1aSheng/shark-socket/internal/errs"
+	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
 // testSession is a minimal RawSession implementation for testing.

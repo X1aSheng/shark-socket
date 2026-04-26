@@ -9,9 +9,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/yourname/shark-socket/internal/plugin"
-	"github.com/yourname/shark-socket/internal/session"
-	"github.com/yourname/shark-socket/internal/types"
+	"github.com/X1aSheng/shark-socket/internal/plugin"
+	"github.com/X1aSheng/shark-socket/internal/session"
+	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
 // Server is a TCP protocol server.

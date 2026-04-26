@@ -3,7 +3,7 @@ package plugin
 import (
 	"testing"
 
-	"github.com/yourname/shark-socket/internal/types"
+	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
 // benchPlugin is a minimal no-op plugin for benchmarking the Chain overhead.

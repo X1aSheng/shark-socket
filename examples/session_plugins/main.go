@@ -6,9 +6,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/yourname/shark-socket/api"
-	"github.com/yourname/shark-socket/internal/plugin"
-	"github.com/yourname/shark-socket/internal/protocol/tcp"
+	"github.com/X1aSheng/shark-socket/api"
+	"github.com/X1aSheng/shark-socket/internal/plugin"
+	"github.com/X1aSheng/shark-socket/internal/protocol/tcp"
 )
 
 func main() {

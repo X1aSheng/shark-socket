@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/yourname/shark-socket/internal/errs"
-	"github.com/yourname/shark-socket/internal/types"
+	"github.com/X1aSheng/shark-socket/internal/errs"
+	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
 // setupWSPair creates a full-duplex WebSocket pair using httptest.

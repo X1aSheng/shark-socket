@@ -4,7 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 
-	"github.com/yourname/shark-socket/internal/types"
+	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
 // Options holds HTTP server configuration.

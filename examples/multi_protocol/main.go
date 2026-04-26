@@ -6,11 +6,11 @@ import (
 	stdhttp "net/http"
 	"time"
 
-	"github.com/yourname/shark-socket/api"
-	"github.com/yourname/shark-socket/internal/protocol/coap"
-	"github.com/yourname/shark-socket/internal/protocol/http"
-	"github.com/yourname/shark-socket/internal/protocol/tcp"
-	"github.com/yourname/shark-socket/internal/protocol/websocket"
+	"github.com/X1aSheng/shark-socket/api"
+	"github.com/X1aSheng/shark-socket/internal/protocol/coap"
+	"github.com/X1aSheng/shark-socket/internal/protocol/http"
+	"github.com/X1aSheng/shark-socket/internal/protocol/tcp"
+	"github.com/X1aSheng/shark-socket/internal/protocol/websocket"
 )
 
 func main() {

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yourname/shark-socket/internal/types"
+	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
 // TestIntegration_UDP_Echo starts a UDP server on :0, sends a packet,

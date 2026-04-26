@@ -7,15 +7,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yourname/shark-socket/internal/errs"
-	"github.com/yourname/shark-socket/internal/infra/cache"
-	"github.com/yourname/shark-socket/internal/infra/circuitbreaker"
-	"github.com/yourname/shark-socket/internal/infra/logger"
-	"github.com/yourname/shark-socket/internal/infra/metrics"
-	"github.com/yourname/shark-socket/internal/infra/pubsub"
-	"github.com/yourname/shark-socket/internal/infra/store"
-	"github.com/yourname/shark-socket/internal/protocol/tcp"
-	"github.com/yourname/shark-socket/internal/types"
+	"github.com/X1aSheng/shark-socket/internal/errs"
+	"github.com/X1aSheng/shark-socket/internal/infra/cache"
+	"github.com/X1aSheng/shark-socket/internal/infra/circuitbreaker"
+	"github.com/X1aSheng/shark-socket/internal/infra/logger"
+	"github.com/X1aSheng/shark-socket/internal/infra/metrics"
+	"github.com/X1aSheng/shark-socket/internal/infra/pubsub"
+	"github.com/X1aSheng/shark-socket/internal/infra/store"
+	"github.com/X1aSheng/shark-socket/internal/protocol/tcp"
+	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
 // ---------------------------------------------------------------------------

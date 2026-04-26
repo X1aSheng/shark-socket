@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yourname/shark-socket/internal/errs"
+	"github.com/X1aSheng/shark-socket/internal/errs"
 )
 
 func TestBlacklistPlugin_ExactIPBlocking(t *testing.T) {

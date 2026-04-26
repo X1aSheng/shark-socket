@@ -11,8 +11,8 @@ package main
 
 import (
     "log"
-    "github.com/yourname/shark-socket/internal/protocol/tcp"
-    "github.com/yourname/shark-socket/internal/types"
+    "github.com/X1aSheng/shark-socket/internal/protocol/tcp"
+    "github.com/X1aSheng/shark-socket/internal/types"
 )
 
 func main() {

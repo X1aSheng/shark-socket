@@ -3,8 +3,8 @@ package plugin
 import (
 	"slices"
 
-	"github.com/yourname/shark-socket/internal/errs"
-	"github.com/yourname/shark-socket/internal/types"
+	"github.com/X1aSheng/shark-socket/internal/errs"
+	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
 // Chain executes plugins in priority order with ErrSkip/ErrDrop/ErrBlock semantics.

@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/yourname/shark-socket/internal/errs"
-	"github.com/yourname/shark-socket/internal/infra/cache"
-	"github.com/yourname/shark-socket/internal/infra/pubsub"
-	"github.com/yourname/shark-socket/internal/types"
+	"github.com/X1aSheng/shark-socket/internal/errs"
+	"github.com/X1aSheng/shark-socket/internal/infra/cache"
+	"github.com/X1aSheng/shark-socket/internal/infra/pubsub"
+	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
 // ClusterPlugin enables cross-node session routing and event propagation.

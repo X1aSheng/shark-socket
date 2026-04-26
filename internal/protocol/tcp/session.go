@@ -5,10 +5,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yourname/shark-socket/internal/errs"
-	"github.com/yourname/shark-socket/internal/infra/bufferpool"
-	"github.com/yourname/shark-socket/internal/session"
-	"github.com/yourname/shark-socket/internal/types"
+	"github.com/X1aSheng/shark-socket/internal/errs"
+	"github.com/X1aSheng/shark-socket/internal/infra/bufferpool"
+	"github.com/X1aSheng/shark-socket/internal/session"
+	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
 // TCPSession implements types.Session for TCP connections.

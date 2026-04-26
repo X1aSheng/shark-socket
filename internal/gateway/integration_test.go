@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	httpproto "github.com/yourname/shark-socket/internal/protocol/http"
-	tcpproto "github.com/yourname/shark-socket/internal/protocol/tcp"
-	"github.com/yourname/shark-socket/internal/types"
+	httpproto "github.com/X1aSheng/shark-socket/internal/protocol/http"
+	tcpproto "github.com/X1aSheng/shark-socket/internal/protocol/tcp"
+	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
 // TestIntegration_Gateway_MultiProtocol creates a gateway, registers a TCP server

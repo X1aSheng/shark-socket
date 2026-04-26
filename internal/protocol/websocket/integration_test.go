@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/yourname/shark-socket/internal/types"
+	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
 // TestIntegration_WS_Echo starts a WebSocket server on :0, connects with a

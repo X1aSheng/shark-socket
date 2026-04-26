@@ -5,8 +5,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/yourname/shark-socket/internal/types"
-	"github.com/yourname/shark-socket/internal/utils"
+	"github.com/X1aSheng/shark-socket/internal/types"
+	"github.com/X1aSheng/shark-socket/internal/utils"
 )
 
 type ipCounters struct {

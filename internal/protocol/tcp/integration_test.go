@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yourname/shark-socket/internal/types"
+	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
 // TestIntegration_TCP_Echo starts a TCP server on :0, connects a client,

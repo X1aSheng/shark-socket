@@ -4,7 +4,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/yourname/shark-socket/internal/errs"
+	"github.com/X1aSheng/shark-socket/internal/errs"
 )
 
 func TestRateLimitPlugin_UnderLimitPasses(t *testing.T) {

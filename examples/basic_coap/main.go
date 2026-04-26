@@ -6,9 +6,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/yourname/shark-socket/api"
-	"github.com/yourname/shark-socket/internal/protocol/coap"
-	"github.com/yourname/shark-socket/internal/types"
+	"github.com/X1aSheng/shark-socket/api"
+	"github.com/X1aSheng/shark-socket/internal/protocol/coap"
+	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
 func main() {

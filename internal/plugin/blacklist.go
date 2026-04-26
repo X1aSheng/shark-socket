@@ -5,10 +5,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yourname/shark-socket/internal/errs"
-	"github.com/yourname/shark-socket/internal/infra/cache"
-	"github.com/yourname/shark-socket/internal/types"
-	"github.com/yourname/shark-socket/internal/utils"
+	"github.com/X1aSheng/shark-socket/internal/errs"
+	"github.com/X1aSheng/shark-socket/internal/infra/cache"
+	"github.com/X1aSheng/shark-socket/internal/types"
+	"github.com/X1aSheng/shark-socket/internal/utils"
 )
 
 type expireEntry struct {

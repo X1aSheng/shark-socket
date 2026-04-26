@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yourname/shark-socket/internal/types"
+	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
 func TestTimeWheel_AddAndTimeout(t *testing.T) {

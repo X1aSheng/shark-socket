@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/yourname/shark-socket/internal/infra/circuitbreaker"
-	"github.com/yourname/shark-socket/internal/infra/store"
-	"github.com/yourname/shark-socket/internal/types"
+	"github.com/X1aSheng/shark-socket/internal/infra/circuitbreaker"
+	"github.com/X1aSheng/shark-socket/internal/infra/store"
+	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
 type persistEntry struct {

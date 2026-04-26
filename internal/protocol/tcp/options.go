@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/yourname/shark-socket/internal/infra/tracing"
-	"github.com/yourname/shark-socket/internal/types"
+	"github.com/X1aSheng/shark-socket/internal/infra/tracing"
+	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
 // Options holds TCP server configuration.
