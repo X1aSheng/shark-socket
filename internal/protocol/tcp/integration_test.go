@@ -109,6 +109,7 @@ func TestIntegration_TCP_MultipleClients(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
+			time.Sleep(time.Duration(idx) * 10 * time.Millisecond)
 
 			conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
 			if err != nil {
