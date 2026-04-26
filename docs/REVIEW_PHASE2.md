@@ -6,18 +6,18 @@
 
 ## 审查概况
 
-| 级别 | 数量 | 说明 |
+| 级别 | 数量 | 状态 |
 |------|------|------|
-| Critical | 5 | 生产稳定性风险：资源泄漏、竞态、数据丢失 |
-| High | 7 | 正确性缺陷：边界条件、状态管理、性能 |
-| Medium | 8 | 质量问题：API 设计、可测试性、可观测性 |
-| 总计 | 20 | |
+| Critical | 5 | ✅ 全部完成 |
+| High | 7 | ✅ 全部完成 |
+| Medium | 8 | ✅ 6/8 已完成 |
+| 总计 | 20 | 18/20 已完成 |
 
 ---
 
 ## Critical 修复（稳定性）
 
-### 1. TCP WriteLoop buffer 泄漏
+### 1. TCP WriteLoop buffer 泄漏 ✅
 
 **文件**：`internal/protocol/tcp/session.go:131-158`
 
@@ -39,7 +39,7 @@ _ = s.framer.WriteFrame(s.conn, data)
 
 ---
 
-### 2. BlacklistPlugin isBlocked 两次 RLock 间存在 TOCTOU 竞态
+### 2. BlacklistPlugin isBlocked 两次 RLock 间存在 TOCTOU 竞态 ✅
 
 **文件**：`internal/plugin/blacklist.go:117-134`
 
@@ -49,7 +49,7 @@ _ = s.framer.WriteFrame(s.conn, data)
 
 ---
 
-### 3. BroadcastLimiter 非线程安全
+### 3. BroadcastLimiter 非线程安全 ✅
 
 **文件**：`internal/defense/backpressure.go:57-67`
 
@@ -59,7 +59,7 @@ _ = s.framer.WriteFrame(s.conn, data)
 
 ---
 
-### 4. Gateway servers map 并发读写
+### 4. Gateway servers map 并发读写 ✅
 
 **文件**：`internal/gateway/gateway.go:52-57, 82-90, 126-128`
 
@@ -69,7 +69,7 @@ _ = s.framer.WriteFrame(s.conn, data)
 
 ---
 
-### 5. WorkerPool processTask panic 静默吞没
+### 5. WorkerPool processTask panic 静默吞没 ✅
 
 **文件**：`internal/protocol/tcp/worker_pool.go:148-151`
 
@@ -90,7 +90,7 @@ defer func() {
 
 ## High 修复（正确性）
 
-### 6. Session Manager 容量检查非原子
+### 6. Session Manager 容量检查非原子 ✅
 
 **文件**：`internal/session/manager.go:77`
 
@@ -100,7 +100,7 @@ defer func() {
 
 ---
 
-### 7. CoAP msgCache 无界增长
+### 7. CoAP msgCache 无界增长 ✅
 
 **文件**：`internal/protocol/coap/session.go:104-117`
 
@@ -110,7 +110,7 @@ defer func() {
 
 ---
 
-### 8. TCP Session Close 超时硬编码
+### 8. TCP Session Close 超时硬编码 ✅
 
 **文件**：`internal/protocol/tcp/session.go:91`
 
@@ -120,7 +120,7 @@ defer func() {
 
 ---
 
-### 9. Gateway readyz 无实际就绪检查
+### 9. Gateway readyz 无实际就绪检查 ✅
 
 **文件**：`internal/gateway/gateway.go:233-236`
 
@@ -130,7 +130,7 @@ defer func() {
 
 ---
 
-### 10. HTTP handleWithSession 读取循环效率低
+### 10. HTTP handleWithSession 读取循环效率低 ✅
 
 **文件**：`internal/protocol/http/server.go:109-128`
 
@@ -140,7 +140,7 @@ defer func() {
 
 ---
 
-### 11. WebSocket readLoop 错误类型比较
+### 11. WebSocket readLoop 错误类型比较 ✅
 
 **文件**：`internal/protocol/websocket/server.go:157`
 
@@ -150,7 +150,7 @@ defer func() {
 
 ---
 
-### 12. UDP/CoAP readLoop 中 conn.ReadFromUDP 不响应 context
+### 12. UDP/CoAP readLoop 中 conn.ReadFromUDP 不响应 context ✅
 
 **文件**：`internal/protocol/udp/server.go:74-81`, `internal/protocol/coap/server.go:75-83`
 
@@ -162,7 +162,7 @@ defer func() {
 
 ## Medium 修复（质量）
 
-### 13. Cache 接口缺少 Close 方法
+### 13. Cache 接口缺少 Close 方法 ✅
 
 **文件**：`internal/infra/cache/cache.go:10-17`
 
@@ -182,7 +182,7 @@ defer func() {
 
 ---
 
-### 15. PubSub 消息静默丢弃
+### 15. PubSub 消息静默丢弃 ✅
 
 **文件**：`internal/infra/pubsub/pubsub.go:99-101`
 
@@ -192,7 +192,7 @@ defer func() {
 
 ---
 
-### 16. Gateway metrics 端点为占位实现
+### 16. Gateway metrics 端点为占位实现 ✅
 
 **文件**：`internal/gateway/gateway.go:238-244`
 
