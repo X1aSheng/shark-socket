@@ -1,0 +1,201 @@
+package tcp
+
+import (
+	"context"
+	"crypto/tls"
+	"log"
+	"net"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/yourname/shark-socket/internal/plugin"
+	"github.com/yourname/shark-socket/internal/session"
+	"github.com/yourname/shark-socket/internal/types"
+)
+
+// Server is a TCP protocol server.
+type Server struct {
+	opts     Options
+	listener net.Listener
+	manager  *session.Manager
+	chain    *plugin.Chain
+	pool     *WorkerPool
+	wg       sync.WaitGroup
+	closed   atomic.Bool
+	handler  types.RawHandler
+}
+
+// Compile-time verification.
+var _ types.Server = (*Server)(nil)
+
+// NewServer creates a new TCP server.
+func NewServer(handler types.RawHandler, opts ...Option) *Server {
+	o := defaultOptions()
+	for _, opt := range opts {
+		opt(&o)
+	}
+	return &Server{
+		opts:    o,
+		handler: handler,
+	}
+}
+
+// Start begins listening and accepting connections.
+func (s *Server) Start() error {
+	var ln net.Listener
+	var err error
+
+	if s.opts.TLSConfig != nil {
+		ln, err = tls.Listen("tcp", s.opts.Addr(), s.opts.TLSConfig)
+	} else {
+		ln, err = net.Listen("tcp", s.opts.Addr())
+	}
+	if err != nil {
+		return err
+	}
+	s.listener = ln
+
+	s.manager = session.NewManager(session.WithMaxSessions(s.opts.MaxSessions))
+
+	if len(s.opts.Plugins) > 0 {
+		s.chain = plugin.NewChain(s.opts.Plugins...)
+	}
+
+	s.pool = NewWorkerPool(
+		s.handler,
+		s.chain,
+		s.opts.WorkerCount,
+		s.opts.TaskQueueSize,
+		s.opts.MaxWorkers,
+		s.opts.FullPolicy,
+	)
+	s.pool.Start()
+
+	s.wg.Add(1)
+	go s.acceptLoop()
+
+	log.Printf("TCP server listening on %s", s.opts.Addr())
+	return nil
+}
+
+func (s *Server) acceptLoop() {
+	defer s.wg.Done()
+
+	var consecutiveErrors int
+	for {
+		conn, err := s.listener.Accept()
+		if err != nil {
+			if s.closed.Load() {
+				return
+			}
+			consecutiveErrors++
+			if consecutiveErrors > s.opts.MaxConsecutiveErrors {
+				log.Printf("TCP accept: too many errors (%d), stopping", consecutiveErrors)
+				return
+			}
+			time.Sleep(acceptBackoff(consecutiveErrors))
+			continue
+		}
+		consecutiveErrors = 0
+
+		s.wg.Add(1)
+		go func(c net.Conn) {
+			defer s.wg.Done()
+			s.handleConn(c)
+		}(conn)
+	}
+}
+
+func (s *Server) handleConn(conn net.Conn) {
+	id := s.manager.NextID()
+	sess := NewTCPSession(id, conn, s.opts.Framer, s.opts.WriteQueueSize)
+
+	if err := s.manager.Register(sess); err != nil {
+		conn.Close()
+		return
+	}
+
+	if s.chain != nil {
+		if err := s.chain.OnAccept(sess); err != nil {
+			s.manager.Unregister(id)
+			sess.Close()
+			return
+		}
+	}
+
+	s.wg.Add(2)
+	go func() {
+		defer s.wg.Done()
+		sess.ReadLoop(s.pool, nil)
+	}()
+	go func() {
+		defer s.wg.Done()
+		sess.WriteLoop()
+	}()
+
+	// Cleanup on session exit
+	<-sess.Context().Done()
+	s.manager.Unregister(id)
+	if s.chain != nil {
+		s.chain.OnClose(sess)
+	}
+}
+
+// Stop gracefully shuts down the server.
+func (s *Server) Stop(ctx context.Context) error {
+	if !s.closed.CompareAndSwap(false, true) {
+		return nil
+	}
+
+	if s.listener != nil {
+		s.listener.Close()
+	}
+	if s.pool != nil {
+		s.pool.Stop()
+	}
+	if s.manager != nil {
+		s.manager.Close()
+	}
+
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// Protocol returns the protocol type.
+func (s *Server) Protocol() types.ProtocolType {
+	if s.opts.TLSConfig != nil {
+		return types.TLS
+	}
+	return types.TCP
+}
+
+// Manager returns the session manager.
+func (s *Server) Manager() *session.Manager {
+	return s.manager
+}
+
+func acceptBackoff(errors int) time.Duration {
+	d := time.Duration(5<<min(errors-1, 10)) * time.Millisecond
+	if d > 10*time.Second {
+		d = 10 * time.Second
+	}
+	return d
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  shark-socket:
+    build: .
+    ports:
+      - "8080:8080"   # TCP
+      - "8081:8081"   # UDP
+      - "8082:8082"   # HTTP
+      - "8083:8083"   # WebSocket
+      - "5683:5683/udp" # CoAP
+      - "9090:9090"   # Metrics
+    environment:
+      - SHARK_LOG_LEVEL=info
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./scripts/prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - shark-socket

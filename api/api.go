@@ -1,0 +1,204 @@
+package api
+
+import (
+	"crypto/tls"
+	"time"
+
+	"github.com/yourname/shark-socket/internal/errs"
+	"github.com/yourname/shark-socket/internal/infra/cache"
+	"github.com/yourname/shark-socket/internal/infra/circuitbreaker"
+	"github.com/yourname/shark-socket/internal/infra/logger"
+	"github.com/yourname/shark-socket/internal/infra/metrics"
+	"github.com/yourname/shark-socket/internal/infra/pubsub"
+	"github.com/yourname/shark-socket/internal/infra/store"
+	"github.com/yourname/shark-socket/internal/plugin"
+	"github.com/yourname/shark-socket/internal/protocol/coap"
+	"github.com/yourname/shark-socket/internal/protocol/http"
+	tcpclient "github.com/yourname/shark-socket/internal/protocol/tcp"
+	udp "github.com/yourname/shark-socket/internal/protocol/udp"
+	websocket "github.com/yourname/shark-socket/internal/protocol/websocket"
+	"github.com/yourname/shark-socket/internal/types"
+	"github.com/yourname/shark-socket/internal/gateway"
+)
+
+// === Type Aliases ===
+
+type (
+	Session[M types.MessageConstraint] = types.Session[M]
+	RawSession                       = types.RawSession
+	SessionManager                   = types.SessionManager
+	SessionState                     = types.SessionState
+	Message[T any]                   = types.Message[T]
+	RawMessage                       = types.RawMessage
+	MessageConstraint                = types.MessageConstraint
+	MessageHandler[T any]            = types.MessageHandler[T]
+	RawHandler                       = types.RawHandler
+	Server                           = types.Server
+	Plugin                           = types.Plugin
+	BasePlugin                       = types.BasePlugin
+	ProtocolType                     = types.ProtocolType
+	MessageType                      = types.MessageType
+	Logger                           = logger.Logger
+	Cache                            = cache.Cache
+	Store                            = store.Store
+	PubSub                           = pubsub.PubSub
+	CircuitBreaker                   = circuitbreaker.CircuitBreaker
+)
+
+// === Protocol Constants ===
+
+const (
+	TCP       = types.TCP
+	TLS       = types.TLS
+	UDP       = types.UDP
+	HTTP      = types.HTTP
+	WebSocket = types.WebSocket
+	CoAP      = types.CoAP
+	Custom    = types.Custom
+
+	Text    = types.Text
+	Binary  = types.Binary
+	Ping    = types.Ping
+	Pong    = types.Pong
+	Close   = types.Close
+
+	Connecting = types.Connecting
+	Active     = types.Active
+	Closing    = types.Closing
+	Closed     = types.Closed
+)
+
+// === Gateway Factory ===
+
+func NewGateway(opts ...gateway.Option) *gateway.Gateway {
+	return gateway.New(opts...)
+}
+
+// === TCP Server Factory ===
+
+func NewTCPServer(handler RawHandler, opts ...tcpclient.Option) *tcpclient.Server {
+	return tcpclient.NewServer(handler, opts...)
+}
+
+// === UDP Server Factory ===
+
+func NewUDPServer(handler RawHandler, opts ...udp.Option) *udp.Server {
+	return udp.NewServer(handler, opts...)
+}
+
+// === HTTP Server Factory ===
+
+func NewHTTPServer(opts ...http.Option) *http.Server {
+	return http.NewServer(opts...)
+}
+
+// === WebSocket Server Factory ===
+
+func NewWebSocketServer(handler RawHandler, opts ...websocket.Option) *websocket.Server {
+	return websocket.NewServer(handler, opts...)
+}
+
+// === CoAP Server Factory ===
+
+func NewCoAPServer(handler RawHandler, opts ...coap.Option) *coap.Server {
+	return coap.NewServer(handler, opts...)
+}
+
+// === TCP Client Factory ===
+
+func NewTCPRawClient(addr string, opts ...tcpclient.ClientOption) *tcpclient.Client {
+	return tcpclient.NewClient(addr, opts...)
+}
+
+// === Plugin Factories ===
+
+func NewBlacklistPlugin(ips ...string) *plugin.BlacklistPlugin {
+	return plugin.NewBlacklistPlugin(ips...)
+}
+
+func NewRateLimitPlugin(rate, burst float64, opts ...plugin.RateLimitOption) *plugin.RateLimitPlugin {
+	return plugin.NewRateLimitPlugin(rate, burst, opts...)
+}
+
+func NewHeartbeatPlugin(interval, timeout time.Duration, mgr func() SessionManager) *plugin.HeartbeatPlugin {
+	return plugin.NewHeartbeatPlugin(interval, timeout, mgr)
+}
+
+func NewPersistencePlugin(s Store, opts ...plugin.PersistenceOption) *plugin.PersistencePlugin {
+	return plugin.NewPersistencePlugin(s, opts...)
+}
+
+func NewAutoBanPlugin(blacklist *plugin.BlacklistPlugin, opts ...plugin.AutoBanOption) *plugin.AutoBanPlugin {
+	return plugin.NewAutoBanPlugin(blacklist, opts...)
+}
+
+// === Infrastructure Factories ===
+
+func SetLogger(l Logger) { logger.SetDefault(l) }
+
+func DefaultMetrics() metrics.Metrics { return metrics.NopMetrics() }
+
+func NewMemoryCache(opts ...cache.CacheOption) *cache.MemoryCache {
+	return cache.NewMemoryCache(opts...)
+}
+
+func NewMemoryStore() *store.MemoryStore {
+	return store.NewMemoryStore()
+}
+
+func NewChannelPubSub() *pubsub.ChannelPubSub {
+	return pubsub.NewChannelPubSub()
+}
+
+func NewCircuitBreaker(threshold int64, timeout time.Duration) *circuitbreaker.CircuitBreaker {
+	return circuitbreaker.New(threshold, timeout)
+}
+
+// === Configuration Pass-through ===
+
+// TCP Options
+func WithTCPAddr(host string, port int) tcpclient.Option {
+	return tcpclient.WithAddr(host, port)
+}
+
+func WithTCPTLS(cfg *tls.Config) tcpclient.Option {
+	return tcpclient.WithTLS(cfg)
+}
+
+func WithTCPPlugins(p ...Plugin) tcpclient.Option {
+	return tcpclient.WithPlugins(p...)
+}
+
+func WithTCPMaxSessions(max int64) tcpclient.Option {
+	return tcpclient.WithMaxSessions(max)
+}
+
+func WithTCPMaxMessageSize(max int) tcpclient.Option {
+	return tcpclient.WithMaxMessageSize(max)
+}
+
+// Gateway Options
+func WithShutdownTimeout(d time.Duration) gateway.Option {
+	return gateway.WithShutdownTimeout(d)
+}
+
+func WithMetricsAddr(addr string) gateway.Option {
+	return gateway.WithMetricsAddr(addr)
+}
+
+func WithMetricsEnabled(enabled bool) gateway.Option {
+	return gateway.WithMetricsEnabled(enabled)
+}
+
+func WithGlobalPlugins(p ...Plugin) gateway.Option {
+	return gateway.WithGlobalPlugins(p...)
+}
+
+// Error variables re-export
+var (
+	ErrSkip            = errs.ErrSkip
+	ErrDrop            = errs.ErrDrop
+	ErrBlock           = errs.ErrBlock
+	ErrSessionClosed   = errs.ErrSessionClosed
+	ErrWriteQueueFull  = errs.ErrWriteQueueFull
+)
