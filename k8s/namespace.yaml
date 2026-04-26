@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shark-socket
+  labels:
+    app.kubernetes.io/name: shark-socket
+    app.kubernetes.io/part-of: shark-socket

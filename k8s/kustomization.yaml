@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: shark-socket
+
+commonLabels:
+  app.kubernetes.io/part-of: shark-socket
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - hpa.yaml
+  - pdb.yaml
+  - networkpolicy.yaml
+  - prometheus/deployment.yaml
+  - prometheus/service.yaml
+  - ingress.yaml

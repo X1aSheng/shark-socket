@@ -1,0 +1,170 @@
+# TCP Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: shark-socket-tcp
+  namespace: shark-socket
+  labels:
+    app.kubernetes.io/name: shark-socket
+    app.kubernetes.io/component: gateway
+    protocol: tcp
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: shark-socket
+    app.kubernetes.io/component: gateway
+  ports:
+    - name: tcp
+      port: 18000
+      targetPort: tcp
+      protocol: TCP
+
+---
+# UDP Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: shark-socket-udp
+  namespace: shark-socket
+  labels:
+    app.kubernetes.io/name: shark-socket
+    app.kubernetes.io/component: gateway
+    protocol: udp
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: shark-socket
+    app.kubernetes.io/component: gateway
+  ports:
+    - name: udp
+      port: 18200
+      targetPort: udp
+      protocol: UDP
+
+---
+# HTTP Service (used by Ingress)
+apiVersion: v1
+kind: Service
+metadata:
+  name: shark-socket-http
+  namespace: shark-socket
+  labels:
+    app.kubernetes.io/name: shark-socket
+    app.kubernetes.io/component: gateway
+    protocol: http
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: shark-socket
+    app.kubernetes.io/component: gateway
+  ports:
+    - name: http
+      port: 18400
+      targetPort: http
+      protocol: TCP
+
+---
+# WebSocket Service (used by Ingress)
+apiVersion: v1
+kind: Service
+metadata:
+  name: shark-socket-ws
+  namespace: shark-socket
+  labels:
+    app.kubernetes.io/name: shark-socket
+    app.kubernetes.io/component: gateway
+    protocol: websocket
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: shark-socket
+    app.kubernetes.io/component: gateway
+  ports:
+    - name: websocket
+      port: 18600
+      targetPort: websocket
+      protocol: TCP
+
+---
+# CoAP Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: shark-socket-coap
+  namespace: shark-socket
+  labels:
+    app.kubernetes.io/name: shark-socket
+    app.kubernetes.io/component: gateway
+    protocol: coap
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: shark-socket
+    app.kubernetes.io/component: gateway
+  ports:
+    - name: coap
+      port: 18800
+      targetPort: coap
+      protocol: UDP
+
+---
+# Metrics Service (Prometheus scrape target)
+apiVersion: v1
+kind: Service
+metadata:
+  name: shark-socket-metrics
+  namespace: shark-socket
+  labels:
+    app.kubernetes.io/name: shark-socket
+    app.kubernetes.io/component: gateway
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: shark-socket
+    app.kubernetes.io/component: gateway
+  ports:
+    - name: metrics
+      port: 9091
+      targetPort: metrics
+      protocol: TCP
+
+---
+# NodePort Service (optional: uncomment to expose TCP/UDP externally)
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: shark-socket-nodeport
+#   namespace: shark-socket
+#   labels:
+#     app.kubernetes.io/name: shark-socket
+# spec:
+#   type: NodePort
+#   selector:
+#     app.kubernetes.io/name: shark-socket
+#     app.kubernetes.io/component: gateway
+#   ports:
+#     - name: tcp
+#       port: 18000
+#       targetPort: tcp
+#       nodePort: 30000
+#       protocol: TCP
+#     - name: udp
+#       port: 18200
+#       targetPort: udp
+#       nodePort: 30001
+#       protocol: UDP
+#     - name: http
+#       port: 18400
+#       targetPort: http
+#       nodePort: 30002
+#       protocol: TCP
+#     - name: websocket
+#       port: 18600
+#       targetPort: websocket
+#       nodePort: 30003
+#       protocol: TCP
+#     - name: coap
+#       port: 18800
+#       targetPort: coap
+#       nodePort: 30004
+#       protocol: UDP
