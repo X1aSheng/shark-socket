@@ -3,6 +3,7 @@ package tcp
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"log"
 	"net"
 	"sync"
@@ -43,6 +44,10 @@ func NewServer(handler types.RawHandler, opts ...Option) *Server {
 
 // Start begins listening and accepting connections.
 func (s *Server) Start() error {
+	if err := s.opts.validate(); err != nil {
+		return err
+	}
+
 	var ln net.Listener
 	var err error
 
@@ -52,7 +57,7 @@ func (s *Server) Start() error {
 		ln, err = net.Listen("tcp", s.opts.Addr())
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("tcp: listen on %s: %w", s.opts.Addr(), err)
 	}
 	s.listener = ln
 

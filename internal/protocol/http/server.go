@@ -54,6 +54,10 @@ func (s *Server) HandleFunc(pattern string, handler stdhttp.HandlerFunc) {
 
 // Start begins serving HTTP.
 func (s *Server) Start() error {
+	if err := s.opts.validate(); err != nil {
+		return err
+	}
+
 	if len(s.opts.Plugins) > 0 {
 		s.chain = plugin.NewChain(s.opts.Plugins...)
 	}

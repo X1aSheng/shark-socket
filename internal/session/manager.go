@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/X1aSheng/shark-socket/internal/errs"
+	"github.com/X1aSheng/shark-socket/internal/infra/metrics"
 	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
@@ -74,20 +75,49 @@ func (m *Manager) Register(sess types.RawSession) error {
 	}
 	// Check capacity and evict if needed
 	if m.total.Load() >= m.maxSess {
-		evicted := s.lru.Evict(1)
-		for _, eid := range evicted {
-			if old, ok := s.sessions[eid]; ok {
-				delete(s.sessions, eid)
-				m.total.Add(-1)
-				go old.Close() // async close to avoid blocking
-			}
-		}
+		m.evictGlobal(s, si)
 	}
 	s.sessions[id] = sess
 	s.lru.Touch(id)
 	m.total.Add(1)
 	s.mu.Unlock()
 	return nil
+}
+
+// evictGlobal tries local shard first, then searches other shards for LRU victim.
+func (m *Manager) evictGlobal(localShard *shard, localIdx int) {
+	// Try local shard first
+	evicted := localShard.lru.Evict(1)
+	for _, eid := range evicted {
+		if old, ok := localShard.sessions[eid]; ok {
+			delete(localShard.sessions, eid)
+			m.total.Add(-1)
+			metrics.IncCounter("shark_session_lru_evictions_total")
+			go old.Close()
+			return
+		}
+	}
+
+	// Local shard empty — search other shards for a victim
+	for i := 0; i < numShards; i++ {
+		if i == localIdx {
+			continue
+		}
+		other := &m.shards[i]
+		other.mu.Lock()
+		evicted := other.lru.Evict(1)
+		for _, eid := range evicted {
+			if old, ok := other.sessions[eid]; ok {
+				delete(other.sessions, eid)
+				m.total.Add(-1)
+				metrics.IncCounter("shark_session_lru_evictions_total")
+				go old.Close()
+				other.mu.Unlock()
+				return
+			}
+		}
+		other.mu.Unlock()
+	}
 }
 
 // Unregister removes a session.

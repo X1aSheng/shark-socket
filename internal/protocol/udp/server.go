@@ -2,6 +2,7 @@ package udp
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"sync"
@@ -43,13 +44,17 @@ func NewServer(handler types.RawHandler, opts ...Option) *Server {
 
 // Start begins listening for UDP packets.
 func (s *Server) Start() error {
+	if err := s.opts.validate(); err != nil {
+		return err
+	}
+
 	addr, err := net.ResolveUDPAddr("udp", s.opts.Addr())
 	if err != nil {
-		return err
+		return fmt.Errorf("udp: resolve addr %s: %w", s.opts.Addr(), err)
 	}
 	conn, err := net.ListenUDP("udp", addr)
 	if err != nil {
-		return err
+		return fmt.Errorf("udp: listen on %s: %w", s.opts.Addr(), err)
 	}
 	s.conn = conn
 	s.ctx, s.cancel = context.WithCancel(context.Background())
@@ -71,6 +76,12 @@ func (s *Server) readLoop() {
 
 	buf := make([]byte, 65535)
 	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		default:
+		}
+
 		n, addr, err := s.conn.ReadFromUDP(buf)
 		if err != nil {
 			if s.closed.Load() {

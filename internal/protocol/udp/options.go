@@ -7,6 +7,8 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
+var errConfig = func(msg string) error { return fmt.Errorf("udp config: %s", msg) }
+
 // Options holds UDP server configuration.
 type Options struct {
 	Host        string
@@ -51,4 +53,17 @@ func WithMaxSessions(max int64) Option {
 // WithPlugins adds protocol-level plugins.
 func WithPlugins(p ...types.Plugin) Option {
 	return func(o *Options) { o.Plugins = append(o.Plugins, p...) }
+}
+
+func (o Options) validate() error {
+	if o.Port < 0 || o.Port > 65535 {
+		return errConfig("port must be 0-65535")
+	}
+	if o.SessionTTL < time.Second {
+		return errConfig("session TTL must be >= 1s")
+	}
+	if o.MaxSessions < 0 {
+		return errConfig("max sessions must be >= 0")
+	}
+	return nil
 }

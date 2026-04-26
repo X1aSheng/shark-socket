@@ -3,15 +3,17 @@ package plugin
 import (
 	"log"
 	"slices"
+	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/errs"
+	"github.com/X1aSheng/shark-socket/internal/infra/metrics"
 	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
 // Chain executes plugins in priority order with ErrSkip/ErrDrop/ErrBlock semantics.
 type Chain struct {
-	plugins    []types.Plugin
-	nameIndex  map[string]int
+	plugins     []types.Plugin
+	nameIndex   map[string]int
 	stopOnError bool
 }
 
@@ -59,10 +61,13 @@ func (c *Chain) OnAccept(sess types.RawSession) error {
 			defer func() {
 				if r := recover(); r != nil {
 					log.Printf("[shark-socket] plugin %s OnAccept panic: %v", p.Name(), r)
+					metrics.IncCounter("shark_worker_panics_total", p.Name())
 					err = nil
 				}
 			}()
+			start := time.Now()
 			err = p.OnAccept(sess)
+			metrics.ObserveHistogram("shark_plugin_duration_seconds", time.Since(start).Seconds(), p.Name())
 		}()
 		if err != nil {
 			if err == errs.ErrBlock {
@@ -87,11 +92,14 @@ func (c *Chain) OnMessage(sess types.RawSession, data []byte) ([]byte, error) {
 			defer func() {
 				if r := recover(); r != nil {
 					log.Printf("[shark-socket] plugin %s OnMessage panic: %v", p.Name(), r)
+					metrics.IncCounter("shark_worker_panics_total", p.Name())
 					out = data // pass through unchanged
 					err = nil
 				}
 			}()
+			start := time.Now()
 			out, err = p.OnMessage(sess, data)
+			metrics.ObserveHistogram("shark_plugin_duration_seconds", time.Since(start).Seconds(), p.Name())
 		}()
 		if err != nil {
 			switch err {
@@ -119,6 +127,7 @@ func (c *Chain) OnClose(sess types.RawSession) {
 			defer func() {
 				if r := recover(); r != nil {
 					log.Printf("[shark-socket] plugin %s OnClose panic: %v", p.Name(), r)
+					metrics.IncCounter("shark_worker_panics_total", p.Name())
 				}
 			}()
 			p.OnClose(sess)

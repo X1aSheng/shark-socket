@@ -9,6 +9,8 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
+var errConfig = func(msg string) error { return fmt.Errorf("tcp config: %s", msg) }
+
 // Options holds TCP server configuration.
 type Options struct {
 	Host                string
@@ -139,4 +141,32 @@ func WithMaxConsecutiveErrors(max int) Option {
 //	srv := tcp.NewServer(handler, tcp.WithTracer(otelTracer))
 func WithTracer(t tracing.Tracer) Option {
 	return func(o *Options) { o.Tracer = t }
+}
+
+func (o Options) validate() error {
+	if o.Port < 0 || o.Port > 65535 {
+		return errConfig("port must be 0-65535")
+	}
+	if o.WorkerCount < 1 {
+		return errConfig("worker count must be >= 1")
+	}
+	if o.TaskQueueSize < 1 {
+		return errConfig("task queue size must be >= 1")
+	}
+	if o.MaxWorkers < o.WorkerCount {
+		return errConfig("max workers must be >= worker count")
+	}
+	if o.WriteQueueSize < 1 {
+		return errConfig("write queue size must be >= 1")
+	}
+	if o.MaxSessions < 0 {
+		return errConfig("max sessions must be >= 0")
+	}
+	if o.MaxMessageSize < 1 {
+		return errConfig("max message size must be >= 1")
+	}
+	if o.MaxConsecutiveErrors < 1 {
+		return errConfig("max consecutive errors must be >= 1")
+	}
+	return nil
 }

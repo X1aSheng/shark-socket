@@ -8,6 +8,8 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
+var errConfig = func(msg string) error { return fmt.Errorf("websocket config: %s", msg) }
+
 // Options holds WebSocket server configuration.
 type Options struct {
 	Host           string
@@ -83,4 +85,26 @@ func WithTLS(cfg *tls.Config) Option {
 // WithPlugins adds protocol-level plugins.
 func WithPlugins(p ...types.Plugin) Option {
 	return func(o *Options) { o.Plugins = append(o.Plugins, p...) }
+}
+
+func (o Options) validate() error {
+	if o.Port < 0 || o.Port > 65535 {
+		return errConfig("port must be 0-65535")
+	}
+	if o.Path == "" {
+		return errConfig("path must not be empty")
+	}
+	if o.MaxSessions < 0 {
+		return errConfig("max sessions must be >= 0")
+	}
+	if o.MaxMessageSize < 1 {
+		return errConfig("max message size must be >= 1")
+	}
+	if o.PingInterval < time.Second {
+		return errConfig("ping interval must be >= 1s")
+	}
+	if o.PongTimeout < time.Second {
+		return errConfig("pong timeout must be >= 1s")
+	}
+	return nil
 }

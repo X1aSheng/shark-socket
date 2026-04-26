@@ -59,6 +59,10 @@ func NewServer(handler types.RawHandler, opts ...Option) *Server {
 
 // Start begins serving WebSocket connections.
 func (s *Server) Start() error {
+	if err := s.opts.validate(); err != nil {
+		return err
+	}
+
 	s.manager = session.NewManager(session.WithMaxSessions(s.opts.MaxSessions))
 
 	if len(s.opts.Plugins) > 0 {

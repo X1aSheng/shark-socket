@@ -1,8 +1,11 @@
 package bufferpool
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
+
+	"github.com/X1aSheng/shark-socket/internal/infra/metrics"
 )
 
 const (
@@ -92,6 +95,10 @@ func levelSize(level int) int {
 	}
 }
 
+func levelName(level int) string {
+	return fmt.Sprintf("level%d", level)
+}
+
 // New creates a new BufferPool.
 func New() *BufferPool {
 	bp := &BufferPool{}
@@ -122,14 +129,15 @@ func (bp *BufferPool) Get(size int) *Buffer {
 		if cap(buf.data) >= size {
 			buf.data = buf.data[:size]
 			bp.hits[level].Add(1)
+			metrics.IncCounter("shark_bufferpool_hits_total", levelName(level))
 			return buf
 		}
-		// Buffer too small (stale from pool), discard and allocate fresh
 	}
 
 	bp.misses[level].Add(1)
 	bp.allocs[level].Add(1)
 	bp.totalMem.Add(int64(levelSize(level)))
+	metrics.IncCounter("shark_bufferpool_misses_total", levelName(level))
 	b := make([]byte, size)
 	return &Buffer{data: b, cap_: cap(b)}
 }
@@ -151,7 +159,6 @@ func (bp *BufferPool) Put(buf *Buffer) {
 	// Check total memory cap
 	memCap := bp.cap.Load()
 	if memCap > 0 && bp.totalMem.Load() > memCap {
-		// Drop buffer to allow GC to reclaim memory
 		return
 	}
 

@@ -7,6 +7,8 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
+var errConfig = func(msg string) error { return fmt.Errorf("coap config: %s", msg) }
+
 // Options holds CoAP server configuration.
 type Options struct {
 	Host            string
@@ -65,4 +67,23 @@ func WithAckTimeout(timeout time.Duration, maxRetransmit int) Option {
 // WithPlugins adds protocol-level plugins.
 func WithPlugins(p ...types.Plugin) Option {
 	return func(o *Options) { o.Plugins = append(o.Plugins, p...) }
+}
+
+func (o Options) validate() error {
+	if o.Port < 0 || o.Port > 65535 {
+		return errConfig("port must be 0-65535")
+	}
+	if o.MaxSessions < 0 {
+		return errConfig("max sessions must be >= 0")
+	}
+	if o.SessionTTL < time.Second {
+		return errConfig("session TTL must be >= 1s")
+	}
+	if o.AckTimeout < time.Second {
+		return errConfig("ack timeout must be >= 1s")
+	}
+	if o.MaxRetransmit < 1 {
+		return errConfig("max retransmit must be >= 1")
+	}
+	return nil
 }

@@ -66,3 +66,19 @@ func WithPlugins(p ...types.Plugin) Option {
 func WithMaxBodySize(n int64) Option {
 	return func(o *Options) { o.MaxBodySize = n }
 }
+
+func (o Options) validate() error {
+	if o.Port < 0 || o.Port > 65535 {
+		return fmt.Errorf("http config: port must be 0-65535")
+	}
+	if o.ReadTimeout < 0 {
+		return fmt.Errorf("http config: read timeout must be >= 0")
+	}
+	if o.WriteTimeout < 0 {
+		return fmt.Errorf("http config: write timeout must be >= 0")
+	}
+	if o.IdleTimeout < 0 {
+		return fmt.Errorf("http config: idle timeout must be >= 0")
+	}
+	return nil
+}
