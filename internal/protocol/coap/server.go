@@ -230,3 +230,11 @@ func (s *Server) Stop(ctx context.Context) error {
 
 // Protocol returns CoAP.
 func (s *Server) Protocol() types.ProtocolType { return types.CoAP }
+
+// Addr returns the listen address. Only valid after Start().
+func (s *Server) Addr() net.Addr {
+	if s.conn == nil {
+		return nil
+	}
+	return s.conn.LocalAddr()
+}

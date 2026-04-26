@@ -1,7 +1,6 @@
 package benchmark_test
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"testing"
@@ -117,59 +116,44 @@ func BenchmarkBufferPool_Parallel(b *testing.B) {
 // ---------------------------------------------------------------------------
 
 func BenchmarkTCPEcho(b *testing.B) {
-	// Find a free port
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		b.Fatalf("listen: %v", err)
-	}
-	port := lis.Addr().(*net.TCPAddr).Port
-	lis.Close()
-
 	handler := func(sess types.RawSession, msg types.RawMessage) error {
 		return sess.Send(msg.Payload)
 	}
 	srv := tcpproto.NewServer(handler,
-		tcpproto.WithAddr("127.0.0.1", port),
+		tcpproto.WithAddr("127.0.0.1", 0),
 		tcpproto.WithWorkerPool(4, 16, 128),
 		tcpproto.WithFramer(tcpproto.NewLengthPrefixFramer(4096)),
 	)
 	if err := srv.Start(); err != nil {
 		b.Fatalf("Start: %v", err)
 	}
-	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		srv.Stop(ctx)
-	}()
+	defer stopServer(srv)
 
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	addr := srv.Addr().String()
+	waitTCPReady(b, addr)
 
-	// Wait for server
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", addr, 10*time.Millisecond)
-		if err == nil {
-			conn.Close()
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	conn, err := retryDial("tcp", addr, 10*time.Second)
+	if err != nil {
+		b.Fatalf("dial: %v", err)
 	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(60 * time.Second))
 
 	framer := tcpproto.NewLengthPrefixFramer(4096)
 	payload := []byte("bench-tcp-echo")
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		conn, err := net.DialTimeout("tcp", addr, time.Second)
-		if err != nil {
-			b.Fatalf("dial: %v", err)
-		}
-		conn.SetDeadline(time.Now().Add(5 * time.Second))
+	// Warm up
+	framer.WriteFrame(conn, payload)
+	framer.ReadFrame(conn)
 
-		framer.WriteFrame(conn, payload)
-		_, err = framer.ReadFrame(conn)
-		conn.Close()
-		if err != nil {
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		if err := framer.WriteFrame(conn, payload); err != nil {
+			b.Fatalf("WriteFrame: %v", err)
+		}
+		if _, err := framer.ReadFrame(conn); err != nil {
 			b.Fatalf("ReadFrame: %v", err)
 		}
 	}
@@ -180,39 +164,19 @@ func BenchmarkTCPEcho(b *testing.B) {
 // ---------------------------------------------------------------------------
 
 func BenchmarkUDPEcho(b *testing.B) {
-	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
-	if err != nil {
-		b.Fatalf("listen: %v", err)
-	}
-	port := conn.LocalAddr().(*net.UDPAddr).Port
-	conn.Close()
-
 	handler := func(sess types.RawSession, msg types.RawMessage) error {
 		return sess.Send(msg.Payload)
 	}
-	srv := udp.NewServer(handler, udp.WithAddr("127.0.0.1", port))
+	srv := udp.NewServer(handler, udp.WithAddr("127.0.0.1", 0))
 	if err := srv.Start(); err != nil {
 		b.Fatalf("Start: %v", err)
 	}
-	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		srv.Stop(ctx)
-	}()
+	defer stopServer(srv)
 
-	// Wait for server
-	srvAddr := fmt.Sprintf("127.0.0.1:%d", port)
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		c, err := net.DialTimeout("udp", srvAddr, 10*time.Millisecond)
-		if err == nil {
-			c.Close()
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	srvAddr := srv.Addr().String()
+	waitUDPReady(b, srvAddr)
 
-	clientConn, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: port})
+	clientConn, err := net.DialUDP("udp", nil, srv.Addr().(*net.UDPAddr))
 	if err != nil {
 		b.Fatalf("DialUDP: %v", err)
 	}
@@ -251,7 +215,6 @@ func BenchmarkCoAP_ParseMessage(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Serialize: %v", err)
 	}
-	// Verify it round-trips
 	if _, err := coap.ParseMessage(data); err != nil {
 		b.Fatalf("ParseMessage validation: %v", err)
 	}

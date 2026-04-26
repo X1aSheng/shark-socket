@@ -2,8 +2,11 @@ package websocket
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
+	"fmt"
 	"log"
+	"net"
 	stdhttp "net/http"
 	"sync"
 	"sync/atomic"
@@ -21,6 +24,7 @@ type Server struct {
 	opts     Options
 	upgrader websocket.Upgrader
 	server   *stdhttp.Server
+	listener net.Listener
 	manager  *session.Manager
 	chain    *plugin.Chain
 	handler  types.RawHandler
@@ -78,21 +82,27 @@ func (s *Server) Start() error {
 		Handler: mux,
 	}
 
+	var ln net.Listener
+	var err error
+	if s.opts.TLSConfig != nil {
+		ln, err = tls.Listen("tcp", s.opts.Addr(), s.opts.TLSConfig)
+	} else {
+		ln, err = net.Listen("tcp", s.opts.Addr())
+	}
+	if err != nil {
+		return fmt.Errorf("websocket: listen on %s: %w", s.opts.Addr(), err)
+	}
+	s.listener = ln
+
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		var err error
-		if s.opts.TLSConfig != nil {
-			err = s.server.ListenAndServeTLS("", "")
-		} else {
-			err = s.server.ListenAndServe()
-		}
-		if err != nil && err != stdhttp.ErrServerClosed {
+		if err := s.server.Serve(s.listener); err != nil && err != stdhttp.ErrServerClosed {
 			log.Printf("WebSocket server error: %v", err)
 		}
 	}()
 
-	log.Printf("WebSocket server listening on %s%s", s.opts.Addr(), s.opts.Path)
+	log.Printf("WebSocket server listening on %s%s", s.listener.Addr(), s.opts.Path)
 	return nil
 }
 
@@ -218,6 +228,14 @@ func (s *Server) Stop(ctx context.Context) error {
 
 // Protocol returns WebSocket.
 func (s *Server) Protocol() types.ProtocolType { return types.WebSocket }
+
+// Addr returns the listen address. Only valid after Start().
+func (s *Server) Addr() net.Addr {
+	if s.listener == nil {
+		return nil
+	}
+	return s.listener.Addr()
+}
 
 // Manager returns the session manager.
 func (s *Server) Manager() *session.Manager { return s.manager }

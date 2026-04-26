@@ -188,6 +188,14 @@ func (s *Server) Protocol() types.ProtocolType {
 	return types.TCP
 }
 
+// Addr returns the listener address. Only valid after Start().
+func (s *Server) Addr() net.Addr {
+	if s.listener == nil {
+		return nil
+	}
+	return s.listener.Addr()
+}
+
 // Manager returns the session manager.
 func (s *Server) Manager() *session.Manager {
 	return s.manager

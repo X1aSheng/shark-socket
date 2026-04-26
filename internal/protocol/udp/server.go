@@ -191,6 +191,14 @@ func (s *Server) Stop(ctx context.Context) error {
 // Protocol returns UDP.
 func (s *Server) Protocol() types.ProtocolType { return types.UDP }
 
+// Addr returns the listen address. Only valid after Start().
+func (s *Server) Addr() net.Addr {
+	if s.conn == nil {
+		return nil
+	}
+	return s.conn.LocalAddr()
+}
+
 // SessionCount returns the number of active pseudo-sessions.
 func (s *Server) SessionCount() int {
 	count := 0

@@ -2,8 +2,11 @@ package http
 
 import (
 	"context"
+	"crypto/tls"
+	"fmt"
 	"io"
 	"log"
+	"net"
 	stdhttp "net/http"
 	"sync"
 	"sync/atomic"
@@ -17,14 +20,15 @@ import (
 // Mode A (default): thin net/http wrapper, no session/plugin
 // Mode B (optional): per-request session with plugin integration
 type Server struct {
-	opts    Options
-	server  *stdhttp.Server
-	handler types.RawHandler
-	chain   *plugin.Chain
-	wg      sync.WaitGroup
-	closed  atomic.Bool
-	idGen   atomic.Uint64
-	mux     *stdhttp.ServeMux
+	opts     Options
+	server   *stdhttp.Server
+	listener net.Listener
+	handler  types.RawHandler
+	chain    *plugin.Chain
+	wg       sync.WaitGroup
+	closed   atomic.Bool
+	idGen    atomic.Uint64
+	mux      *stdhttp.ServeMux
 }
 
 // Compile-time verification.
@@ -77,21 +81,27 @@ func (s *Server) Start() error {
 		s.server.TLSConfig = s.opts.TLSConfig
 	}
 
+	var ln net.Listener
+	var err error
+	if s.opts.TLSConfig != nil {
+		ln, err = tls.Listen("tcp", s.opts.Addr(), s.opts.TLSConfig)
+	} else {
+		ln, err = net.Listen("tcp", s.opts.Addr())
+	}
+	if err != nil {
+		return fmt.Errorf("http: listen on %s: %w", s.opts.Addr(), err)
+	}
+	s.listener = ln
+
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		var err error
-		if s.opts.TLSConfig != nil {
-			err = s.server.ListenAndServeTLS("", "")
-		} else {
-			err = s.server.ListenAndServe()
-		}
-		if err != nil && err != stdhttp.ErrServerClosed {
+		if err := s.server.Serve(s.listener); err != nil && err != stdhttp.ErrServerClosed {
 			log.Printf("HTTP server error: %v", err)
 		}
 	}()
 
-	log.Printf("HTTP server listening on %s", s.opts.Addr())
+	log.Printf("HTTP server listening on %s", s.listener.Addr())
 	return nil
 }
 
@@ -156,6 +166,14 @@ func (s *Server) Stop(ctx context.Context) error {
 
 // Protocol returns HTTP.
 func (s *Server) Protocol() types.ProtocolType { return types.HTTP }
+
+// Addr returns the listen address. Only valid after Start().
+func (s *Server) Addr() net.Addr {
+	if s.listener == nil {
+		return nil
+	}
+	return s.listener.Addr()
+}
 
 // SetHandler sets the raw handler for mode B.
 func (s *Server) SetHandler(h types.RawHandler) {
