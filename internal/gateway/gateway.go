@@ -209,12 +209,12 @@ func (g *Gateway) handleHealthz(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (g *Gateway) handleReadyz(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }
 
 func (g *Gateway) handleMetrics(w stdhttp.ResponseWriter, r *stdhttp.Request) {

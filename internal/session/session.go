@@ -25,8 +25,7 @@ type BaseSession struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	meta      sync.Map
-	closeOnce sync.Once
+	meta sync.Map
 }
 
 // NewBase creates a new BaseSession in the Connecting state.

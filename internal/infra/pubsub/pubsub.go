@@ -22,7 +22,6 @@ type PubSub interface {
 
 type subscriber struct {
 	handler func([]byte)
-	done    chan struct{}
 }
 
 type channelSubscription struct {

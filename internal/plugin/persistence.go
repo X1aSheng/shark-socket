@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 	"time"
@@ -61,7 +62,7 @@ func (p *PersistencePlugin) Priority() int { return 50 }
 
 func (p *PersistencePlugin) OnAccept(sess types.RawSession) error {
 	return p.cb.Do(func() error {
-		val, e := p.store.Load(nil, sessionKey(sess.ID()))
+		val, e := p.store.Load(context.TODO(), sessionKey(sess.ID()))
 		if e != nil {
 			return e
 		}
@@ -90,7 +91,7 @@ func (p *PersistencePlugin) OnClose(sess types.RawSession) {
 		"closed_at":  time.Now(),
 	})
 	_ = p.cb.Do(func() error {
-		return p.store.Save(nil, sessionKey(sess.ID()), data)
+		return p.store.Save(context.TODO(), sessionKey(sess.ID()), data)
 	})
 }
 
@@ -130,7 +131,7 @@ func (p *PersistencePlugin) flush(batch []*persistEntry) {
 	for _, entry := range batch {
 		data, _ := json.Marshal(entry)
 		_ = p.cb.Do(func() error {
-			return p.store.Save(nil, sessionKey(entry.SessionID), data)
+			return p.store.Save(context.TODO(), sessionKey(entry.SessionID), data)
 		})
 	}
 }

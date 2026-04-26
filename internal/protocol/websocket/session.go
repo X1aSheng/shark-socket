@@ -72,7 +72,7 @@ func (s *WSSession) Close() error {
 		s.SetState(types.Closing)
 		s.writeMu.Lock()
 		closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
-		s.conn.WriteMessage(websocket.CloseMessage, closeMsg)
+		_ = s.conn.WriteMessage(websocket.CloseMessage, closeMsg)
 		s.writeMu.Unlock()
 		s.SetState(types.Closed)
 		s.DoClose()

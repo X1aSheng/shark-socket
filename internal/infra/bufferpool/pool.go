@@ -48,10 +48,12 @@ type PoolStats struct {
 
 // BufferPool is a six-level sync.Pool-based buffer pool.
 type BufferPool struct {
-	pools    [numPools]sync.Pool
-	stats    PoolStats
-	totalMem atomic.Int64
-	cap      atomic.Int64 // total memory cap in bytes
+	pools     [numPools]sync.Pool
+	hits      [numPools]atomic.Uint64
+	misses    [numPools]atomic.Uint64
+	allocs    [numPools]atomic.Uint64
+	totalMem  atomic.Int64
+	cap       atomic.Int64 // total memory cap in bytes
 	hugeAlloc atomic.Int64
 }
 
@@ -118,12 +120,12 @@ func (bp *BufferPool) Get(size int) *Buffer {
 	if v := bp.pools[level].Get(); v != nil {
 		buf := v.(*Buffer)
 		buf.data = buf.data[:size]
-		bp.stats.Hits[level]++
+		bp.hits[level].Add(1)
 		return buf
 	}
 
-	bp.stats.Misses[level]++
-	bp.stats.Allocs[level]++
+	bp.misses[level].Add(1)
+	bp.allocs[level].Add(1)
 	bp.totalMem.Add(int64(levelSize(level)))
 	b := make([]byte, size)
 	return &Buffer{data: b, cap_: cap(b)}
@@ -155,13 +157,15 @@ func (bp *BufferPool) Put(buf *Buffer) {
 
 // Stats returns a snapshot of pool statistics.
 func (bp *BufferPool) Stats() PoolStats {
-	return PoolStats{
-		Hits:      bp.stats.Hits,
-		Misses:    bp.stats.Misses,
-		Allocs:    bp.stats.Allocs,
-		TotalMem:  bp.totalMem.Load(),
-		HugeAlloc: bp.hugeAlloc.Load(),
+	var s PoolStats
+	for i := range numPools {
+		s.Hits[i] = bp.hits[i].Load()
+		s.Misses[i] = bp.misses[i].Load()
+		s.Allocs[i] = bp.allocs[i].Load()
 	}
+	s.TotalMem = bp.totalMem.Load()
+	s.HugeAlloc = bp.hugeAlloc.Load()
+	return s
 }
 
 // SetTotalMemoryCap sets the total memory cap. When exceeded, Put discards buffers.

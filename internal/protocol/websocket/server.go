@@ -116,10 +116,10 @@ func (s *Server) handleUpgrade(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	conn.SetReadLimit(int64(s.opts.MaxMessageSize))
 	conn.SetPongHandler(func(appData string) error {
 		sess.TouchActive()
-		conn.SetReadDeadline(time.Now().Add(s.opts.PingInterval + s.opts.PongTimeout))
+		_ = conn.SetReadDeadline(time.Now().Add(s.opts.PingInterval + s.opts.PongTimeout))
 		return nil
 	})
-	conn.SetReadDeadline(time.Now().Add(s.opts.PingInterval + s.opts.PongTimeout))
+	_ = conn.SetReadDeadline(time.Now().Add(s.opts.PingInterval + s.opts.PongTimeout))
 
 	s.wg.Add(3)
 	go func() {

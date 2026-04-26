@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	stdhttp "net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -173,9 +174,9 @@ func TestIntegration_Gateway_StopIdempotent(t *testing.T) {
 // testMockServer is a minimal types.Server implementation for gateway tests.
 type testMockServer struct {
 	proto   types.ProtocolType
-	started bool
+	started atomic.Bool
 }
 
-func (m *testMockServer) Start() error                 { m.started = true; return nil }
-func (m *testMockServer) Stop(_ context.Context) error { m.started = false; return nil }
+func (m *testMockServer) Start() error                 { m.started.Store(true); return nil }
+func (m *testMockServer) Stop(_ context.Context) error { m.started.Store(false); return nil }
 func (m *testMockServer) Protocol() types.ProtocolType { return m.proto }
