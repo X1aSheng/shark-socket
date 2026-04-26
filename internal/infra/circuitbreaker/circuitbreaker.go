@@ -51,19 +51,29 @@ func (cb *CircuitBreaker) State() State {
 
 // Do executes fn through the circuit breaker.
 func (cb *CircuitBreaker) Do(fn func() error) error {
-	current := State(cb.state.Load())
+	for {
+		current := State(cb.state.Load())
 
-	switch current {
-	case Open:
-		if time.Since(time.Unix(0, cb.openAt.Load())) > cb.timeout {
-			cb.state.CompareAndSwap(int32(Open), int32(HalfOpen))
-		} else {
+		switch current {
+		case Open:
+			if time.Since(time.Unix(0, cb.openAt.Load())) > cb.timeout {
+				if cb.state.CompareAndSwap(int32(Open), int32(HalfOpen)) {
+					// This goroutine won the race to probe
+					goto execute
+				}
+				// Another goroutine won — retry from top
+				continue
+			}
 			return ErrCircuitOpen
+		case HalfOpen:
+			// Another goroutine is already probing — reject
+			return ErrCircuitOpen
+		case Closed:
+			goto execute
 		}
-	case HalfOpen:
-		// allow one probe call
 	}
 
+execute:
 	err := fn()
 	if err != nil {
 		cb.onFailure()

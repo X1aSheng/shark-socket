@@ -7,7 +7,9 @@ import (
 	"log"
 	stdhttp "net/http"
 	"os/signal"
+	"runtime"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -24,7 +26,8 @@ type Gateway struct {
 	opts          Options
 	wg            sync.WaitGroup
 	metricsServer *stdhttp.Server
-	startTime     time.Time
+	startTime     atomic.Value // time.Time, accessed from metrics handlers
+	started       atomic.Bool
 }
 
 // Compile-time verification.
@@ -62,39 +65,43 @@ func (g *Gateway) Start() error {
 	// Initialize shared session manager
 	g.sharedManager = session.NewManager(session.WithMaxSessions(1000000))
 
-	g.startTime = time.Now()
+	g.startTime.Store(time.Now())
 
 	// Start metrics HTTP server
 	if g.opts.EnableMetrics {
 		go g.serveMetrics()
 	}
 
-	// Start all servers concurrently
-	var startErr error
-	var startMu sync.Mutex
-	var started []types.ProtocolType
+	// Start all servers concurrently, collect first error
+	type startResult struct {
+		proto types.ProtocolType
+		err   error
+	}
+	ch := make(chan startResult, len(g.servers))
 
 	for proto, srv := range g.servers {
 		p, s := proto, srv
 		g.wg.Add(1)
 		go func() {
 			defer g.wg.Done()
-			if err := s.Start(); err != nil {
-				startMu.Lock()
-				if startErr == nil {
-					startErr = fmt.Errorf("server %s failed: %w", p, err)
-				}
-				startMu.Unlock()
-			} else {
-				startMu.Lock()
-				started = append(started, p)
-				startMu.Unlock()
-			}
+			err := s.Start()
+			ch <- startResult{proto: p, err: err}
 		}()
 	}
 
-	// Wait briefly for startup
-	time.Sleep(100 * time.Millisecond)
+	// Wait for all servers to report
+	var startErr error
+	var started []types.ProtocolType
+	for range g.servers {
+		r := <-ch
+		if r.err != nil {
+			if startErr == nil {
+				startErr = fmt.Errorf("server %s failed: %w", r.proto, r.err)
+			}
+		} else {
+			started = append(started, r.proto)
+		}
+	}
 
 	if startErr != nil {
 		// Rollback started servers
@@ -108,6 +115,7 @@ func (g *Gateway) Start() error {
 		return startErr
 	}
 
+	g.started.Store(true)
 	log.Printf("Gateway started with %d protocols", len(g.servers))
 	return nil
 }
@@ -183,13 +191,19 @@ func (g *Gateway) serveMetrics() {
 }
 
 func (g *Gateway) handleHealthz(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	if !g.started.Load() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(stdhttp.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "starting"})
+		return
+	}
+
 	status := "healthy"
 	protocols := make(map[string]any)
-	for proto, srv := range g.servers {
+	for proto := range g.servers {
 		protocols[proto.String()] = map[string]any{
 			"protocol": proto.String(),
 		}
-		_ = srv
 	}
 
 	sessCount := int64(0)
@@ -197,14 +211,18 @@ func (g *Gateway) handleHealthz(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		sessCount = g.sharedManager.Count()
 	}
 
+	var uptime string
+	if t, ok := g.startTime.Load().(time.Time); ok {
+		uptime = time.Since(t).String()
+	}
+
 	resp := map[string]any{
-		"status":   status,
-		"uptime":   time.Since(g.startTime).String(),
+		"status":    status,
+		"uptime":    uptime,
 		"protocols": protocols,
-		"sessions": sessCount,
+		"sessions":  sessCount,
 		"system": map[string]any{
-			"goroutines": 0,
-			"version":    "1.0.0",
+			"goroutines": runtime.NumGoroutine(),
 		},
 	}
 

@@ -5,6 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestPublishSubscribe_BasicCommunication(t *testing.T) {
@@ -25,12 +26,22 @@ func TestPublishSubscribe_BasicCommunication(t *testing.T) {
 		t.Fatalf("Publish returned error: %v", err)
 	}
 
-	got, ok := received.Load().(string)
-	if !ok {
-		t.Fatal("handler was not called")
-	}
-	if got != "hello world" {
-		t.Fatalf("expected %q, got %q", "hello world", got)
+	// Wait for async delivery
+	deadline := time.After(2 * time.Second)
+	for {
+		got, ok := received.Load().(string)
+		if ok {
+			if got != "hello world" {
+				t.Fatalf("expected %q, got %q", "hello world", got)
+			}
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal("handler was not called within timeout")
+		default:
+			time.Sleep(time.Millisecond)
+		}
 	}
 }
 
@@ -91,11 +102,17 @@ func TestUnsubscribe_StopsDelivery(t *testing.T) {
 		t.Fatalf("Publish returned error: %v", err)
 	}
 
+	// Wait for async delivery
+	time.Sleep(100 * time.Millisecond)
+
 	sub.Unsubscribe()
 
 	if err := ps.Publish(context.Background(), "unsub-topic", []byte("second")); err != nil {
 		t.Fatalf("Publish after unsubscribe returned error: %v", err)
 	}
+
+	// Wait briefly to ensure second message is not delivered
+	time.Sleep(50 * time.Millisecond)
 
 	if got := count.Load(); got != 1 {
 		t.Fatalf("expected handler to be called once, got %d", got)

@@ -108,9 +108,13 @@ func (b *BaseSession) GetMeta(key string) (any, bool) { return b.meta.Load(key) 
 // DelMeta deletes a metadata value.
 func (b *BaseSession) DelMeta(key string) { b.meta.Delete(key) }
 
-// DoClose performs the base close logic (CAS to Closed + cancel context).
+// DoClose performs the base close logic: set state to Closed, clear metadata, cancel context.
 // Should be called via sync.Once in the protocol-specific Close method.
 func (b *BaseSession) DoClose() {
 	b.SetState(types.Closed)
+	b.meta.Range(func(key, _ any) bool {
+		b.meta.Delete(key)
+		return true
+	})
 	b.cancel()
 }

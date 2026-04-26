@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"log"
 	"slices"
 
 	"github.com/X1aSheng/shark-socket/internal/errs"
@@ -53,7 +54,17 @@ func (c *Chain) Add(p types.Plugin) {
 // OnAccept executes plugins in order on connection acceptance.
 func (c *Chain) OnAccept(sess types.RawSession) error {
 	for _, p := range c.plugins {
-		if err := p.OnAccept(sess); err != nil {
+		var err error
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[shark-socket] plugin %s OnAccept panic: %v", p.Name(), r)
+					err = nil
+				}
+			}()
+			err = p.OnAccept(sess)
+		}()
+		if err != nil {
 			if err == errs.ErrBlock {
 				_ = sess.Close()
 				return errs.ErrBlock
@@ -70,7 +81,18 @@ func (c *Chain) OnAccept(sess types.RawSession) error {
 // OnMessage executes plugins in order, threading data through the chain.
 func (c *Chain) OnMessage(sess types.RawSession, data []byte) ([]byte, error) {
 	for _, p := range c.plugins {
-		out, err := p.OnMessage(sess, data)
+		var out []byte
+		var err error
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[shark-socket] plugin %s OnMessage panic: %v", p.Name(), r)
+					out = data // pass through unchanged
+					err = nil
+				}
+			}()
+			out, err = p.OnMessage(sess, data)
+		}()
 		if err != nil {
 			switch err {
 			case errs.ErrSkip:
@@ -92,7 +114,15 @@ func (c *Chain) OnMessage(sess types.RawSession, data []byte) ([]byte, error) {
 // OnClose executes plugins in reverse order, always calling all.
 func (c *Chain) OnClose(sess types.RawSession) {
 	for i := len(c.plugins) - 1; i >= 0; i-- {
-		c.plugins[i].OnClose(sess)
+		p := c.plugins[i]
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[shark-socket] plugin %s OnClose panic: %v", p.Name(), r)
+				}
+			}()
+			p.OnClose(sess)
+		}()
 	}
 }
 
