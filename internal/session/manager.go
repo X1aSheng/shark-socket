@@ -68,18 +68,21 @@ func (m *Manager) Register(sess types.RawSession) error {
 	si := m.shardIndex(id)
 	s := &m.shards[si]
 
+	// Atomically reserve a slot
+	newTotal := m.total.Add(1)
+
 	s.mu.Lock()
 	if _, exists := s.sessions[id]; exists {
+		m.total.Add(-1) // rollback reservation
 		s.mu.Unlock()
 		return errs.ErrDuplicateSession
 	}
-	// Check capacity and evict if needed
-	if m.total.Load() >= m.maxSess {
+	// If over capacity after reservation, evict
+	if newTotal > m.maxSess {
 		m.evictGlobal(s, si)
 	}
 	s.sessions[id] = sess
 	s.lru.Touch(id)
-	m.total.Add(1)
 	s.mu.Unlock()
 	return nil
 }

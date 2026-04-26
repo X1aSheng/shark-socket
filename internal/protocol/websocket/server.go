@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"errors"
 	"log"
 	stdhttp "net/http"
 	"sync"
@@ -158,7 +159,7 @@ func (s *Server) readLoop(sess *WSSession) {
 		if s.chain != nil {
 			data, err = s.chain.OnMessage(sess, msgData)
 			if err != nil {
-				if err == errs.ErrDrop {
+				if errors.Is(err, errs.ErrDrop) {
 					continue
 				}
 				return

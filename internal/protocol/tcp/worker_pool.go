@@ -1,10 +1,12 @@
 package tcp
 
 import (
+	"log"
 	"sync"
 	"sync/atomic"
 
 	"github.com/X1aSheng/shark-socket/internal/errs"
+	"github.com/X1aSheng/shark-socket/internal/infra/metrics"
 	"github.com/X1aSheng/shark-socket/internal/plugin"
 	"github.com/X1aSheng/shark-socket/internal/types"
 )
@@ -147,7 +149,10 @@ func (wp *WorkerPool) runTempWorker(first task) {
 
 func (wp *WorkerPool) processTask(t task) {
 	defer func() {
-		_ = recover()
+		if r := recover(); r != nil {
+			log.Printf("[tcp-worker] panic in processTask: %v", r)
+			metrics.IncCounter("shark_worker_panics_total", "tcp")
+		}
 	}()
 
 	var err error

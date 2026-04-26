@@ -116,14 +116,12 @@ func (p *BlacklistPlugin) Reload(ips []string) {
 
 func (p *BlacklistPlugin) isBlocked(key string) bool {
 	p.mu.RLock()
+	defer p.mu.RUnlock()
+
 	if e, ok := p.exactMap[key]; ok && !e.isExpired() {
-		p.mu.RUnlock()
 		return true
 	}
-	p.mu.RUnlock()
 
-	p.mu.RLock()
-	defer p.mu.RUnlock()
 	ip := net.ParseIP(key)
 	for _, cidr := range p.cidrList {
 		if cidr.Contains(ip) {

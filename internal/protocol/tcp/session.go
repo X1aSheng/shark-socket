@@ -16,11 +16,12 @@ type TCPSession struct {
 	*session.BaseSession
 	conn       net.Conn
 	framer     Framer
-	writeQueue chan []byte
+	writeQueue chan *bufferpool.Buffer
 	encoder    func([]byte) ([]byte, error)
 	drained    chan struct{}
 	closeOnce  sync.Once
 	draining   chan struct{}
+	drainTimeout time.Duration
 }
 
 // Compile-time verification.
@@ -32,7 +33,7 @@ func NewTCPSession(id uint64, conn net.Conn, framer Framer, writeQueueSize int) 
 		BaseSession: session.NewBase(id, types.TCP, conn.RemoteAddr(), conn.LocalAddr()),
 		conn:        conn,
 		framer:      framer,
-		writeQueue:  make(chan []byte, writeQueueSize),
+		writeQueue:  make(chan *bufferpool.Buffer, writeQueueSize),
 		drained:     make(chan struct{}),
 		draining:    make(chan struct{}),
 	}
@@ -40,16 +41,20 @@ func NewTCPSession(id uint64, conn net.Conn, framer Framer, writeQueueSize int) 
 	return s
 }
 
+// SetDrainTimeout sets the drain timeout for graceful close.
+func (s *TCPSession) SetDrainTimeout(d time.Duration) {
+	s.drainTimeout = d
+}
+
 // Send enqueues data for non-blocking write.
 func (s *TCPSession) Send(data []byte) error {
 	if !s.IsAlive() {
 		return errs.ErrSessionClosed
 	}
-	// Copy data into pooled buffer for isolation
 	buf := bufferpool.GetDefault(len(data))
 	copy(buf.Bytes(), data)
 	select {
-	case s.writeQueue <- buf.Bytes():
+	case s.writeQueue <- buf:
 		return nil
 	default:
 		bufferpool.PutDefault(buf)
@@ -75,7 +80,6 @@ func (s *TCPSession) Close() error {
 	s.closeOnce.Do(func() {
 		// Step 1: CAS Active -> Closing
 		if !s.SetState(types.Closing) {
-			// Already closing or closed
 			if s.State() == types.Closed {
 				return
 			}
@@ -85,11 +89,13 @@ func (s *TCPSession) Close() error {
 		close(s.draining)
 
 		// Step 3: Wait for writeQueue drain with timeout
+		timeout := s.drainTimeout
+		if timeout <= 0 {
+			timeout = 5 * time.Second
+		}
 		select {
 		case <-s.drained:
-			// drain complete
-		case <-time.After(5 * time.Second):
-			// drain timeout, force continue
+		case <-time.After(timeout):
 		}
 
 		// Step 4: CAS Closing -> Closed
@@ -134,20 +140,22 @@ func (s *TCPSession) WriteLoop() {
 
 	for {
 		select {
-		case data, ok := <-s.writeQueue:
+		case buf, ok := <-s.writeQueue:
 			if !ok {
 				return
 			}
-			_ = s.framer.WriteFrame(s.conn, data)
+			_ = s.framer.WriteFrame(s.conn, buf.Bytes())
+			bufferpool.PutDefault(buf)
 		case <-s.draining:
 			// Drain remaining items
 			for {
 				select {
-				case data, ok := <-s.writeQueue:
+				case buf, ok := <-s.writeQueue:
 					if !ok {
 						return
 					}
-					_ = s.framer.WriteFrame(s.conn, data)
+					_ = s.framer.WriteFrame(s.conn, buf.Bytes())
+					bufferpool.PutDefault(buf)
 				default:
 					return
 				}

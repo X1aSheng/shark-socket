@@ -101,17 +101,24 @@ func (s *CoAPSession) IsDuplicate(msgID uint16) bool {
 }
 
 // RecordMessageID adds a MessageID to the dedup cache.
+// Evicts oldest entries when cache exceeds maxSize.
 func (s *CoAPSession) RecordMessageID(msgID uint16) {
 	s.msgCacheMu.Lock()
 	s.msgCache[msgID] = time.Now()
-	// Evict old entries if cache is too large
-	if len(s.msgCache) > 500 {
-		cutoff := time.Now().Add(-5 * time.Minute)
+	// Evict oldest entries when over capacity
+	const maxCacheSize = 500
+	if len(s.msgCache) > maxCacheSize {
+		var oldestID uint16
+		var oldestTime time.Time
+		first := true
 		for id, t := range s.msgCache {
-			if t.Before(cutoff) {
-				delete(s.msgCache, id)
+			if first || t.Before(oldestTime) {
+				oldestID = id
+				oldestTime = t
+				first = false
 			}
 		}
+		delete(s.msgCache, oldestID)
 	}
 	s.msgCacheMu.Unlock()
 }

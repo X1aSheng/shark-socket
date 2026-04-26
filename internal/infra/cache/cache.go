@@ -14,6 +14,7 @@ type Cache interface {
 	Exists(ctx context.Context, key string) (bool, error)
 	TTL(ctx context.Context, key string) (time.Duration, error)
 	MGet(ctx context.Context, keys []string) (map[string][]byte, error)
+	Close() error
 }
 
 type cacheEntry struct {
@@ -142,6 +143,7 @@ func (c *MemoryCache) MGet(_ context.Context, keys []string) (map[string][]byte,
 }
 
 // Close stops the background cleanup goroutine.
-func (c *MemoryCache) Close() {
+func (c *MemoryCache) Close() error {
 	close(c.stopCh)
+	return nil
 }

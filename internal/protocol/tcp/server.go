@@ -115,6 +115,9 @@ func (s *Server) acceptLoop() {
 func (s *Server) handleConn(conn net.Conn) {
 	id := s.manager.NextID()
 	sess := NewTCPSession(id, conn, s.opts.Framer, s.opts.WriteQueueSize)
+	if s.opts.DrainTimeout > 0 {
+		sess.SetDrainTimeout(time.Duration(s.opts.DrainTimeout) * time.Second)
+	}
 
 	if err := s.manager.Register(sess); err != nil {
 		conn.Close()

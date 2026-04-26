@@ -3,6 +3,7 @@ package pubsub
 import (
 	"context"
 	"errors"
+	"log"
 	"sync"
 )
 
@@ -98,7 +99,7 @@ func (ps *ChannelPubSub) Publish(_ context.Context, topic string, data []byte) e
 		select {
 		case sub.ch <- cp:
 		default:
-			// Slow consumer: drop message
+			log.Printf("pubsub: message dropped on topic %q (slow consumer)", topic)
 		}
 	}
 	return nil

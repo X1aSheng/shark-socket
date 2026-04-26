@@ -2,6 +2,7 @@ package defense
 
 import (
 	"log"
+	"sync"
 	"time"
 )
 
@@ -20,7 +21,6 @@ func NewBackpressureController(highWatermark, criticalMark float64) *Backpressur
 }
 
 // CheckQueueLevel evaluates the write queue fill ratio and returns an action.
-// Returns: "ok", "warn", "close"
 func (b *BackpressureController) CheckQueueLevel(currentSize, capacity int) string {
 	if capacity <= 0 {
 		return "ok"
@@ -39,6 +39,7 @@ func (b *BackpressureController) CheckQueueLevel(currentSize, capacity int) stri
 
 // BroadcastLimiter controls broadcast rate to prevent storms.
 type BroadcastLimiter struct {
+	mu          sync.Mutex
 	maxSize     int
 	minInterval time.Duration
 	lastSend    map[string]time.Time
@@ -55,6 +56,9 @@ func NewBroadcastLimiter(maxSize int, minInterval time.Duration) *BroadcastLimit
 
 // Allow checks if a broadcast of the given size is allowed.
 func (bl *BroadcastLimiter) Allow(topic string, dataSize int) bool {
+	bl.mu.Lock()
+	defer bl.mu.Unlock()
+
 	if dataSize > bl.maxSize {
 		return false
 	}
