@@ -6,18 +6,19 @@
 
 ## 审查概况
 
-| 级别 | 数量 | 说明 |
+| 级别 | 数量 | 状态 |
 |------|------|------|
-| Critical | 6 | 生产稳定性风险：竞态条件、panic 未恢复、资源泄漏 |
-| High | 9 | 正确性缺陷：状态转换错误、阻塞操作、虚假健康检查 |
-| Medium | 9 | 质量问题：编码规范、边界校验、性能优化 |
-| 总计 | 24 | |
+| Critical (Phase 1) | 6 | ✅ 全部完成 |
+| High (Phase 2) | 9 | ✅ 全部完成 |
+| Medium (Phase 3) | 9 | ✅ 全部完成 |
+| Long-term (Phase 4) | 5 | 🔲 待实施 |
+| 总计 | 29 | 24/29 已完成 |
 
 ---
 
 ## 第一阶段：Critical 修复（稳定性）
 
-### 1.1 Gateway 启动同步 — 替换 time.Sleep
+### 1.1 Gateway 启动同步 — 替换 time.Sleep ✅
 
 **问题**：`internal/gateway/gateway.go:97` 使用 `time.Sleep(100ms)` 等待服务器启动，存在竞态：100ms 内服务器可能未就绪，也可能已失败。
 
@@ -53,7 +54,7 @@ if err := g.Wait(); err != nil {
 
 ---
 
-### 1.2 Plugin Chain panic 保护
+### 1.2 Plugin Chain panic 保护 ✅
 
 **问题**：`internal/plugin/chain.go` 中任何插件 panic 会崩溃整个链路，拖垮服务。
 
@@ -82,7 +83,7 @@ func (c *Chain) OnAccept(sess types.RawSession) error {
 
 ---
 
-### 1.3 TCP 连接生命周期管理
+### 1.3 TCP 连接生命周期管理 ✅
 
 **问题**：`internal/protocol/tcp/server.go:82-108` shutdown 窗口内接受的连接可能产生无限运行的 goroutine，缺少 context 传播。
 
@@ -111,7 +112,7 @@ func (s *Server) acceptLoop() {
 
 ---
 
-### 1.4 UDP Session 原子创建
+### 1.4 UDP Session 原子创建 ✅
 
 **问题**：`internal/protocol/udp/server.go:131-149` 多个 goroutine 可对同一地址创建重复 session。
 
@@ -132,7 +133,7 @@ func (s *Server) getOrCreateSession(addr string, raddr *net.UDPAddr) *UDPSession
 
 ---
 
-### 1.5 CoAP pendingACKs 加锁
+### 1.5 CoAP pendingACKs 加锁 ✅
 
 **问题**：`internal/protocol/coap/server.go:151-162` 重传定时器与主循环并发访问 pendingACKs map，无锁保护导致 data race。
 
@@ -158,7 +159,7 @@ func (s *Session) addPending(msgID uint16, data []byte) {
 
 ---
 
-### 1.6 PubSub 异步分发
+### 1.6 PubSub 异步分发 ✅
 
 **问题**：`internal/infra/pubsub/pubsub.go:64` handler 同步调用，一个慢消费者阻塞整个 topic 的消息分发。
 
@@ -196,7 +197,7 @@ func (s *subscription) process() {
 
 ## 第二阶段：High 修复（正确性）
 
-### 2.1 Session Manager Broadcast 并发化
+### 2.1 Session Manager Broadcast 并发化 ✅
 
 **问题**：`session/manager.go:153` 遍历所有 session 逐个 Send，一个失败影响后续所有。
 
@@ -206,7 +207,7 @@ func (s *subscription) process() {
 
 ---
 
-### 2.2 Session Close CAS 保护
+### 2.2 Session Close CAS 保护 ✅
 
 **问题**：`session/session.go:113-116` DoClose 未做 CAS 状态保护，并发 Close 可多次调用 cancel()。
 
@@ -216,7 +217,7 @@ func (s *subscription) process() {
 
 ---
 
-### 2.3 Session meta 清理
+### 2.3 Session meta 清理 ✅
 
 **问题**：`session/session.go:28` Close 后 meta sync.Map 不释放，可能长期持有引用。
 
@@ -226,7 +227,7 @@ func (s *subscription) process() {
 
 ---
 
-### 2.4 WorkerPool tempCount 原子操作
+### 2.4 WorkerPool tempCount 原子操作 ✅
 
 **问题**：`protocol/tcp/worker_pool.go:88-94` PolicySpawnTemp 下 tempCount 非原子操作。
 
@@ -236,7 +237,7 @@ func (s *subscription) process() {
 
 ---
 
-### 2.5 WebSocket pingLoop 生命周期
+### 2.5 WebSocket pingLoop 生命周期 ✅
 
 **问题**：`protocol/websocket/server.go:171-188` session 关闭后 ping goroutine 可能继续运行。
 
@@ -246,7 +247,7 @@ func (s *subscription) process() {
 
 ---
 
-### 2.6 CircuitBreaker CAS 状态转换
+### 2.6 CircuitBreaker CAS 状态转换 ✅
 
 **问题**：`infra/circuitbreaker/circuitbreaker.go:54` Open→HalfOpen 转换可被多 goroutine 同时触发。
 
@@ -256,7 +257,7 @@ func (s *subscription) process() {
 
 ---
 
-### 2.7 Gateway 健康检查
+### 2.7 Gateway 健康检查 ✅
 
 **问题**：`gateway/gateway.go:188-192` healthz 只返回固定 "healthy"，未检测各协议真实状态。
 
@@ -266,7 +267,7 @@ func (s *subscription) process() {
 
 ---
 
-### 2.8 HTTP Mode B 会话唯一性
+### 2.8 HTTP Mode B 会话唯一性 ✅
 
 **问题**：`protocol/http/server.go:93-135` 多个请求可能产生相同 session ID。
 
@@ -276,7 +277,7 @@ func (s *subscription) process() {
 
 ---
 
-### 2.9 MemoryCache 惰性删除
+### 2.9 MemoryCache 惰性删除 ✅
 
 **问题**：`infra/cache/cache.go:78` Get 读到过期项不删除，浪费内存。
 
@@ -288,7 +289,7 @@ func (s *subscription) process() {
 
 ## 第三阶段：Medium 修复（质量）
 
-### 3.1 Message ID hex 编码
+### 3.1 Message ID hex 编码 ✅
 
 **问题**：`types/message.go:43-44` 原始随机字节转 string 含不可打印字符。
 
@@ -298,7 +299,7 @@ func (s *subscription) process() {
 
 ---
 
-### 3.2 Gateway startTime 原子化
+### 3.2 Gateway startTime 原子化 ✅
 
 **问题**：`gateway/gateway.go:28` startTime 无锁保护，metrics handler 并发访问可能竞态。
 
@@ -308,7 +309,7 @@ func (s *subscription) process() {
 
 ---
 
-### 3.3 ShardedMap FNV-1a 哈希
+### 3.3 ShardedMap FNV-1a 哈希 ✅
 
 **问题**：`utils/sync.go:66-90` hashAny 对字符串 key 分布不均。
 
@@ -318,7 +319,7 @@ func (s *subscription) process() {
 
 ---
 
-### 3.4 Session Register 重复检测
+### 3.4 Session Register 重复检测 ✅
 
 **问题**：`session/manager.go:82` 重复 ID 静默覆盖已有 session。
 
@@ -328,7 +329,7 @@ func (s *subscription) process() {
 
 ---
 
-### 3.5 BufferPool 尺寸校验
+### 3.5 BufferPool 尺寸校验 ✅
 
 **问题**：`infra/bufferpool/pool.go:113-132` sync.Pool 返回的旧 buffer 可能小于请求尺寸。
 
@@ -338,7 +339,7 @@ func (s *subscription) process() {
 
 ---
 
-### 3.6 CoAP option 边界校验
+### 3.6 CoAP option 边界校验 ✅
 
 **问题**：`protocol/coap/message.go:177-219` 序列化时无 option delta/length 边界校验。
 
@@ -348,7 +349,7 @@ func (s *subscription) process() {
 
 ---
 
-### 3.7 OverloadProtector 主动拒绝
+### 3.7 OverloadProtector 主动拒绝 ✅
 
 **问题**：`defense/overload.go:31` 过载时仅打日志，不主动拒绝连接。
 
@@ -358,7 +359,7 @@ func (s *subscription) process() {
 
 ---
 
-### 3.8 HTTP 请求体大小限制
+### 3.8 HTTP 请求体大小限制 ✅
 
 **问题**：`protocol/http/server.go` 无请求体大小限制，可能导致内存耗尽。
 
@@ -368,7 +369,7 @@ func (s *subscription) process() {
 
 ---
 
-### 3.9 Framer 边界校验
+### 3.9 Framer 边界校验 ✅
 
 **问题**：`protocol/tcp/framer.go:30-54` RawFramer 无边界校验，畸形数据可导致 panic。
 
