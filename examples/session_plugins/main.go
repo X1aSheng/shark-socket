@@ -44,7 +44,7 @@ func main() {
 
 	// --- TCP Server with Plugins ---
 	srv := api.NewTCPServer(handler,
-		tcp.WithAddr("0.0.0.0", 8087),
+		tcp.WithAddr("0.0.0.0", 18000),
 		tcp.WithPlugins(blacklist, rateLimit),
 		tcp.WithMaxSessions(10000),
 	)
@@ -54,14 +54,14 @@ func main() {
 	}
 
 	log.Println("=== TCP Server with Plugins ===")
-	log.Println("Listening on :8087")
+	log.Println("Listening on :18000")
 	log.Println("")
 	log.Println("Active plugins:")
 	log.Println("  1. BlacklistPlugin - blocks 192.168.1.100 and 10.0.0.0/8")
 	log.Println("  2. RateLimitPlugin  - 100 conn/s global, 10/s per-IP burst")
 	log.Println("")
 	log.Println("Test with:")
-	log.Println("  nc localhost 8087")
+	log.Println("  nc localhost 18000")
 	log.Println("")
 	log.Println("Plugin chain order (by priority):")
 	log.Println("  blacklist (priority 0) -> ratelimit (priority 10)")

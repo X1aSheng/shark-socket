@@ -339,8 +339,8 @@ func TestOptions_Defaults(t *testing.T) {
 	if o.Host != "0.0.0.0" {
 		t.Errorf("default Host = %q, want %q", o.Host, "0.0.0.0")
 	}
-	if o.Port != 8080 {
-		t.Errorf("default Port = %d, want %d", o.Port, 8080)
+	if o.Port != 18000 {
+		t.Errorf("default Port = %d, want %d", o.Port, 18000)
 	}
 	if o.WriteQueueSize != 128 {
 		t.Errorf("default WriteQueueSize = %d, want %d", o.WriteQueueSize, 128)

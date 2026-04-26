@@ -25,7 +25,7 @@ type Options struct {
 func defaultOptions() Options {
 	return Options{
 		Host:           "0.0.0.0",
-		Port:           8081,
+		Port:           18600,
 		Path:           "/ws",
 		MaxSessions:    100000,
 		MaxMessageSize: 1024 * 1024, // 1MB

@@ -21,7 +21,7 @@ func main() {
 	}
 
 	srv := api.NewWebSocketServer(handler,
-		websocket.WithAddr("0.0.0.0", 8083),
+		websocket.WithAddr("0.0.0.0", 18600),
 		websocket.WithPath("/ws"),
 		websocket.WithPingPong(30*time.Second, 10*time.Second),
 	)
@@ -31,13 +31,13 @@ func main() {
 	}
 
 	log.Println("=== Basic WebSocket Echo Server ===")
-	log.Println("Listening on :8083/ws")
+	log.Println("Listening on :18600/ws")
 	log.Println("")
 	log.Println("Test with:")
-	log.Println("  websocat ws://localhost:8083/ws")
+	log.Println("  websocat ws://localhost:18600/ws")
 	log.Println("")
 	log.Println("Or use a browser console:")
-	log.Println("  const ws = new WebSocket('ws://localhost:8083/ws');")
+	log.Println("  const ws = new WebSocket('ws://localhost:18600/ws');")
 	log.Println("  ws.onmessage = e => console.log('echo:', e.data);")
 	log.Println("  ws.send('hello');")
 	log.Println("")

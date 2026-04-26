@@ -35,7 +35,7 @@ func main() {
 	}
 
 	srv := api.NewCoAPServer(handler,
-		coap.WithAddr("0.0.0.0", 5683),
+		coap.WithAddr("0.0.0.0", 18800),
 	)
 
 	if err := srv.Start(); err != nil {
@@ -43,13 +43,13 @@ func main() {
 	}
 
 	log.Println("=== Basic CoAP Server ===")
-	log.Println("Listening on :5683 (UDP)")
+	log.Println("Listening on :18800 (UDP)")
 	log.Println("")
 	log.Println("Test with (install coap-client from libcoap):")
-	log.Println("  coap-client coap://localhost:5683")
-	log.Println("  echo 'test data' | coap-client -m post coap://localhost:5683")
+	log.Println("  coap-client coap://localhost:18800")
+	log.Println("  echo 'test data' | coap-client -m post coap://localhost:18800")
 	log.Println("")
-	log.Println("Or use Copper (Firefox extension) at coap://localhost:5683")
+	log.Println("Or use Copper (Firefox extension) at coap://localhost:18800")
 	log.Println("")
 	log.Println("Press Ctrl+C to stop.")
 

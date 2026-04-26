@@ -22,7 +22,7 @@ type Options struct {
 func defaultOptions() Options {
 	return Options{
 		Host:            "0.0.0.0",
-		Port:            5683,
+		Port:            18800,
 		MaxSessions:     100000,
 		SessionTTL:      5 * time.Minute,
 		AckTimeout:      2 * time.Second,

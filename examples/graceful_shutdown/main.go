@@ -34,7 +34,7 @@ func main() {
 	}
 
 	srv := api.NewTCPServer(handler,
-		tcp.WithAddr("0.0.0.0", 8088),
+		tcp.WithAddr("0.0.0.0", 18000),
 		tcp.WithMaxSessions(5000),
 		tcp.WithDrainTimeout(10),
 	)
@@ -44,10 +44,10 @@ func main() {
 	}
 
 	log.Println("=== Graceful Shutdown Demo ===")
-	log.Println("Listening on :8088")
+	log.Println("Listening on :18000")
 	log.Println("")
 	log.Println("Test with:")
-	log.Println("  nc localhost 8088")
+	log.Println("  nc localhost 18000")
 	log.Println("")
 	log.Println("Send SIGINT (Ctrl+C) or SIGTERM to trigger graceful shutdown.")
 	log.Println("The server will:")
@@ -79,7 +79,7 @@ func main() {
 	go func() {
 		time.Sleep(2 * time.Second)
 		log.Println("Attempting new connection during shutdown...")
-		conn, err := net.DialTimeout("tcp", "localhost:8088", 2*time.Second)
+		conn, err := net.DialTimeout("tcp", "localhost:18000", 2*time.Second)
 		if err != nil {
 			log.Printf("New connection rejected (expected): %v", err)
 			return

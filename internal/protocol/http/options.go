@@ -21,7 +21,7 @@ type Options struct {
 func defaultOptions() Options {
 	return Options{
 		Host:         "0.0.0.0",
-		Port:         8082,
+		Port:         18400,
 		ReadTimeout:  30,
 		WriteTimeout: 30,
 		IdleTimeout:  120,

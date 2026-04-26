@@ -15,7 +15,7 @@ import (
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	srv := api.NewHTTPServer(http.WithAddr("0.0.0.0", 8082))
+	srv := api.NewHTTPServer(http.WithAddr("0.0.0.0", 18400))
 
 	// Route: GET /hello
 	srv.HandleFunc("/hello", func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -53,12 +53,12 @@ func main() {
 	}
 
 	log.Println("=== Basic HTTP Server (Mode A) ===")
-	log.Println("Listening on :8082")
+	log.Println("Listening on :18400")
 	log.Println("")
 	log.Println("Test with:")
-	log.Println("  curl http://localhost:8082/")
-	log.Println("  curl http://localhost:8082/hello")
-	log.Println("  curl http://localhost:8082/health")
+	log.Println("  curl http://localhost:18400/")
+	log.Println("  curl http://localhost:18400/hello")
+	log.Println("  curl http://localhost:18400/health")
 	log.Println("")
 	log.Println("Press Ctrl+C to stop.")
 

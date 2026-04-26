@@ -1,6 +1,6 @@
 # Shark-Socket 架构设计文档
 
-> 高性能、可扩展的多协议网络框架，采用 Go 语言开发（Go >= 1.24），支持 TCP、TLS、UDP、HTTP、WebSocket 和 CoAP 协议的统一抽象与网关集成。
+> 高性能、可扩展的多协议网络框架，采用 Go 语言开发（Go >= 1.26），支持 TCP、TLS、UDP、HTTP、WebSocket 和 CoAP 协议的统一抽象与网关集成。
 
 ---
 
@@ -41,14 +41,14 @@
 | BufferPool | **6 级**（Micro/Tiny/Small/Medium/Large/Huge） | 更细粒度覆盖 IoT/控制帧到大文件场景 |
 | HTTP Server | 可选 Session + Plugin | 双模式：轻量模式 A + 完整模式 B |
 
-### 1.4 Go 1.24 特性适配
+### 1.4 Go 1.26 特性适配
 
 - **iter 包**：Range / 广播遍历使用 `iter.Seq` 迭代器替代回调函数
-- **sync.Map 增强**：Go 1.24 `sync.Map` 支持 `Swap`、`CompareAndDelete`，替换部分手写 CAS
-- **crypto/tls**：Go 1.24 默认 TLS 1.3，弃用旧密码套件，证书热加载基于新 `GetConfigForClient`
+- **sync.Map 增强**：Go 1.26 `sync.Map` 支持 `Swap`、`CompareAndDelete`，替换部分手写 CAS
+- **crypto/tls**：Go 1.26 默认 TLS 1.3，弃用旧密码套件，证书热加载基于新 `GetConfigForClient`
 - **unique 包**：协议标签字符串池化，减少字符串分配
 - **slices / maps 包**：Plugin 排序、分片遍历使用标准泛型工具函数
-- **泛型增强**：Go 1.24 类型推断改进，`Session[M]` 泛型约束更简洁
+- **泛型增强**：Go 1.26 类型推断改进，`Session[M]` 泛型约束更简洁
 
 ### 1.5 Session 泛型设计说明
 
@@ -211,7 +211,7 @@ shark-socket/
 │   └── docker-build.sh
 ├── Dockerfile
 ├── docker-compose.yml
-├── go.mod                        # Go 1.24，外部依赖仅 2 个
+├── go.mod                        # Go 1.26，外部依赖仅 2 个
 ├── go.sum
 └── README.md
 ```
@@ -234,7 +234,7 @@ SessionState uint8:
   Connecting(0) | Active(1) | Closing(2) | Closed(3)
 
 所有枚举实现 String() 方法，底层 uint8，编译期常量。
-使用 unique 包池化协议标签字符串（Go 1.24）。
+使用 unique 包池化协议标签字符串（Go 1.26）。
 ```
 
 ### 4.2 消息（message.go）
@@ -320,7 +320,7 @@ SessionManager interface {
     Unregister(id uint64)
     Get(id uint64) (RawSession, bool)
     Count() int64
-    // Go 1.24 iter.Seq 风格遍历（替代回调函数）
+    // Go 1.26 iter.Seq 风格遍历（替代回调函数）
     All() iter.Seq[RawSession]
     Range(fn func(RawSession) bool)   // 兼容旧风格
     Broadcast(data []byte)
@@ -674,7 +674,7 @@ shard struct {
                     → totalAct.Add(-1)
   Get(id)           → shard.mu.RLock → sessions[id]，O(1)
   Count()           → totalAct.Load（无锁）
-  All()             → iter.Seq[RawSession]（Go 1.24 iter 包）
+  All()             → iter.Seq[RawSession]（Go 1.26 iter 包）
   Range(fn)         → 依次对 32 shard RLock 遍历
   Broadcast(data)   → Range + sess.Send，扇出限速
   Close()           → Range → sess.Close() → lru.stop
@@ -771,7 +771,7 @@ TTL 过期：惰性过期 + 后台清理 goroutine（每分钟）
 ```
 双层令牌桶：
   globalBucket  *tokenBucket          // 全局速率上限
-  perIPBuckets  sync.Map              // per-IP 独立桶（Go 1.24 CompareAndDelete 优化清理）
+  perIPBuckets  sync.Map              // per-IP 独立桶（Go 1.26 CompareAndDelete 优化清理）
 
 算法：漏桶补充（按实际时间差补充令牌）→ 检查 >= 1 → 原子扣减
 OnAccept：连接速率限流（返回 ErrBlock）
@@ -853,7 +853,7 @@ OnClose：
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
 | Host | "0.0.0.0" | 监听地址 |
-| Port | 8080 | 监听端口 |
+| Port | 18000 | 监听端口 |
 | WorkerCount | NumCPU×2 | 核心 Worker 数量 |
 | TaskQueueSize | WorkerCount×128 | 任务队列容量 |
 | MaxWorkers | WorkerCount×4 | 最大 Worker（含临时扩容） |
@@ -1410,7 +1410,7 @@ listener.Accept()
 | 单 goroutine 写 | TCPSession | writeQueue channel 消除写锁竞争 |
 | 静态排序插件链 | PluginChain | 启动时 slices.SortFunc，热路径直接索引 |
 | 时间轮 | HeartbeatPlugin | 10 万连接仅 1 goroutine |
-| unique 字符串池 | 协议标签 | Go 1.24 unique 包，减少 string 分配 |
+| unique 字符串池 | 协议标签 | Go 1.26 unique 包，减少 string 分配 |
 | SendTyped 内联 | M=[]byte 时 | 编译器内联消除 encoder 调用开销 |
 
 ### 14.3 I/O
@@ -1534,8 +1534,8 @@ Goroutine 泄漏：
 ## 16. 安全加固
 
 ```
-TLS（Go 1.24 crypto/tls）：
-  MinVersion = tls.VersionTLS13（Go 1.24 默认，弃用 TLS 1.2 弱密码套件）
+TLS（Go 1.26 crypto/tls）：
+  MinVersion = tls.VersionTLS13（Go 1.26 默认，弃用 TLS 1.2 弱密码套件）
   强密码套件 + ECDHE 密钥交换（前向保密）
   证书热加载：监听 SIGHUP 信号 → GetConfigForClient 回调 → 不中断已有连接
   支持 ACME / Let's Encrypt 自动证书（可选）
@@ -1725,7 +1725,7 @@ BenchmarkSendTyped           SendTyped vs Send 开销对比（M=[]byte 验证零
 
 ```
 Docker Container：
-  TCP:8080 / TLS:8443 / WS:8081 / UDP:5683（CoAP）/ HTTP:8082 / Metrics:9090
+  TCP:18000 / TLS:18443 / WS:18600 / UDP:18200 / CoAP:18800 / HTTP:18400 / Metrics:9090
 
 资源建议（100K 连接）：
   CPU：4 核
@@ -1772,7 +1772,7 @@ Docker Container：
   github.com/pion/dtls/v3           CoAP DTLS
   go.etcd.io/etcd/client/v3         集群协调（可选替代 PubSub）
 
-Go 版本要求：>= 1.24
+Go 版本要求：>= 1.26
 ```
 
 ---
@@ -1794,7 +1794,7 @@ Go 版本要求：>= 1.24
 | 11 | LRU + TTL 双淘汰策略 | LRU 控总量，TTL 控制空闲连接 | 需后台扫描 goroutine |
 | 12 | Framer 接口抽象 | 支持多种帧协议（长度前缀/换行/固定/透传） | 多一层接口调用开销（可内联消除） |
 | 13 | 时间轮替代 per-session Ticker | 10 万连接仅 1 个 goroutine，资源最优 | 小规模场景略显过度设计 |
-| 14 | Go 1.24（非 1.21） | iter 包、sync.Map 增强、unique 包、TLS 默认更安全 | 需升级构建环境 |
+| 14 | Go 1.26（非 1.21） | iter 包、sync.Map 增强、unique 包、TLS 默认更安全 | 需升级构建环境 |
 | 15 | ErrSkip/Drop/Block 语义分离 | 精确控制插件链行为，便于调试 | 错误语义需文档明确说明 |
 
 ---
@@ -1834,7 +1834,7 @@ Go 版本要求：>= 1.24
 - [ ] protocol/tcp TCPClient 自动重连 + 连接池
 - [ ] gateway Gateway 全局插件 + 共享 Manager + 6 段关闭
 - [ ] defense/overload OverloadProtector 水位检测
-- [ ] Go 1.24 适配（iter.Seq / unique / sync.Map 增强）
+- [ ] Go 1.26 适配（iter.Seq / unique / sync.Map 增强）
 
 ### P2 生产加固
 
@@ -1858,7 +1858,7 @@ Go 版本要求：>= 1.24
 
 ```
 步骤：
-  1. go mod init github.com/youorg/shark-socket（go 1.24）
+  1. go mod init github.com/youorg/shark-socket（go 1.26）
   2. 创建完整目录结构（mkdir -p）
   3. 添加外部依赖：
        go get github.com/gorilla/websocket@latest
@@ -1883,7 +1883,7 @@ Go 版本要求：>= 1.24
   2. internal/types/enums.go
      → ProtocolType / MessageType / SessionState
      → String() 方法
-     → unique.Make 池化字符串标签（Go 1.24）
+     → unique.Make 池化字符串标签（Go 1.26）
 
   3. internal/types/message.go
      → Message[T any] struct
@@ -1989,7 +1989,7 @@ Go 版本要求：>= 1.24
      → [32]shard（每 shard = RWMutex + map[uint64]RawSession + LRUList）
      → atomic.Uint64 idGen / atomic.Int64 totalAct
      → NextID / Register / Unregister / Get / Count
-     → All() iter.Seq[RawSession]（Go 1.24 iter 包）
+     → All() iter.Seq[RawSession]（Go 1.26 iter 包）
      → Range / Broadcast / Close
      → 位运算 shardIndex（id & 31）
      → 超容 LRU Evict 逻辑
@@ -2023,7 +2023,7 @@ Go 版本要求：>= 1.24
   3. internal/plugin/ratelimit.go
      → tokenBucket（按时间差补充令牌，atomic 操作）
      → sync.Map per-IP 桶
-       （使用 Go 1.24 sync.Map.CompareAndDelete 优化清理）
+       （使用 Go 1.26 sync.Map.CompareAndDelete 优化清理）
      → 全局桶 + per-IP 桶双层
      → cleanupLoop（idleTTL 2 分钟）
 
@@ -2270,7 +2270,7 @@ Go 版本要求：>= 1.24
 
 | 变更点 | 原设计 | 修订后 | 变更原因 |
 |--------|--------|--------|----------|
-| Go 版本 | >= 1.26 | >= 1.24 | 约束要求 |
+| Go 版本 | >= 1.26 | >= 1.26 | 约束要求 |
 | Session | 非泛型，统一 Send([]byte) | **泛型 Session[M]，底层 Send([]byte)** | 约束：泛型 + 易于转换 Send([]byte) |
 | BufferPool | 5 级（Tiny/Small/Medium/Large/Huge） | **6 级（Micro/Tiny/Small/Medium/Large/Huge）** | 约束：分 6 级；Micro 专为 128B 超小包 |
 | RawSession | 无 | = Session[[]byte]，最常用别名 | 简化 90% 场景使用 |
@@ -2282,4 +2282,4 @@ Go 版本要求：>= 1.24
 
 ---
 
-*文档版本：2025 v3.0（融合修订版，Go >= 1.24，BufferPool 6 级，Session 泛型 + Send([]byte) 统一底层）*
+*文档版本：2025 v3.0（融合修订版，Go >= 1.26，BufferPool 6 级，Session 泛型 + Send([]byte) 统一底层）*

@@ -37,7 +37,7 @@ func defaultOptions() Options {
 	workers := runtime.NumCPU() * 2
 	return Options{
 		Host:                "0.0.0.0",
-		Port:                8080,
+		Port:                18000,
 		WorkerCount:         workers,
 		TaskQueueSize:       workers * 128,
 		MaxWorkers:          workers * 4,

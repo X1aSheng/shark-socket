@@ -1,6 +1,6 @@
 # Shark-Socket
 
-High-performance, extensible multi-protocol networking framework in Go (>= 1.24).
+High-performance, extensible multi-protocol networking framework in Go (>= 1.26).
 
 Supports **TCP, TLS, UDP, HTTP, WebSocket, CoAP** with a unified API, shared session management, and a plugin system.
 
@@ -20,7 +20,7 @@ func main() {
         return sess.Send(msg.Payload)
     }
 
-    srv := tcp.NewServer(handler, tcp.WithAddr("0.0.0.0", 8080))
+    srv := tcp.NewServer(handler, tcp.WithAddr("0.0.0.0", 18000))
     log.Fatal(srv.Start())
 }
 ```
@@ -56,11 +56,11 @@ utils/        IP parsing, atomic helpers
 
 | Protocol | Port | Features |
 |----------|------|----------|
-| TCP | 8080 | Framer (4 types), WorkerPool, writeQueue, drain |
-| UDP | 8081 | Pseudo-sessions, sweep TTL |
-| HTTP | 8082 | Mode A (thin wrapper) + Mode B (session + plugins) |
-| WebSocket | 8083 | Ping/Pong, origin check, gorilla/websocket |
-| CoAP | 5683 | CON retransmit, ACK, MessageID dedup |
+| TCP | 18000 | Framer (4 types), WorkerPool, writeQueue, drain |
+| UDP | 18200 | Pseudo-sessions, sweep TTL |
+| HTTP | 18400 | Mode A (thin wrapper) + Mode B (session + plugins) |
+| WebSocket | 18600 | Ping/Pong, origin check, gorilla/websocket |
+| CoAP | 18800 | CON retransmit, ACK, MessageID dedup |
 
 ## Plugins
 

@@ -4,11 +4,11 @@ services:
   shark-socket:
     build: .
     ports:
-      - "8080:8080"   # TCP
-      - "8081:8081"   # UDP
-      - "8082:8082"   # HTTP
-      - "8083:8083"   # WebSocket
-      - "5683:5683/udp" # CoAP
+      - "18000:18000"   # TCP
+      - "18200:18200/udp" # UDP
+      - "18400:18400"   # HTTP
+      - "18600:18600"   # WebSocket
+      - "18800:18800/udp" # CoAP
       - "9090:9090"   # Metrics
     environment:
       - SHARK_LOG_LEVEL=info

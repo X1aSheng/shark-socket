@@ -19,7 +19,7 @@ type Options struct {
 func defaultOptions() Options {
 	return Options{
 		Host:        "0.0.0.0",
-		Port:        8080,
+		Port:        18200,
 		SessionTTL:  60 * time.Second,
 		MaxSessions: 100000,
 	}

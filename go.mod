@@ -1,4 +1,4 @@
-module github.com/yourname/shark-socket
+module github.com/X1aSheng/shark-socket
 
 go 1.26.1
 

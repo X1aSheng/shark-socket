@@ -25,13 +25,13 @@ func main() {
 		return sess.Send(msg.Payload)
 	}
 
-	// --- TCP Server (port 8084) ---
+	// --- TCP Server (port 18000) ---
 	tcpSrv := api.NewTCPServer(sharedHandler,
-		tcp.WithAddr("0.0.0.0", 8084),
+		tcp.WithAddr("0.0.0.0", 18000),
 	)
 
-	// --- HTTP Server (port 8085) ---
-	httpSrv := api.NewHTTPServer(http.WithAddr("0.0.0.0", 8085))
+	// --- HTTP Server (port 18400) ---
+	httpSrv := api.NewHTTPServer(http.WithAddr("0.0.0.0", 18400))
 	httpSrv.HandleFunc("/hello", func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
@@ -45,16 +45,16 @@ func main() {
 		})
 	})
 
-	// --- WebSocket Server (port 8086) ---
+	// --- WebSocket Server (port 18600) ---
 	wsSrv := api.NewWebSocketServer(sharedHandler,
-		websocket.WithAddr("0.0.0.0", 8086),
+		websocket.WithAddr("0.0.0.0", 18600),
 		websocket.WithPath("/ws"),
 		websocket.WithPingPong(30*time.Second, 10*time.Second),
 	)
 
-	// --- CoAP Server (port 5684) ---
+	// --- CoAP Server (port 18800) ---
 	coapSrv := api.NewCoAPServer(sharedHandler,
-		coap.WithAddr("0.0.0.0", 5684),
+		coap.WithAddr("0.0.0.0", 18800),
 	)
 
 	// --- Gateway ---
@@ -81,10 +81,10 @@ func main() {
 	log.Println("Registered protocols: TCP, HTTP, WebSocket, CoAP")
 	log.Println("")
 	log.Println("Endpoints:")
-	log.Println("  TCP:        nc localhost 8084")
-	log.Println("  HTTP:       curl http://localhost:8085/hello")
-	log.Println("  WebSocket:  websocat ws://localhost:8086/ws")
-	log.Println("  CoAP:       coap-client coap://localhost:5684")
+	log.Println("  TCP:        nc localhost 18000")
+	log.Println("  HTTP:       curl http://localhost:18400/hello")
+	log.Println("  WebSocket:  websocat ws://localhost:18600/ws")
+	log.Println("  CoAP:       coap-client coap://localhost:18800")
 	log.Println("  Metrics:    curl http://localhost:9091/metrics")
 	log.Println("  Health:     curl http://localhost:9091/healthz")
 	log.Println("")

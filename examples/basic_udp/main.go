@@ -19,18 +19,18 @@ func main() {
 		return sess.Send(msg.Payload)
 	}
 
-	srv := api.NewUDPServer(handler, udp.WithAddr("0.0.0.0", 8081))
+	srv := api.NewUDPServer(handler, udp.WithAddr("0.0.0.0", 18200))
 
 	if err := srv.Start(); err != nil {
 		log.Fatalf("Failed to start UDP server: %v", err)
 	}
 
 	log.Println("=== Basic UDP Echo Server ===")
-	log.Println("Listening on :8081 (UDP)")
+	log.Println("Listening on :18200 (UDP)")
 	log.Println("")
 	log.Println("Test with:")
-	log.Println("  echo hello | nc -u -q1 localhost 8081")
-	log.Println("  echo hello > /dev/udp/localhost/8081   (bash)")
+	log.Println("  echo hello | nc -u -q1 localhost 18200")
+	log.Println("  echo hello > /dev/udp/localhost/18200   (bash)")
 	log.Println("")
 	log.Println("Press Ctrl+C to stop.")
 

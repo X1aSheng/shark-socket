@@ -1,4 +1,4 @@
-FROM golang:1.24-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
 COPY go.mod go.sum ./
@@ -10,6 +10,6 @@ FROM alpine:3.20
 RUN apk --no-cache add ca-certificates
 COPY --from=builder /shark-socket /usr/local/bin/shark-socket
 
-EXPOSE 8080 8081 8082 8083 5683/udp 9090
+EXPOSE 18000 18200/udp 18400 18600 18800/udp 9090
 
 ENTRYPOINT ["shark-socket"]

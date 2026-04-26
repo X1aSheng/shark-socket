@@ -36,7 +36,7 @@ func (p ProtocolType) String() string {
 	}
 }
 
-// ProtocolLabel returns a pooled string label for the protocol using Go 1.24 unique package.
+// ProtocolLabel returns a pooled string label for the protocol using Go 1.26 unique package.
 func ProtocolLabel(p ProtocolType) string {
 	return unique.Make(p.String()).Value()
 }
