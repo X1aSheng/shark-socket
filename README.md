@@ -1,9 +1,9 @@
 # Shark-Socket
 
 [![Go Version](https://img.shields.io/badge/Go-1.26%2B-blue)](https://go.dev)
-[![CI](https://img.shields.io/badge/CI-golangci--lint%20%7C%20test%20%7C%20bench-brightgreen)](.github/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-600%2B%20passed-brightgreen)](./tests)
+[![Tests](https://img.shields.io/badge/Tests-534%20passed-brightgreen)](./tests)
+[![Coverage](https://img.shields.io/badge/Coverage-22%20pkgs-brightgreen)](./tests)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue)](./Dockerfile)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-ready-blue)](./k8s)
 
@@ -17,16 +17,16 @@
 
 | 特性 | 说明 |
 |------|------|
-| 🔄 **多协议支持** | TCP、TLS、UDP、HTTP、WebSocket、CoAP 统一抽象，共享 Handler 接口 |
-| 🛡️ **类型安全** | 泛型 `Session[M]`，编译期保证消息类型安全，`SendTyped` + `Send([]byte)` |
-| ⚡ **高性能** | 32 分片 SessionManager、Worker Pool、6 级 BufferPool、零 GC 分配 |
-| 🔌 **插件系统** | OnAccept / OnMessage / OnClose 全生命周期插件钩子，优先级排序执行 |
-| 📊 **可观测性** | 内置 Prometheus 指标采集、结构化日志 (slog)、健康检查端点 |
-| 🗄️ **中间件对接** | Cache / Store / PubSub 接口层，支持 Redis、SQL、NATS 等适配 |
-| 🌐 **分布式扩展** | ClusterPlugin 跨节点会话感知，PubSub 集群事件广播 |
-| 🛡️ **安全防护** | Blacklist、RateLimit、AutoBan、CircuitBreaker、OverloadProtector |
-| 🎯 **优雅关闭** | 6 阶段优雅关闭，SIGTERM 信号处理，连接排空 |
-| 🐳 **云原生** | Docker、docker-compose、Kubernetes 完整部署（HPA/PDB/NetworkPolicy/Ingress） |
+| **多协议支持** | TCP、TLS、UDP、HTTP、WebSocket、CoAP 统一抽象，共享 Handler 接口 |
+| **类型安全** | 泛型 `Session[M]`，编译期保证消息类型安全，`SendTyped` + `Send([]byte)` |
+| **高性能** | 32 分片 SessionManager、Worker Pool、6 级 BufferPool、零 GC 分配 |
+| **插件系统** | OnAccept / OnMessage / OnClose 全生命周期插件钩子，优先级排序，panic 保护 |
+| **可观测性** | 内置 Prometheus 指标采集（promhttp 集成）、结构化日志 (slog)、健康检查端点 |
+| **中间件对接** | Cache / Store / PubSub 接口层，支持 Redis、SQL、NATS 等适配 |
+| **分布式扩展** | ClusterPlugin 跨节点会话感知，PubSub 集群事件广播 |
+| **安全防护** | Blacklist、RateLimit、AutoBan、CircuitBreaker、OverloadProtector |
+| **优雅关闭** | 6 阶段优雅关闭，SIGTERM 信号处理，连接排空 |
+| **云原生** | Docker、docker-compose、Kubernetes 完整部署（HPA/PDB/NetworkPolicy/Ingress） |
 
 ---
 
@@ -45,16 +45,16 @@ package main
 
 import (
     "log"
+    "github.com/X1aSheng/shark-socket/api"
     "github.com/X1aSheng/shark-socket/internal/protocol/tcp"
-    "github.com/X1aSheng/shark-socket/internal/types"
 )
 
 func main() {
-    handler := func(sess types.RawSession, msg types.RawMessage) error {
+    handler := func(sess api.RawSession, msg api.RawMessage) error {
         return sess.Send(msg.Payload) // echo
     }
 
-    srv := tcp.NewServer(handler, tcp.WithAddr("0.0.0.0", 18000))
+    srv := api.NewTCPServer(handler, api.WithTCPAddr("0.0.0.0", 18000))
     log.Fatal(srv.Start())
 }
 ```
@@ -76,7 +76,7 @@ func main() {
         return sess.Send(msg.Payload)
     }
 
-    tcpSrv := api.NewTCPServer(handler, tcp.WithAddr("0.0.0.0", 18000))
+    tcpSrv := api.NewTCPServer(handler, api.WithTCPAddr("0.0.0.0", 18000))
     wsSrv := api.NewWebSocketServer(handler,
         websocket.WithAddr("0.0.0.0", 18600),
         websocket.WithPath("/ws"),
@@ -98,11 +98,10 @@ func main() {
 
 ```go
 tcpSrv := api.NewTCPServer(handler,
-    tcp.WithAddr("0.0.0.0", 18000),
-    tcp.WithPlugins(
-        api.NewBlacklistPlugin(api.WithBlacklistCIDRs("10.0.0.0/8")),
-        api.NewRateLimitPlugin(api.WithRateLimitPerIP(100, time.Second)),
-        api.NewHeartbeatPlugin(api.WithHeartbeatTimeout(30*time.Second)),
+    api.WithTCPAddr("0.0.0.0", 18000),
+    api.WithTCPPlugins(
+        api.NewBlacklistPlugin("10.0.0.0/8"),
+        api.NewRateLimitPlugin(100, time.Second),
     ),
 )
 ```
@@ -125,13 +124,13 @@ tcpSrv := api.NewTCPServer(handler,
 │              Session Manager (会话管理)                        │
 │         ┌────────────────────────────────────┐               │
 │         │ • 32 分片锁  • LRU 淘汰  • 原子 ID    │               │
-│         │ • Broadcast  • 泛型 Session[M]       │               │
+│         │ • CAS 状态机 • Broadcast            │               │
 │         └────────────────────────────────────┘               │
 ├──────────────────────────────────────────────────────────────┤
 │   Plugin System (OnAccept/OnMessage/OnClose 钩子)             │
 │   ┌───────┬───────┬───────┬───────┬───────┬───────┐          │
-│   │Black  │Rate   │Auto   │Heart  │Persist│Clust  │          │
-│   │list   │Limit  │Ban    │beat   │ence   │er     │          │
+│   │Black  │Rate   │Auto   │Heart  │Cluster│Persist│          │
+│   │list   │Limit  │Ban    │beat   │       │ence   │          │
 │   │ P:0   │ P:10  │ P:20  │ P:30  │ P:40  │ P:50  │          │
 │   └───────┴───────┴───────┴───────┴───────┴───────┘          │
 ├──────────────────────────────────────────────────────────────┤
@@ -203,34 +202,67 @@ tcpSrv := api.NewTCPServer(handler,
 type Plugin interface {
     Name()     string
     Priority() int
-    OnAccept(sess Session[[]byte]) error
-    OnMessage(sess Session[[]byte], msg Message[[]byte]) error
-    OnClose(sess Session[[]byte]) error
+    OnAccept(sess RawSession) error
+    OnMessage(sess RawSession, data []byte) ([]byte, error)
+    OnClose(sess RawSession)
 }
+
+// BasePlugin 提供所有方法的空实现，嵌入后只需覆写需要的方法
+type BasePlugin struct{}
 ```
 
 ### 流程控制
 
 通过返回特殊错误控制插件链执行：
 
-| 错误 | 效果 |
-|------|------|
-| `ErrSkip` | 跳过剩余插件，继续正常处理 |
-| `ErrDrop` | 静默丢弃消息 |
-| `ErrBlock` | 关闭连接 |
+| 错误 | 效果 | 判断方法 |
+|------|------|----------|
+| `ErrSkip` | 跳过剩余插件，继续正常处理 | `api.IsPluginSkip(err)` |
+| `ErrDrop` | 静默丢弃消息 | `api.IsPluginDrop(err)` |
+| `ErrBlock` | 关闭连接 | `api.IsPluginBlock(err)` |
 
 ### 内置插件
 
 | 插件 | 优先级 | 用途 |
 |------|--------|------|
-| `BlacklistPlugin` | 0 | IP/CIDR 黑名单，支持 TTL |
-| `RateLimitPlugin` | 10 | 双层令牌桶（全局 + 单 IP） |
-| `AutoBanPlugin` | 20 | 阈值违规自动封禁 |
-| `HeartbeatPlugin` | 30 | TimeWheel 空闲超时检测 |
+| `BlacklistPlugin` | 0 | IP/CIDR 黑名单，O(1) 精确匹配 + CIDR 扫描，支持 TTL 和外部缓存 |
+| `RateLimitPlugin` | 10 | 双层令牌桶（全局 + 单 IP），连接级和消息级限流 |
+| `AutoBanPlugin` | 20 | 阈值违规自动封禁（速率、协议错误、空闲） |
+| `HeartbeatPlugin` | 30 | TimeWheel 空闲超时检测，单 goroutine 管理全部会话 |
 | `ClusterPlugin` | 40 | 跨节点会话路由，PubSub 广播 |
 | `PersistencePlugin` | 50 | 异步批量写入，熔断保护 |
 
-所有插件钩子都带有 **panic 保护**，插件崩溃不会影响主流程。
+所有插件钩子都带有 **panic 保护** 和 **执行延迟指标采集**，插件崩溃不会影响主流程。
+
+---
+
+## 🧩 会话管理
+
+### Session 状态机
+
+```
+Connecting ──→ Active ──→ Closing ──→ Closed
+     │            │
+     └────────────┘ (连接失败)
+```
+
+状态转换通过 CAS 原子操作保证并发安全，只允许合法转换：
+
+| 从 → 到 | 允许 |
+|---------|------|
+| Connecting → Active | ✓ |
+| Connecting → Closed | ✓ |
+| Active → Closing | ✓ |
+| Active → Closed | ✓ |
+| Closing → Closed | ✓ |
+| 其他转换 | ✗ |
+
+### 分片 SessionManager
+
+- **32 分片**：按 session ID 分片，减少锁争用
+- **LRU 淘汰**：跨分片 LRU 驱逐（TryLock 避免死锁）
+- **原子 ID**：`atomic.Uint64` 全局递增
+- **零分配查询**：`Get` 仅一次 RLock，7.6 ns/op
 
 ---
 
@@ -242,24 +274,19 @@ type Plugin interface {
 
 | 级别 | 名称 | 大小 | 使用场景 |
 |------|------|------|----------|
-| 0 | Micro | 512B | 控制消息 |
-| 1 | Tiny | 2KB | CoAP、小负载 |
-| 2 | Small | 4KB | 常规消息 |
-| 3 | Medium | 32KB | 大消息 |
-| 4 | Large | 256KB | 批量传输 |
-| 5 | Huge | >256KB | 直接分配 |
-
-池化 vs 直接分配：Micro 快 ~10x，Small 快 ~20x。
+| 0 | Micro | ≤512B | CoAP ACK、控制帧 |
+| 1 | Tiny | ≤2KB | 小消息、心跳 |
+| 2 | Small | ≤4KB | 常规消息 |
+| 3 | Medium | ≤32KB | HTTP body、批量消息 |
+| 4 | Large | ≤256KB | 大消息、文件分片 |
+| 5 | Huge | >256KB | 直接分配（无池化） |
 
 ### 熔断器
 
 三态保护：Closed → Open → HalfOpen。
 
 ```go
-cb := api.NewCircuitBreaker(
-    api.WithCBFailureThreshold(5),
-    api.WithCBTimeout(30*time.Second),
-)
+cb := api.NewCircuitBreaker(5, 30*time.Second)
 err := cb.Do(func() error {
     return riskyOperation()
 })
@@ -279,14 +306,17 @@ cache.Set(ctx, "session:123", data, 5*time.Minute)
 
 // 发布订阅
 ps := api.NewChannelPubSub()
-ch := ps.Subscribe(ctx, "events")
+sub, _ := ps.Subscribe(ctx, "events", func(data []byte) {
+    log.Println("received:", string(data))
+})
 ps.Publish(ctx, "events", []byte("hello"))
+sub.Unsubscribe()
 ps.Close()
 ```
 
 ### Prometheus 指标
 
-框架自动采集以下指标（Prometheus 格式）：
+框架自动采集以下指标（通过 `promhttp.Handler()` 暴露）：
 
 | 指标 | 说明 |
 |------|------|
@@ -297,8 +327,9 @@ ps.Close()
 | `shark_message_duration_seconds` | 消息处理延迟 |
 | `shark_errors_total` | 错误总数（按协议分类） |
 | `shark_session_lru_evictions_total` | LRU 淘汰次数 |
-| `shark_bufferpool_hits_total` | BufferPool 命中次数 |
-| `shark_plugin_duration_seconds` | 插件执行延迟 |
+| `shark_bufferpool_hits_total` | BufferPool 命中/未命中 |
+| `shark_plugin_duration_seconds` | 插件执行延迟直方图 |
+| `shark_worker_panics_total` | Worker panic 计数 |
 
 ---
 
@@ -307,48 +338,156 @@ ps.Close()
 ```
 shark-socket/
 ├── api/                    # 公共 API — 类型别名、工厂函数
+│   ├── api.go              # 核心入口：NewGateway、NewTCPServer 等
+│   └── api_test.go
 ├── internal/
-│   ├── gateway/            # 多协议网关（6 阶段关闭）
-│   ├── protocol/           # TCP、UDP、HTTP、WebSocket、CoAP 实现
-│   ├── session/            # BaseSession、分片 Manager、LRU 淘汰
-│   ├── plugin/             # 插件链 + 6 个内置插件
+│   ├── gateway/            # 多协议网关（6 阶段关闭，指标端点）
+│   ├── protocol/           # 协议实现
+│   │   ├── tcp/            # TCP/TLS：Framer、WorkerPool、writeQueue
+│   │   ├── udp/            # UDP：伪会话、TTL 清理
+│   │   ├── http/           # HTTP：双模式（轻量/会话）
+│   │   ├── websocket/      # WebSocket：Ping/Pong、Origin
+│   │   └── coap/           # CoAP：CON 重传、MessageID 去重
+│   ├── session/            # 会话管理
+│   │   ├── session.go      # BaseSession：CAS 状态机、元数据
+│   │   ├── manager.go      # 32 分片 Manager、LRU 淘汰
+│   │   └── lru.go          # 双向链表 LRU 实现
+│   ├── plugin/             # 插件系统
+│   │   ├── chain.go        # 插件链：优先级排序、panic 保护
+│   │   ├── blacklist.go    # IP/CIDR 黑名单
+│   │   ├── ratelimit.go    # 双层令牌桶
+│   │   ├── autoban.go      # 自动封禁
+│   │   ├── heartbeat.go    # TimeWheel 心跳
+│   │   ├── cluster.go      # 跨节点路由
+│   │   └── persistence.go  # 异步持久化
 │   ├── infra/              # 基础设施
 │   │   ├── bufferpool/     # 6 级 sync.Pool 缓冲池
-│   │   ├── cache/          # 内存 TTL 缓存
-│   │   ├── circuitbreaker/ # 熔断器
+│   │   ├── cache/          # 内存 TTL 缓存（后台清理）
+│   │   ├── circuitbreaker/ # 三态熔断器
 │   │   ├── logger/         # 结构化日志 (slog)
-│   │   ├── metrics/        # Prometheus 集成
+│   │   ├── metrics/        # Prometheus 集成（全局 Collector）
 │   │   ├── pubsub/         # 基于通道的发布订阅
 │   │   ├── store/          # Key-Value 存储
 │   │   └── tracing/        # 最小化追踪接口
-│   ├── defense/            # 过载保护、背压、日志采样
-│   ├── types/              # 枚举、Message[T]、Session[M]、Plugin 接口
-│   ├── errs/               # 错误分类体系
+│   ├── defense/            # 过载保护、背压控制、日志采样
+│   ├── types/              # 核心类型：枚举、Message[T]、Session[M]、Plugin
+│   ├── errs/               # 错误分类体系（含 IsRetryable/IsFatal 谓词）
 │   └── utils/              # ShardedMap[K,V]、AtomicBool、IP 解析
-├── examples/               # 可运行的示例代码
+├── examples/               # 8 个可运行示例
+│   ├── basic_tcp/          # TCP echo 服务器
+│   ├── basic_udp/          # UDP echo 服务器
+│   ├── basic_http/         # HTTP 服务器
+│   ├── basic_websocket/    # WebSocket echo
+│   ├── basic_coap/         # CoAP 服务器
+│   ├── multi_protocol/     # 多协议网关（TCP+HTTP+WS+CoAP）
+│   ├── graceful_shutdown/  # 优雅关闭演示
+│   └── session_plugins/    # 插件链使用示例
 ├── tests/
 │   ├── unit/               # 跨包单元测试
 │   ├── integration/        # 多协议系统集成测试
 │   └── benchmark/          # 性能基准测试
-├── k8s/                    # Kubernetes 部署清单
+├── k8s/                    # Kubernetes 生产部署清单
+│   ├── namespace.yaml      # 独立命名空间
+│   ├── deployment.yaml     # 2 副本 Deployment
+│   ├── service.yaml        # 每个协议独立 Service
+│   ├── hpa.yaml            # HPA + PDB
+│   ├── ingress.yaml        # HTTP + WebSocket Ingress
+│   ├── networkpolicy.yaml  # 网络安全策略
+│   ├── configmap.yaml      # Prometheus 配置
+│   ├── kustomization.yaml  # Kustomize 聚合
+│   └── prometheus/         # Prometheus Deployment + Service
 ├── scripts/                # 构建、测试、日志脚本
-└── docs/                   # 架构设计文档
+├── docs/                   # 架构设计文档
+├── Dockerfile              # 多阶段构建
+├── docker-compose.yml      # 含 Prometheus 的编排
+└── Makefile                # 常用构建命令
 ```
+
+---
+
+## 📊 性能报告
+
+AMD Ryzen 7 8845HS (Windows 11, Go 1.26.1) 上的基准测试结果。
+
+### 性能亮点
+
+| 指标 | 数值 | 说明 |
+|------|------|------|
+| **TCP 并行吞吐** | ~166K msg/s | 多连接并行处理 |
+| **TCP 单连接吞吐** | ~31.5K msg/s | 单连接 echo |
+| **UDP echo 吞吐** | ~68K msg/s | 数据报 echo |
+| **CoAP 消息解析** | 77.2 ns/op | 消息反序列化 |
+| **CoAP 序列化** | 28.5 ns/op | 消息序列化 |
+| **Session 注册** | 162.4 ns/op | 32 分片并发安全 |
+| **Session 查询** | 7.6 ns/op | 分片 Map 读取 |
+| **NextID 并发** | 10.1 ns/op | 原子递增 |
+| **BufferPool Small** | 98.9 ns/op | 4KB 池化分配 |
+| **插件链 (5 插件)** | 167.0 ns/op | 5 个插件顺序执行 |
+| **并发连接** | 100K | 测试验证 |
+
+### TCP 协议
+
+| 基准 | ns/op | B/op | allocs/op |
+|------|-------|------|-----------|
+| TCPEcho | ~31,700 | ~4,900 | 14 |
+| TCPEcho_Parallel | ~6,030 | ~4,900 | 14 |
+| TCPEcho_SmallMessage | ~40,400 | ~4,850 | 14 |
+| TCPEcho_LargeMessage | ~58,600 | ~72,500 | 14 |
+
+### Session Manager
+
+| 基准 | ns/op | B/op | allocs/op |
+|------|-------|------|-----------|
+| SessionRegister | 162.4 | 412 | 8 |
+| ManagerGet | 7.6 | 0 | 0 |
+| ManagerNextID | 1.6 | 0 | 0 |
+| ManagerNextIDParallel | 10.1 | 0 | 0 |
+| ManagerCount | 0.2 | 0 | 0 |
+
+### BufferPool
+
+| 基准 | ns/op | B/op | allocs/op | 说明 |
+|------|-------|------|-----------|------|
+| Pool/Micro_64 | 73.2 | 24 | 2 | 池化分配 |
+| Pool/Tiny_1024 | 74.4 | 24 | 2 | |
+| Pool/Small_4096 | 98.9 | 24 | 2 | |
+| Pool/Medium_16384 | 180.7 | 24 | 2 | |
+| Pool/Large_131072 | 943.9 | 24 | 2 | |
+| Parallel/Micro_64 | 23.1 | 24 | 2 | 并发池化 |
+| DirectAlloc/Small | 640.7 | 4,096 | 1 | 对比：直接分配 |
+| DirectAlloc/Large | 10,563 | 131,072 | 1 | 对比：直接分配 |
+
+### 插件链
+
+| 基准 | ns/op | B/op | allocs/op |
+|------|-------|------|-----------|
+| Chain_Empty | 1.9 | 0 | 0 |
+| Chain_5Plugins | 167.0 | 80 | 5 |
+| Chain_10Plugins | 335.1 | 160 | 10 |
+| Chain_OnAccept_5 | 163.2 | 80 | 5 |
+| Chain_OnClose_5 | 23.4 | 0 | 0 |
+| Chain_Parallel | 45.2 | 80 | 5 |
 
 ---
 
 ## 🧪 测试
 
+### 测试规模
+
+- **534 个测试函数**，**35 个基准测试**
+- **64 个测试文件**，覆盖 **22 个包**
+- 全部通过，零失败
+
 ### 运行测试
 
 ```bash
-# 全部测试（25 个包，600+ 测试用例，全部通过）
+# 全部测试
 go test ./... -v
 
 # 带覆盖率
 go test ./... -cover
 
-# 基准测试（49 个基准，5 个包）
+# 基准测试
 go test -bench=. -benchmem -run=^$ ./...
 
 # 竞态检测
@@ -358,9 +497,7 @@ go test -race ./...
 go test ./internal/protocol/tcp/... -v
 ```
 
-### 测试日志
-
-自动记录结构化测试日志：
+### 自动化测试脚本
 
 ```bash
 bash scripts/run_tests.sh              # 全部测试
@@ -373,97 +510,118 @@ bash scripts/run_tests.sh --benchmark  # 仅基准测试
 
 ### 测试覆盖率
 
-22 个内部包 + 3 个测试包，600+ 测试用例：
-
 | 包 | 覆盖率 |
 |---|--------|
-| defense | 100.0% |
 | errs | 100.0% |
 | infra/cache | 100.0% |
 | infra/store | 100.0% |
 | infra/tracing | 100.0% |
-| infra/pubsub | 93.9% |
+| infra/pubsub | 96.1% |
+| defense | 95.1% |
 | api | 92.6% |
-| session | 92.2% |
 | types | 92.3% |
-| utils | 89.0% |
-| infra/bufferpool | 87.5% |
-| protocol/tcp | 87.0% |
-| protocol/websocket | 83.4% |
-| protocol/http | 83.0% |
-| protocol/udp | 81.4% |
-| infra/circuitbreaker | 82.8% |
-| protocol/coap | 77.8% |
+| session | 87.8% |
+| infra/bufferpool | 86.8% |
+| protocol/tcp | 85.4% |
+| utils | 84.7% |
+| protocol/websocket | 80.2% |
+| protocol/udp | 78.4% |
+| protocol/coap | 75.2% |
+| protocol/http | 75.2% |
 | infra/logger | 73.9% |
-| infra/metrics | 60.4% |
+| infra/circuitbreaker | 79.4% |
 | plugin | 62.7% |
-| gateway | 48.5% |
+| infra/metrics | 53.3% |
+| gateway | 52.1% |
 
 测试方法论：使用轮询检测 (`waitForTCPServer` / `waitForUDPServer`) 替代固定睡眠，确保 CI 和本地环境的稳定性。
 
 ---
 
-## 📊 性能报告
+## 🛡️ 安全防护
 
-AMD Ryzen 7 8845HS (Windows 11, Go 1.26.1) 上的测试结果：
+框架提供多层防护机制：
 
-### 性能亮点
-
-| 指标 | 数值 | 说明 |
+| 层级 | 机制 | 说明 |
 |------|------|------|
-| **TCP 并行吞吐** | ~166K msg/s | 多连接并行处理 |
-| **TCP 单连接吞吐** | ~31.5K msg/s | 单连接 echo |
-| **TCP 大消息吞吐** | 139.8 MB/s | 大帧传输 |
-| **UDP echo 吞吐** | ~68K msg/s | 数据报 echo |
-| **CoAP 解析** | 119.5 ns/op | 消息反序列化 |
-| **Session 注册** | 144.5 ns/op | 32 分片并发安全 |
-| **Session 查询** | 7.7 ns/op | 分片 Map 读取 |
-| **BufferPool Get+Put** | 12.5 ns/op | 零内存分配 |
-| **插件链开销** | ~1.9 ns/hop | 5 个插件 |
-| **并发连接** | 100K | 测试验证 |
+| 1 | MaxSessions | 硬性连接数上限，LRU 淘汰最旧会话 |
+| 2 | BlacklistPlugin | IP/CIDR 黑名单，OnAccept 阶段拦截 |
+| 3 | RateLimitPlugin | 双层令牌桶（全局 + 单 IP） |
+| 4 | AutoBanPlugin | 速率违规自动封禁 |
+| 5 | OverloadProtector | 高/低水位线，降级模式 |
+| 6 | BackpressureController | 写队列水位监控，广播限速 |
+| 7 | Timeouts | 读/写/空闲超时，防 Slowloris |
 
-### TCP 协议
+---
 
-| 基准 | ns/op | B/op | allocs/op | 吞吐量 |
-|------|-------|------|-----------|--------|
-| TCPEcho | 31,703 | 4,937 | 14 | ~31.5K msg/s |
-| TCPEcho_SmallMessage | 40,374 | 4,850 | 14 | ~24.8K msg/s |
-| TCPEcho_LargeMessage | 58,582 | 72,531 | 14 | 139.8 MB/s |
-| TCPEcho_Parallel | 6,030 | 4,930 | 14 | ~166K msg/s |
+## 📖 API 参考
 
-### Session Manager
+### 核心类型
 
-| 基准 | ns/op | B/op | allocs/op |
-|------|-------|------|-----------|
-| SessionRegister | 144.5 | 400 | 8 |
-| ManagerGet | 7.7 | 0 | 0 |
-| ManagerNextID | 1.6 | 0 | 0 |
-| ManagerNextIDParallel | 9.9 | 0 | 0 |
-| ManagerCount | 0.4 | 0 | 0 |
+```go
+// 会话接口（泛型）
+type Session[M MessageConstraint] interface {
+    ID() uint64
+    Protocol() ProtocolType
+    RemoteAddr() net.Addr
+    State() SessionState
+    IsAlive() bool
+    Send(data []byte) error
+    SendTyped(msg M) error
+    Close() error
+    Context() context.Context
+    SetMeta(key string, val any)
+    GetMeta(key string) (any, bool)
+    DelMeta(key string)
+}
 
-### BufferPool
+type RawSession = Session[[]byte]    // 最常用类型别名
+type RawMessage = Message[[]byte]    // 最常用消息类型
+type RawHandler = func(sess RawSession, msg RawMessage) error
+```
 
-| 基准 | ns/op | B/op | allocs/op |
-|------|-------|------|-----------|
-| Pool/Micro_64 | 12.5 | 0 | 0 |
-| Pool/Tiny_1024 | 16.1 | 0 | 0 |
-| Pool/Small_4096 | 44.0 | 0 | 0 |
-| Pool/Medium_16384 | 129.9 | 0 | 0 |
-| Pool/Large_131072 | 909.2 | 0 | 0 |
-| Parallel/Micro_64 | 11.5 | 0 | 0 |
-| DirectAlloc/Micro_64 | 24.0 | 64 | 1 |
-| DirectAlloc/Large_131072 | 13,817 | 131,072 | 1 |
+### 工厂函数
 
-### 插件链
+```go
+// 协议服务器
+api.NewTCPServer(handler, opts...)
+api.NewUDPServer(handler, opts...)
+api.NewHTTPServer(opts...)
+api.NewWebSocketServer(handler, opts...)
+api.NewCoAPServer(handler, opts...)
+api.NewTCPRawClient(addr, opts...)
 
-| 基准 | ns/op | B/op | allocs/op |
-|------|-------|------|-----------|
-| Chain_Empty | 1.5 | 0 | 0 |
-| Chain_5Plugins | 9.6 | 0 | 0 |
-| Chain_10Plugins | 17.2 | 0 | 0 |
-| Chain_OnAccept_5 | 8.1 | 0 | 0 |
-| Chain_OnClose_5 | 7.0 | 0 | 0 |
-| Chain_Parallel | 1.3 | 0 | 0 |
+// 网关
+api.NewGateway(opts...)
+
+// 插件
+api.NewBlacklistPlugin(ips...)
+api.NewRateLimitPlugin(rate, burst, opts...)
+api.NewHeartbeatPlugin(interval, timeout, mgr)
+api.NewPersistencePlugin(store, opts...)
+api.NewAutoBanPlugin(blacklist, opts...)
+
+// 基础设施
+api.NewMemoryCache(opts...)
+api.NewMemoryStore()
+api.NewChannelPubSub()
+api.NewCircuitBreaker(threshold, timeout)
+```
+
+### 错误分类
+
+```go
+// 控制流错误
+api.ErrSkip    // 跳过剩余插件
+api.ErrDrop    // 丢弃消息
+api.ErrBlock   // 阻断连接
+
+// 错误判断谓词
+errs.IsRetryable(err)          // 可重试错误
+errs.IsFatal(err)              // 致命错误
+errs.IsSecurityRejection(err)  // 安全拦截
+errs.IsPluginControl(err)      // 插件控制流
+```
 
 ---
 
@@ -479,8 +637,9 @@ docker build -t shark-socket .
 docker-compose up -d
 
 # 验证
-curl http://localhost:18400/health
+curl http://localhost:18400/hello
 curl http://localhost:9091/metrics
+curl http://localhost:9091/healthz
 ```
 
 **暴露端口：**
@@ -520,8 +679,8 @@ kubectl apply -k k8s/
 
 | 探针 | 端点 | 端口 | 用途 |
 |------|------|------|------|
-| Liveness | `/healthz` | 9091 | 重启不健康 Pod |
-| Readiness | `/readyz` | 9091 | 从 Service 移除 |
+| Liveness | `/healthz` | 9091 | 返回运行状态、协议列表、会话数、goroutine 数 |
+| Readiness | `/readyz` | 9091 | 返回是否就绪（503 未启动 / 200 就绪） |
 
 #### 优雅关闭
 
@@ -549,14 +708,43 @@ kubectl port-forward -n shark-socket svc/shark-socket-metrics 9091:9091
 curl http://localhost:9091/metrics
 ```
 
+### Makefile 命令
+
+```bash
+make build       # 编译所有包
+make test        # 运行测试
+make vet         # 静态分析
+make lint        # golangci-lint
+make benchmark   # 基准测试
+make race        # 竞态检测
+make examples    # 编译所有示例
+make docker      # 构建 Docker 镜像
+make all         # vet + build + test
+```
+
 ---
 
 ## 📖 文档
 
-- [架构设计文档](docs/shark-socket%20ARCHITECTURE.md)
-- [API 文档](https://pkg.go.dev/github.com/X1aSheng/shark-socket)
-- [示例代码](examples/)
+- [架构设计文档](docs/shark-socket%20ARCHITECTURE.md) — 完整设计决策与实现细节
+- [API 文档](https://pkg.go.dev/github.com/X1aSheng/shark-socket) — GoDoc
+- [示例代码](examples/) — 8 个可运行示例
 - [English Documentation](./README_EN.md)
+
+---
+
+## 📈 项目统计
+
+| 指标 | 数值 |
+|------|------|
+| Go 代码行数 | 20,600+ |
+| Go 文件数 | 151 |
+| 包数量 | 33 |
+| 测试函数 | 534 |
+| 基准测试 | 35 |
+| 测试文件 | 64 |
+| 示例 | 8 |
+| 外部依赖 | 1 (prometheus/client_golang) |
 
 ---
 
