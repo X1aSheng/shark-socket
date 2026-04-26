@@ -11,6 +11,20 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
+func waitForTCPServer(t *testing.T, addr string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 10*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("TCP server at %s not ready after %v", addr, timeout)
+}
+
 // TestIntegration_WS_Echo starts a WebSocket server on :0, connects with a
 // gorilla/websocket client, sends a binary message, receives the echo, and verifies.
 func TestIntegration_WS_Echo(t *testing.T) {
@@ -43,7 +57,7 @@ func TestIntegration_WS_Echo(t *testing.T) {
 	}()
 
 	// Allow server goroutine to start.
-	time.Sleep(100 * time.Millisecond)
+	waitForTCPServer(t, fmt.Sprintf("127.0.0.1:%d", port), 3*time.Second)
 
 	wsURL := fmt.Sprintf("ws://127.0.0.1:%d/ws", port)
 	t.Logf("Connecting to %s", wsURL)
@@ -117,7 +131,7 @@ func TestIntegration_WS_TextEcho(t *testing.T) {
 		srv.Stop(stopCtx)
 	}()
 
-	time.Sleep(100 * time.Millisecond)
+	waitForTCPServer(t, fmt.Sprintf("127.0.0.1:%d", port), 3*time.Second)
 
 	wsURL := fmt.Sprintf("ws://127.0.0.1:%d/echo", port)
 	wsConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
@@ -173,7 +187,7 @@ func TestIntegration_WS_MultipleMessages(t *testing.T) {
 		srv.Stop(stopCtx)
 	}()
 
-	time.Sleep(100 * time.Millisecond)
+	waitForTCPServer(t, fmt.Sprintf("127.0.0.1:%d", port), 3*time.Second)
 
 	wsURL := fmt.Sprintf("ws://127.0.0.1:%d/ws", port)
 	wsConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)

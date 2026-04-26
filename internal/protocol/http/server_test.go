@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -12,6 +13,20 @@ import (
 
 	"github.com/X1aSheng/shark-socket/internal/types"
 )
+
+func waitForTCPServer(t *testing.T, addr string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 10*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("TCP server at %s not ready after %v", addr, timeout)
+}
 
 // ---------------------------------------------------------------------------
 // Mode A tests — thin net/http wrapper
@@ -171,7 +186,7 @@ func TestServer_StartStop(t *testing.T) {
 	}
 
 	// Give server a moment to start
-	time.Sleep(50 * time.Millisecond)
+	waitForTCPServer(t, fmt.Sprintf("127.0.0.1:%d", port), 3*time.Second)
 
 	// Verify the server is reachable
 	resp, err := http.Get("http://127.0.0.1:" + itoa(port) + "/health")
@@ -202,7 +217,7 @@ func TestServer_StopWithoutStart(t *testing.T) {
 func TestServer_StopIdempotent(t *testing.T) {
 	s := NewServer()
 	s.Start()
-	time.Sleep(50 * time.Millisecond)
+	waitForTCPServer(t, s.opts.Addr(), 3*time.Second)
 
 	ctx := context.Background()
 	for i := 0; i < 3; i++ {

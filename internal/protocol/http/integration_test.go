@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -129,7 +130,7 @@ func TestIntegration_HTTP_ModeA_RealServer(t *testing.T) {
 	}()
 
 	// Wait for server to be ready.
-	time.Sleep(100 * time.Millisecond)
+	waitForTCPServer(t, fmt.Sprintf("127.0.0.1:%d", port), 3*time.Second)
 
 	url := "http://127.0.0.1:" + itoa(port) + "/health"
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -181,7 +182,7 @@ func TestIntegration_HTTP_ModeB_SessionHandler(t *testing.T) {
 		srv.Stop(stopCtx)
 	}()
 
-	time.Sleep(100 * time.Millisecond)
+	waitForTCPServer(t, fmt.Sprintf("127.0.0.1:%d", port), 3*time.Second)
 
 	url := "http://127.0.0.1:" + itoa(port) + "/"
 	client := &http.Client{Timeout: 5 * time.Second}

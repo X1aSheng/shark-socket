@@ -15,6 +15,20 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
+func waitForTCPServer(t *testing.T, addr string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 10*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("TCP server at %s not ready after %v", addr, timeout)
+}
+
 // TestIntegration_Gateway_MultiProtocol creates a gateway, registers a TCP server
 // and an HTTP server, starts both, verifies both protocols respond correctly,
 // then performs a graceful stop.
@@ -76,7 +90,8 @@ func TestIntegration_Gateway_MultiProtocol(t *testing.T) {
 	}()
 
 	// Allow servers time to start.
-	time.Sleep(200 * time.Millisecond)
+	waitForTCPServer(t, fmt.Sprintf("127.0.0.1:%d", tcpPort), 5*time.Second)
+	waitForTCPServer(t, fmt.Sprintf("127.0.0.1:%d", httpPort), 5*time.Second)
 
 	// --- Verify TCP ---
 	t.Run("TCPEcho", func(t *testing.T) {
