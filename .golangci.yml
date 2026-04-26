@@ -1,0 +1,8 @@
+run:
+  go: "1.26"
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck

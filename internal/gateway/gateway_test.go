@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,11 +13,11 @@ import (
 // mockServer satisfies types.Server for testing.
 type mockServer struct {
 	proto   types.ProtocolType
-	started bool
+	started atomic.Bool
 }
 
-func (m *mockServer) Start() error              { m.started = true; return nil }
-func (m *mockServer) Stop(_ context.Context) error { m.started = false; return nil }
+func (m *mockServer) Start() error                 { m.started.Store(true); return nil }
+func (m *mockServer) Stop(_ context.Context) error { m.started.Store(false); return nil }
 func (m *mockServer) Protocol() types.ProtocolType { return m.proto }
 
 func TestNew(t *testing.T) {
@@ -62,7 +63,7 @@ func TestStartStopLifecycle(t *testing.T) {
 	if err := gw.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if !srv.started {
+	if !srv.started.Load() {
 		t.Fatal("expected server to be started")
 	}
 
@@ -71,7 +72,7 @@ func TestStartStopLifecycle(t *testing.T) {
 	if err := gw.Stop(ctx); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
-	if srv.started {
+	if srv.started.Load() {
 		t.Fatal("expected server to be stopped")
 	}
 }
