@@ -11,8 +11,8 @@
 | Critical (Phase 1) | 6 | ✅ 全部完成 |
 | High (Phase 2) | 9 | ✅ 全部完成 |
 | Medium (Phase 3) | 9 | ✅ 全部完成 |
-| Long-term (Phase 4) | 5 | 🔲 待实施 |
-| 总计 | 29 | 24/29 已完成 |
+| Long-term (Phase 4) | 5 | ✅ 全部完成 |
+| 总计 | 29 | 29/29 已完成 |
 
 ---
 
@@ -381,29 +381,29 @@ func (s *subscription) process() {
 
 ## 第四阶段：长期改进
 
-### 4.1 统一错误处理策略
+### 4.1 统一错误处理策略 ✅
 
 - 定义框架级错误处理规范：何时 log、何时 return、何时 panic
 - 所有组件使用一致的错误包装模式（`fmt.Errorf("...: %w", err)`）
 
-### 4.2 全面 Metrics 覆盖
+### 4.2 全面 Metrics 覆盖 ✅
 
 - Session Manager：注册数/活跃数/淘汰数
 - Protocol（按协议标签）：连接数/消息数/错误数
 - Plugin：执行时间/panic 次数
 - BufferPool：命中率/内存占用
 
-### 4.3 配置验证
+### 4.3 配置验证 ✅
 
 - 所有 `Option` 函数在应用时验证参数范围
 - Start() 前做完整配置校验，fail-fast
 
-### 4.4 全局 LRU 淘汰
+### 4.4 全局 LRU 淘汰 ✅
 
 - 设计跨 shard 的全局 LRU 索引
 - 淘汰时选择全局最久未访问的 session
 
-### 4.5 Context 传播完善
+### 4.5 Context 传播完善 ✅
 
 - 所有长期运行 goroutine 接受 context 参数
 - 通过 context 取消实现统一生命周期管理
