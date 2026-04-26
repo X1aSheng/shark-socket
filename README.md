@@ -396,7 +396,11 @@ shark-socket/
 │   ├── configmap.yaml      # Prometheus 配置
 │   ├── kustomization.yaml  # Kustomize 聚合
 │   └── prometheus/         # Prometheus Deployment + Service
-├── scripts/                # 构建、测试、日志脚本
+├── scripts/                # 跨平台测试脚本
+│   ├── run_tests.go        #   Go 运行器（所有平台，推荐）
+│   ├── run_tests.sh        #   Bash 运行器（Linux/macOS/Git Bash）
+│   ├── run_tests.bat       #   CMD 运行器（Windows）
+│   └── parse_test_log.go   #   JSON 日志解析器
 ├── docs/                   # 架构设计文档
 ├── Dockerfile              # 多阶段构建
 ├── docker-compose.yml      # 含 Prometheus 的编排
@@ -478,7 +482,7 @@ AMD Ryzen 7 8845HS (Windows 11, Go 1.26.1) 上的基准测试结果。
 - **64 个测试文件**，覆盖 **22 个包**
 - 全部通过，零失败
 
-### 运行测试
+### 手动运行
 
 ```bash
 # 全部测试
@@ -497,16 +501,61 @@ go test -race ./...
 go test ./internal/protocol/tcp/... -v
 ```
 
-### 自动化测试脚本
+### 自动化测试脚本（推荐）
+
+项目提供三个跨平台测试脚本，功能完全一致，按平台选用：
+
+| 脚本 | 平台 | 运行方式 |
+|------|------|----------|
+| `scripts/run_tests.go` | **所有平台** | `go run scripts/run_tests.go` |
+| `scripts/run_tests.sh` | Linux / macOS / Git Bash | `bash scripts/run_tests.sh` |
+| `scripts/run_tests.bat` | Windows CMD | `scripts\run_tests.bat` |
+
+#### 支持的模式
+
+| 参数 | 说明 |
+|------|------|
+| `--all` | 运行全部：单元 + 集成 + 基准（默认） |
+| `--unit` | 仅单元测试 |
+| `--integration` | 仅集成测试 |
+| `--benchmark` | 仅基准测试 |
+| `--cover` | 覆盖率报告 |
+
+#### 使用示例
 
 ```bash
-bash scripts/run_tests.sh              # 全部测试
-bash scripts/run_tests.sh --unit       # 仅单元测试
-bash scripts/run_tests.sh --integration # 仅集成测试
-bash scripts/run_tests.sh --benchmark  # 仅基准测试
+# --- 所有平台（推荐） ---
+go run scripts/run_tests.go                      # 全部测试
+go run scripts/run_tests.go -mode unit           # 仅单元测试
+go run scripts/run_tests.go -mode cover          # 覆盖率
+
+# --- Linux / macOS / Git Bash ---
+bash scripts/run_tests.sh                        # 全部测试
+bash scripts/run_tests.sh --benchmark            # 仅基准测试
+
+# --- Windows CMD ---
+scripts\run_tests.bat                            # 全部测试
+scripts\run_tests.bat --integration              # 仅集成测试
 ```
 
-日志保存至 `logs/`，包含 JSON 原始数据 + 可读文本报告。
+#### 日志文件
+
+所有测试日志自动保存到 `logs/` 目录，文件名带时间戳前缀：
+
+```
+logs/
+├── 20260426_190627_unit.json            # 原始 JSON 输出（go test -json）
+├── 20260426_190627_unit.log             # 可读测试报告（解析后）
+├── 20260426_190627_integration.json
+├── 20260426_190627_integration.log
+├── 20260426_190627_benchmark.json
+├── 20260426_190627_benchmark.log
+└── 20260426_190627_cover.log            # 覆盖率报告
+```
+
+每个测试阶段生成两个文件：
+- `.json` — `go test -json` 原始输出，可用于 CI 分析或自定义解析
+- `.log` — 经 `parse_test_log.go` 解析后的可读报告，包含按包分组的结果、耗时、通过/失败统计
 
 ### 测试覆盖率
 
@@ -525,11 +574,11 @@ bash scripts/run_tests.sh --benchmark  # 仅基准测试
 | protocol/tcp | 85.4% |
 | utils | 84.7% |
 | protocol/websocket | 80.2% |
+| infra/circuitbreaker | 79.4% |
 | protocol/udp | 78.4% |
 | protocol/coap | 75.2% |
 | protocol/http | 75.2% |
 | infra/logger | 73.9% |
-| infra/circuitbreaker | 79.4% |
 | plugin | 62.7% |
 | infra/metrics | 53.3% |
 | gateway | 52.1% |
