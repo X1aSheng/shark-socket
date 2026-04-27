@@ -189,6 +189,10 @@ func WithTCPConnRateLimit(rate int, windowSec int) tcpclient.Option {
 	return tcpclient.WithConnRateLimit(rate, windowSec)
 }
 
+func WithTCPTLSCertFile(certFile, keyFile string) tcpclient.Option {
+	return tcpclient.WithTLSCertFile(certFile, keyFile)
+}
+
 // HTTP Options
 func WithHTTPAddr(host string, port int) http.Option {
 	return http.WithAddr(host, port)

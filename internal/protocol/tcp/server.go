@@ -17,14 +17,15 @@ import (
 
 // Server is a TCP protocol server.
 type Server struct {
-	opts     Options
-	listener net.Listener
-	manager  *session.Manager
-	chain    *plugin.Chain
-	pool     *WorkerPool
-	wg       sync.WaitGroup
-	closed   atomic.Bool
-	handler  types.RawHandler
+	opts        Options
+	listener    net.Listener
+	manager     *session.Manager
+	chain       *plugin.Chain
+	pool        *WorkerPool
+	wg          sync.WaitGroup
+	closed      atomic.Bool
+	handler     types.RawHandler
+	tlsReloader *TLSReloader
 }
 
 // Compile-time verification.
@@ -51,7 +52,15 @@ func (s *Server) Start() error {
 	var ln net.Listener
 	var err error
 
-	if s.opts.TLSConfig != nil {
+	// If cert/key files are provided, use TLSReloader for hot reload
+	if s.opts.CertFile != "" && s.opts.KeyFile != "" {
+		reloader, err := NewTLSReloader(s.opts.CertFile, s.opts.KeyFile)
+		if err != nil {
+			return fmt.Errorf("tcp: load TLS cert: %w", err)
+		}
+		s.tlsReloader = reloader
+		ln, err = tls.Listen("tcp", s.opts.Addr(), reloader.TLSConfig())
+	} else if s.opts.TLSConfig != nil {
 		ln, err = tls.Listen("tcp", s.opts.Addr(), s.opts.TLSConfig)
 	} else {
 		ln, err = net.Listen("tcp", s.opts.Addr())
@@ -179,6 +188,9 @@ func (s *Server) Stop(ctx context.Context) error {
 	if s.manager != nil {
 		s.manager.Close()
 	}
+	if s.tlsReloader != nil {
+		s.tlsReloader.Close()
+	}
 
 	done := make(chan struct{})
 	go func() {
@@ -196,7 +208,7 @@ func (s *Server) Stop(ctx context.Context) error {
 
 // Protocol returns the protocol type.
 func (s *Server) Protocol() types.ProtocolType {
-	if s.opts.TLSConfig != nil {
+	if s.opts.TLSConfig != nil || s.opts.CertFile != "" {
 		return types.TLS
 	}
 	return types.TCP

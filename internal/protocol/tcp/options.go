@@ -37,6 +37,9 @@ type Options struct {
 	Plugins             []types.Plugin
 	// ConnRateLimit limits connections per IP. nil to disable.
 	ConnRateLimit *ratelimit.ConnectionLimiter
+	// TLS certificate files for hot reload (use TLSConfig if already provided)
+	CertFile string
+	KeyFile  string
 }
 
 func defaultOptions() Options {
@@ -163,6 +166,16 @@ func WithConnRateLimiter(rl *ratelimit.ConnectionLimiter) Option {
 	return func(o *Options) { o.ConnRateLimit = rl }
 }
 
+// WithTLSCertFile enables TLS with automatic certificate hot reload.
+// This is a convenience wrapper around TLSReloader.
+// certFile and keyFile are the paths to the certificate and private key PEM files.
+func WithTLSCertFile(certFile, keyFile string) Option {
+	return func(o *Options) {
+		o.CertFile = certFile
+		o.KeyFile = keyFile
+	}
+}
+
 func (o Options) validate() error {
 	if o.Port < 0 || o.Port > 65535 {
 		return errConfig("port must be 0-65535")
@@ -187,6 +200,10 @@ func (o Options) validate() error {
 	}
 	if o.MaxConsecutiveErrors < 1 {
 		return errConfig("max consecutive errors must be >= 1")
+	}
+	// If cert/key files are specified, they must both be set
+	if (o.CertFile != "") != (o.KeyFile != "") {
+		return errConfig("both cert file and key file must be specified for TLS hot reload")
 	}
 	return nil
 }
