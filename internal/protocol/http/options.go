@@ -22,9 +22,8 @@ type Options struct {
 	TLSConfig    *tls.Config
 	Plugins      []types.Plugin
 	// HTTP/2 options
-	EnableHTTP2          bool   // Enable HTTP/2 (requires TLS)
+	EnableHTTP2          bool   // Enable HTTP/2 (with TLS or h2c for cleartext)
 	MaxConcurrentStreams int    // Max concurrent streams per connection (default 250)
-	InitialWindowSize    int32  // Initial flow control window size
 	// ConnRateLimit limits connections per IP. nil to disable.
 	ConnRateLimit *ratelimit.ConnectionLimiter
 	// AccessLogger for request access logging. nil to disable.
@@ -81,17 +80,16 @@ func WithMaxBodySize(n int64) Option {
 }
 
 // WithHTTP2 enables HTTP/2 protocol support.
-// Note: HTTP/2 requires TLS. If TLSConfig is not set, this will be ignored.
+// Supports both TLS (via ALPN) and cleartext (h2c) modes.
 func WithHTTP2() Option {
 	return func(o *Options) { o.EnableHTTP2 = true }
 }
 
 // WithHTTP2Config configures HTTP/2 settings.
-func WithHTTP2Config(maxStreams int, initialWindow int32) Option {
+func WithHTTP2Config(maxStreams int) Option {
 	return func(o *Options) {
 		o.EnableHTTP2 = true
 		o.MaxConcurrentStreams = maxStreams
-		o.InitialWindowSize = initialWindow
 	}
 }
 

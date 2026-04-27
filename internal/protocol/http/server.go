@@ -15,6 +15,8 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/infra/logger"
 	"github.com/X1aSheng/shark-socket/internal/plugin"
 	"github.com/X1aSheng/shark-socket/internal/types"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 // Server is an HTTP protocol server with two modes:
@@ -114,20 +116,26 @@ func (s *Server) Start() error {
 }
 
 // configureHTTP2 sets up HTTP/2 support.
-// Note: HTTP/2 over cleartext (h2c) requires additional setup.
-// For production, use HTTPS with HTTP/2 for best security.
+// For TLS connections, HTTP/2 is negotiated via ALPN.
+// For cleartext connections (h2c), we use golang.org/x/net/http2/h2c.
 func (s *Server) configureHTTP2() error {
+	h2Server := &http2.Server{
+		MaxConcurrentStreams: uint32(s.opts.MaxConcurrentStreams),
+	}
+
 	if s.opts.TLSConfig != nil {
 		// HTTPS mode: HTTP/2 is negotiated via ALPN
-		// Configure TLS NextProto for HTTP/2
 		s.opts.TLSConfig.NextProtos = append(s.opts.TLSConfig.NextProtos, "h2")
 
-		// Note: MaxConcurrentStreams and other HTTP/2 settings
-		// are managed by the http2 package automatically in net/http
+		if err := http2.ConfigureServer(s.server, h2Server); err != nil {
+			return fmt.Errorf("http: configure HTTP/2: %w", err)
+		}
 		log.Printf("HTTP/2 enabled for HTTPS on %s", s.opts.Addr())
 	} else {
-		// Cleartext HTTP mode - for development/testing only
-		log.Printf("HTTP/2 over cleartext (h2c) not configured. Using HTTP/1.1")
+		// Cleartext h2c mode: wrap handler with h2c handler
+		h2Handler := h2c.NewHandler(s.mux, h2Server)
+		s.server.Handler = h2Handler
+		log.Printf("HTTP/2 over cleartext (h2c) enabled on %s", s.opts.Addr())
 	}
 	return nil
 }

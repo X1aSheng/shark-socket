@@ -214,6 +214,14 @@ func WithHTTPAccessLogger(l logger.AccessLogger) http.Option {
 	return http.WithAccessLogger(l)
 }
 
+func WithHTTP2() http.Option {
+	return http.WithHTTP2()
+}
+
+func WithHTTP2Config(maxStreams int) http.Option {
+	return http.WithHTTP2Config(maxStreams)
+}
+
 // Gateway Options
 func WithShutdownTimeout(d time.Duration) gateway.Option {
 	return gateway.WithShutdownTimeout(d)
