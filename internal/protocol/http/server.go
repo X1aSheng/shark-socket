@@ -148,11 +148,13 @@ func (s *Server) handleWithSession(w stdhttp.ResponseWriter, r *stdhttp.Request)
 	var span tracing.Span
 	ctx := r.Context()
 	if s.opts.Tracer != nil {
-		span, ctx = s.opts.Tracer.StartSpan(ctx, "http.request",
+		var spanCtx context.Context
+		span, spanCtx = s.opts.Tracer.StartSpan(ctx, "http.request",
 			tracing.WithAttribute("method", r.Method),
 			tracing.WithAttribute("path", r.URL.Path),
 			tracing.WithAttribute("remote_addr", r.RemoteAddr),
 		)
+		ctx = spanCtx
 		defer func() {
 			if span != nil {
 				span.End()

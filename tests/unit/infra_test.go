@@ -225,13 +225,13 @@ func TestMemoryCache_TTL(t *testing.T) {
 
 func TestTracing_NopTracer(t *testing.T) {
 	tracer := tracing.NopTracer{}
-	span, ctx := tracer.StartSpan(nil, "test")
+	// Using nil context intentionally for testing NopTracer behavior
+	span, _ := tracer.StartSpan(context.TODO(), "test")
 	if span == nil {
 		t.Fatal("StartSpan returned nil span")
 	}
 	span.End()
 	span.Context()
-	_ = ctx
 }
 
 func TestTracing_SpanContext_RoundTrip(t *testing.T) {

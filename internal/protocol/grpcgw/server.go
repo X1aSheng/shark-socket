@@ -41,7 +41,8 @@ type Server struct {
 	wg        sync.WaitGroup
 	closed    atomic.Bool
 	idGen     atomic.Uint64
-	serveHTTP bool // serve plain HTTP for health checks
+	// serveHTTP is reserved for enabling plain HTTP health checks
+	_         bool
 }
 
 // Compile-time verification.
@@ -239,7 +240,7 @@ func (s *Server) handleDirectMode(w stdhttp.ResponseWriter, r *stdhttp.Request, 
 	w.Header().Set("Content-Type", "application/grpc-web+proto")
 	w.WriteHeader(status)
 	if response != nil {
-		w.Write(response)
+		_, _ = w.Write(response)
 	}
 
 	s.logAccess(r, status, start)
@@ -279,7 +280,7 @@ func (s *Server) handleWebSocketMessages(sess *GRPCWebSession) {
 		case websocket.TextMessage:
 			// gRPC-Web JSON message (alternative format)
 			if s.chain != nil {
-				data, err = s.chain.OnMessage(sess, data)
+				_, err = s.chain.OnMessage(sess, data)
 				if err != nil {
 					if err == errs.ErrDrop {
 						continue
@@ -313,7 +314,7 @@ func (s *Server) SetHandler(h types.RawHandler) {
 // handleHealth returns the health status.
 func (s *Server) handleHealth(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	io.WriteString(w, `{"status":"healthy"}`)
+	_, _ = io.WriteString(w, `{"status":"healthy"}`)
 }
 
 // logAccess logs access for the gateway.

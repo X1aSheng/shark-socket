@@ -91,14 +91,14 @@ func (s *Server) handleConn(conn any) {
 	sess := newSession(id, conn.(*quic.Conn), s.opts.WriteQueueSize)
 
 	if err := s.manager.Register(sess); err != nil {
-		conn.(*quic.Conn).CloseWithError(0, "session limit exceeded")
+		_ = conn.(*quic.Conn).CloseWithError(0, "session limit exceeded")
 		return
 	}
 
 	if s.chain != nil {
 		if err := s.chain.OnAccept(sess); err != nil {
 			s.manager.Unregister(id)
-			conn.(*quic.Conn).CloseWithError(0, "rejected")
+			_ = conn.(*quic.Conn).CloseWithError(0, "rejected")
 			return
 		}
 	}

@@ -55,9 +55,9 @@ func (s *Server) Start() error {
 
 	// If cert/key files are provided, use TLSReloader for hot reload
 	if s.opts.CertFile != "" && s.opts.KeyFile != "" {
-		reloader, err := NewTLSReloader(s.opts.CertFile, s.opts.KeyFile)
-		if err != nil {
-			return fmt.Errorf("tcp: load TLS cert: %w", err)
+		reloader, rErr := NewTLSReloader(s.opts.CertFile, s.opts.KeyFile)
+		if rErr != nil {
+			return fmt.Errorf("tcp: load TLS cert: %w", rErr)
 		}
 		s.tlsReloader = reloader
 		ln, err = tls.Listen("tcp", s.opts.Addr(), reloader.TLSConfig())
@@ -126,10 +126,12 @@ func (s *Server) handleConn(conn net.Conn) {
 	var span tracing.Span
 	ctx := context.Background()
 	if s.opts.Tracer != nil {
-		span, ctx = s.opts.Tracer.StartSpan(ctx, "tcp.accept",
+		var spanCtx context.Context
+		span, spanCtx = s.opts.Tracer.StartSpan(ctx, "tcp.accept",
 			tracing.WithAttribute("protocol", "tcp"),
 			tracing.WithAttribute("remote_addr", conn.RemoteAddr().String()),
 		)
+		ctx = spanCtx
 	}
 
 	// Check connection rate limit if configured

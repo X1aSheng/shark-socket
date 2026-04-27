@@ -100,8 +100,8 @@ func RequestIDFromContext(ctx context.Context) string {
 type AccessLogOption func(*accessLogConfig)
 
 type accessLogConfig struct {
-	excludePaths []string
-	includeBody  bool
+	excludePaths  []string
+	includeBody   bool // reserved for future body logging feature
 	slowThreshold time.Duration
 }
 

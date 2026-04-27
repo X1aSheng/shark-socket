@@ -194,8 +194,9 @@ func newGRPCWebSessionDirect(id uint64, r *stdhttp.Request) *GRPCWebSessionDirec
 	}
 	if port != "" {
 		var p int
-		fmt.Sscanf(port, "%d", &p)
-		remote.Port = p
+		if _, err := fmt.Sscanf(port, "%d", &p); err == nil {
+			remote.Port = p
+		}
 	}
 
 	s := &GRPCWebSessionDirect{

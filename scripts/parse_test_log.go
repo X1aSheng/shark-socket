@@ -40,7 +40,6 @@ var (
 	reBenchData   = regexp.MustCompile(`^\s*(\d+)\s+([\d.]+)\s+ns/op`)
 	reBenchMem    = regexp.MustCompile(`\s+([\d.]+)\s+(B/op|KB/op|MB/op)`)
 	reBenchAllocs = regexp.MustCompile(`\s+(\d+)\s+allocs/op`)
-	reBenchExtra  = regexp.MustCompile(`\s+([\d.]+)\s+(MB/s|ns/op)`)
 )
 
 func main() {
@@ -396,8 +395,12 @@ func parseBenchDataLine(name, line string) *benchResult {
 	if m == nil {
 		return nil
 	}
-	fmt.Sscanf(m[1], "%d", &b.iter)
-	fmt.Sscanf(m[2], "%f", &b.nsPerOp)
+	if _, err := fmt.Sscanf(m[1], "%d", &b.iter); err != nil {
+		return nil
+	}
+	if _, err := fmt.Sscanf(m[2], "%f", &b.nsPerOp); err != nil {
+		return nil
+	}
 
 	// Extract memory
 	memMatch := reBenchMem.FindStringSubmatch(line)
