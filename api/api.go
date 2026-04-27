@@ -198,6 +198,10 @@ func WithHTTPConnRateLimit(rate int, windowSec int) http.Option {
 	return http.WithConnRateLimit(rate, windowSec)
 }
 
+func WithHTTPShutdownTimeout(sec int) http.Option {
+	return http.WithShutdownTimeout(sec)
+}
+
 // Gateway Options
 func WithShutdownTimeout(d time.Duration) gateway.Option {
 	return gateway.WithShutdownTimeout(d)

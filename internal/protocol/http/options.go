@@ -16,6 +16,7 @@ type Options struct {
 	ReadTimeout  int // seconds
 	WriteTimeout int // seconds
 	IdleTimeout  int // seconds
+	ShutdownTimeout int // seconds, timeout for graceful shutdown (default 30)
 	MaxBodySize  int64
 	TLSConfig    *tls.Config
 	Plugins      []types.Plugin
@@ -29,12 +30,13 @@ type Options struct {
 
 func defaultOptions() Options {
 	return Options{
-		Host:         "0.0.0.0",
-		Port:         18400,
-		ReadTimeout:  30,
-		WriteTimeout: 30,
-		IdleTimeout:  120,
-		MaxBodySize:  10 * 1024 * 1024, // 10MB default
+		Host:             "0.0.0.0",
+		Port:             18400,
+		ReadTimeout:      30,
+		WriteTimeout:     30,
+		IdleTimeout:      120,
+		ShutdownTimeout:  30,
+		MaxBodySize:      10 * 1024 * 1024, // 10MB default
 	}
 }
 
@@ -106,6 +108,11 @@ func WithConnRateLimiter(rl *ratelimit.ConnectionLimiter) Option {
 	return func(o *Options) { o.ConnRateLimit = rl }
 }
 
+// WithShutdownTimeout sets the graceful shutdown timeout in seconds.
+func WithShutdownTimeout(sec int) Option {
+	return func(o *Options) { o.ShutdownTimeout = sec }
+}
+
 func (o Options) validate() error {
 	if o.Port < 0 || o.Port > 65535 {
 		return fmt.Errorf("http config: port must be 0-65535")
@@ -118,6 +125,9 @@ func (o Options) validate() error {
 	}
 	if o.IdleTimeout < 0 {
 		return fmt.Errorf("http config: idle timeout must be >= 0")
+	}
+	if o.ShutdownTimeout < 0 {
+		return fmt.Errorf("http config: shutdown timeout must be >= 0")
 	}
 	return nil
 }
