@@ -14,6 +14,7 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/plugin"
 	"github.com/X1aSheng/shark-socket/internal/protocol/coap"
 	"github.com/X1aSheng/shark-socket/internal/protocol/http"
+	"github.com/X1aSheng/shark-socket/internal/protocol/quic"
 	tcpclient "github.com/X1aSheng/shark-socket/internal/protocol/tcp"
 	udp "github.com/X1aSheng/shark-socket/internal/protocol/udp"
 	websocket "github.com/X1aSheng/shark-socket/internal/protocol/websocket"
@@ -54,6 +55,7 @@ const (
 	HTTP      = types.HTTP
 	WebSocket = types.WebSocket
 	CoAP      = types.CoAP
+	QUIC      = types.QUIC
 	Custom    = types.Custom
 
 	Text    = types.Text
@@ -102,6 +104,12 @@ func NewWebSocketServer(handler RawHandler, opts ...websocket.Option) *websocket
 
 func NewCoAPServer(handler RawHandler, opts ...coap.Option) *coap.Server {
 	return coap.NewServer(handler, opts...)
+}
+
+// === QUIC Server Factory ===
+
+func NewQUICServer(handler RawHandler, opts ...quic.Option) *quic.Server {
+	return quic.NewServer(handler, opts...)
 }
 
 // === TCP Client Factory ===
@@ -192,6 +200,27 @@ func WithMetricsEnabled(enabled bool) gateway.Option {
 
 func WithGlobalPlugins(p ...Plugin) gateway.Option {
 	return gateway.WithGlobalPlugins(p...)
+}
+
+// QUIC Options
+func WithQUICAddr(host string, port int) quic.Option {
+	return quic.WithAddr(host, port)
+}
+
+func WithQUICTLS(cfg *tls.Config) quic.Option {
+	return quic.WithTLS(cfg)
+}
+
+func WithQUICPlugins(p ...Plugin) quic.Option {
+	return quic.WithPlugins(p...)
+}
+
+func WithQUICMaxSessions(max int64) quic.Option {
+	return quic.WithMaxSessions(max)
+}
+
+func WithQUICMaxMessageSize(max int) quic.Option {
+	return quic.WithMaxMessageSize(max)
 }
 
 // Error variables re-export
