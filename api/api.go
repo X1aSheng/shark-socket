@@ -14,6 +14,7 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/infra/tracing"
 	"github.com/X1aSheng/shark-socket/internal/plugin"
 	"github.com/X1aSheng/shark-socket/internal/protocol/coap"
+	"github.com/X1aSheng/shark-socket/internal/protocol/grpcgw"
 	"github.com/X1aSheng/shark-socket/internal/protocol/http"
 	"github.com/X1aSheng/shark-socket/internal/protocol/quic"
 	tcpclient "github.com/X1aSheng/shark-socket/internal/protocol/tcp"
@@ -116,6 +117,12 @@ func NewCoAPServer(handler RawHandler, opts ...coap.Option) *coap.Server {
 
 func NewQUICServer(handler RawHandler, opts ...quic.Option) *quic.Server {
 	return quic.NewServer(handler, opts...)
+}
+
+// === gRPC-Web Gateway Factory ===
+
+func NewGRPCWebGateway(opts ...grpcgw.Option) *grpcgw.Server {
+	return grpcgw.NewServer(opts...)
 }
 
 // === TCP Client Factory ===
