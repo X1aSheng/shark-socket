@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/X1aSheng/shark-socket/internal/infra/logger"
 	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
@@ -22,6 +23,8 @@ type Options struct {
 	AllowedOrigins []string
 	TLSConfig      *tls.Config
 	Plugins        []types.Plugin
+	// AccessLogger for request access logging. nil to disable.
+	AccessLogger logger.AccessLogger
 }
 
 func defaultOptions() Options {
@@ -85,6 +88,11 @@ func WithTLS(cfg *tls.Config) Option {
 // WithPlugins adds protocol-level plugins.
 func WithPlugins(p ...types.Plugin) Option {
 	return func(o *Options) { o.Plugins = append(o.Plugins, p...) }
+}
+
+// WithAccessLogger sets the access logger for request logging.
+func WithAccessLogger(l logger.AccessLogger) Option {
+	return func(o *Options) { o.AccessLogger = l }
 }
 
 func (o Options) validate() error {

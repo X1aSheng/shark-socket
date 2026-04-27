@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/X1aSheng/shark-socket/internal/infra/logger"
 	"github.com/X1aSheng/shark-socket/internal/infra/ratelimit"
 	"github.com/X1aSheng/shark-socket/internal/types"
 )
@@ -26,6 +27,8 @@ type Options struct {
 	InitialWindowSize    int32  // Initial flow control window size
 	// ConnRateLimit limits connections per IP. nil to disable.
 	ConnRateLimit *ratelimit.ConnectionLimiter
+	// AccessLogger for request access logging. nil to disable.
+	AccessLogger logger.AccessLogger
 }
 
 func defaultOptions() Options {
@@ -111,6 +114,11 @@ func WithConnRateLimiter(rl *ratelimit.ConnectionLimiter) Option {
 // WithShutdownTimeout sets the graceful shutdown timeout in seconds.
 func WithShutdownTimeout(sec int) Option {
 	return func(o *Options) { o.ShutdownTimeout = sec }
+}
+
+// WithAccessLogger sets the access logger for request logging.
+func WithAccessLogger(l logger.AccessLogger) Option {
+	return func(o *Options) { o.AccessLogger = l }
 }
 
 func (o Options) validate() error {

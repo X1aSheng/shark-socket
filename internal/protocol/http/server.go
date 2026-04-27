@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/X1aSheng/shark-socket/internal/infra/logger"
 	"github.com/X1aSheng/shark-socket/internal/plugin"
 	"github.com/X1aSheng/shark-socket/internal/types"
 )
@@ -132,6 +133,8 @@ func (s *Server) configureHTTP2() error {
 }
 
 func (s *Server) handleWithSession(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	start := time.Now()
+
 	// Check connection rate limit if configured
 	var rateLimitHost string
 	if s.opts.ConnRateLimit != nil {
@@ -144,6 +147,17 @@ func (s *Server) handleWithSession(w stdhttp.ResponseWriter, r *stdhttp.Request)
 		}
 		rateLimitHost = host
 		if !s.opts.ConnRateLimit.Allow(host) {
+			if s.opts.AccessLogger != nil {
+				s.opts.AccessLogger.Log(logger.AccessLogEntry{
+					Protocol:   "http",
+					Method:     r.Method,
+					Path:       r.URL.Path,
+					StatusCode: 429,
+					Duration:   time.Since(start),
+					ClientIP:   host,
+					UserAgent:  r.UserAgent(),
+				})
+			}
 			stdhttp.Error(w, "Too Many Requests", stdhttp.StatusTooManyRequests)
 			return
 		}
@@ -159,6 +173,18 @@ func (s *Server) handleWithSession(w stdhttp.ResponseWriter, r *stdhttp.Request)
 
 	if s.chain != nil {
 		if err := s.chain.OnAccept(sess); err != nil {
+			if s.opts.AccessLogger != nil {
+				host, _, _ := splitHostPort(r.RemoteAddr)
+				s.opts.AccessLogger.Log(logger.AccessLogEntry{
+					Protocol:   "http",
+					Method:     r.Method,
+					Path:       r.URL.Path,
+					StatusCode: 403,
+					Duration:   time.Since(start),
+					ClientIP:   host,
+					UserAgent:  r.UserAgent(),
+				})
+			}
 			stdhttp.Error(w, "Forbidden", stdhttp.StatusForbidden)
 			return
 		}
@@ -173,31 +199,91 @@ func (s *Server) handleWithSession(w stdhttp.ResponseWriter, r *stdhttp.Request)
 		var readErr error
 		body, readErr = io.ReadAll(reader)
 		if readErr != nil {
+			if s.opts.AccessLogger != nil {
+				host, _, _ := splitHostPort(r.RemoteAddr)
+				s.opts.AccessLogger.Log(logger.AccessLogEntry{
+					Protocol:   "http",
+					Method:     r.Method,
+					Path:       r.URL.Path,
+					StatusCode: 400,
+					Duration:   time.Since(start),
+					ClientIP:   host,
+					UserAgent:  r.UserAgent(),
+					Error:      readErr,
+				})
+			}
 			stdhttp.Error(w, "Bad Request", stdhttp.StatusBadRequest)
 			return
 		}
 		if s.opts.MaxBodySize > 0 && int64(len(body)) > s.opts.MaxBodySize {
+			if s.opts.AccessLogger != nil {
+				host, _, _ := splitHostPort(r.RemoteAddr)
+				s.opts.AccessLogger.Log(logger.AccessLogEntry{
+					Protocol:   "http",
+					Method:     r.Method,
+					Path:       r.URL.Path,
+					StatusCode: 413,
+					Duration:   time.Since(start),
+					ClientIP:   host,
+					UserAgent:  r.UserAgent(),
+				})
+			}
 			stdhttp.Error(w, "Request body too large", stdhttp.StatusRequestEntityTooLarge)
 			return
 		}
 	}
 
-	if s.chain != nil && len(body) > 0 {
-		var err error
-		body, err = s.chain.OnMessage(sess, body)
-		if err != nil {
-			stdhttp.Error(w, "Bad Request", stdhttp.StatusBadRequest)
-			return
+		if s.chain != nil && len(body) > 0 {
+			var err error
+			body, err = s.chain.OnMessage(sess, body)
+			if err != nil {
+				if s.opts.AccessLogger != nil {
+					host, _, _ := splitHostPort(r.RemoteAddr)
+					s.opts.AccessLogger.Log(logger.AccessLogEntry{
+						Protocol:   "http",
+						Method:     r.Method,
+						Path:       r.URL.Path,
+						StatusCode: 400,
+						Duration:   time.Since(start),
+						ClientIP:   host,
+						UserAgent:  r.UserAgent(),
+						Error:      err,
+					})
+				}
+				stdhttp.Error(w, "Bad Request", stdhttp.StatusBadRequest)
+				return
+			}
 		}
-	}
 
+	status := 200
 	if s.handler != nil {
 		msg := types.NewRawMessage(sess.ID(), types.HTTP, body)
 		_ = s.handler(sess, msg)
+		// Handler may have set a custom status via session metadata
+		if v, ok := sess.GetMeta("http_status"); ok {
+			if s, ok := v.(int); ok {
+				status = s
+			}
+		}
 	}
 
 	if s.chain != nil {
 		s.chain.OnClose(sess)
+	}
+
+	// Log access after request is processed
+	if s.opts.AccessLogger != nil {
+		host, _, _ := splitHostPort(r.RemoteAddr)
+		s.opts.AccessLogger.Log(logger.AccessLogEntry{
+			Protocol:    "http",
+			Method:      r.Method,
+			Path:        r.URL.Path,
+			StatusCode:  status,
+			Duration:    time.Since(start),
+			ClientIP:    host,
+			UserAgent:   r.UserAgent(),
+			BytesIn:     int64(len(body)),
+		})
 	}
 }
 

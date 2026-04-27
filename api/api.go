@@ -100,6 +100,10 @@ func NewWebSocketServer(handler RawHandler, opts ...websocket.Option) *websocket
 	return websocket.NewServer(handler, opts...)
 }
 
+func WithWebSocketAccessLogger(l logger.AccessLogger) websocket.Option {
+	return websocket.WithAccessLogger(l)
+}
+
 // === CoAP Server Factory ===
 
 func NewCoAPServer(handler RawHandler, opts ...coap.Option) *coap.Server {
@@ -204,6 +208,10 @@ func WithHTTPConnRateLimit(rate int, windowSec int) http.Option {
 
 func WithHTTPShutdownTimeout(sec int) http.Option {
 	return http.WithShutdownTimeout(sec)
+}
+
+func WithHTTPAccessLogger(l logger.AccessLogger) http.Option {
+	return http.WithAccessLogger(l)
 }
 
 // Gateway Options

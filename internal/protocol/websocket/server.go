@@ -14,6 +14,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/X1aSheng/shark-socket/internal/errs"
+	"github.com/X1aSheng/shark-socket/internal/infra/logger"
 	"github.com/X1aSheng/shark-socket/internal/plugin"
 	"github.com/X1aSheng/shark-socket/internal/session"
 	"github.com/X1aSheng/shark-socket/internal/types"
@@ -107,8 +108,23 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) handleUpgrade(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	start := time.Now()
+	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		if s.opts.AccessLogger != nil {
+			s.opts.AccessLogger.Log(logger.AccessLogEntry{
+				Protocol:   "websocket",
+				Method:     r.Method,
+				Path:       r.URL.Path,
+				StatusCode: 400,
+				Duration:   time.Since(start),
+				ClientIP:   host,
+				UserAgent:  r.UserAgent(),
+				Error:      err,
+			})
+		}
 		return
 	}
 
@@ -116,16 +132,52 @@ func (s *Server) handleUpgrade(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	sess := NewWSSession(id, conn)
 
 	if err := s.manager.Register(sess); err != nil {
+		if s.opts.AccessLogger != nil {
+			s.opts.AccessLogger.Log(logger.AccessLogEntry{
+				Protocol:   "websocket",
+				Method:     r.Method,
+				Path:       r.URL.Path,
+				StatusCode: 503,
+				Duration:   time.Since(start),
+				ClientIP:   host,
+				UserAgent:  r.UserAgent(),
+				Error:      err,
+			})
+		}
 		sess.Close()
 		return
 	}
 
 	if s.chain != nil {
 		if err := s.chain.OnAccept(sess); err != nil {
+			if s.opts.AccessLogger != nil {
+				s.opts.AccessLogger.Log(logger.AccessLogEntry{
+					Protocol:   "websocket",
+					Method:     r.Method,
+					Path:       r.URL.Path,
+					StatusCode: 403,
+					Duration:   time.Since(start),
+					ClientIP:   host,
+					UserAgent:  r.UserAgent(),
+				})
+			}
 			s.manager.Unregister(id)
 			sess.Close()
 			return
 		}
+	}
+
+	// Log successful upgrade
+	if s.opts.AccessLogger != nil {
+		s.opts.AccessLogger.Log(logger.AccessLogEntry{
+			Protocol:   "websocket",
+			Method:     r.Method,
+			Path:       r.URL.Path,
+			StatusCode: 101,
+			Duration:   time.Since(start),
+			ClientIP:   host,
+			UserAgent:  r.UserAgent(),
+		})
 	}
 
 	conn.SetReadLimit(int64(s.opts.MaxMessageSize))
