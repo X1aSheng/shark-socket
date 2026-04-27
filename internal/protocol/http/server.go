@@ -132,6 +132,28 @@ func (s *Server) configureHTTP2() error {
 }
 
 func (s *Server) handleWithSession(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	// Check connection rate limit if configured
+	var rateLimitHost string
+	if s.opts.ConnRateLimit != nil {
+		// r.RemoteAddr is a string like "192.168.1.1:12345"
+		// Parse it to extract just the IP for rate limiting
+		host, _, err := splitHostPort(r.RemoteAddr)
+		if err != nil {
+			// If we can't parse, allow by default
+			host = r.RemoteAddr
+		}
+		rateLimitHost = host
+		if !s.opts.ConnRateLimit.Allow(host) {
+			stdhttp.Error(w, "Too Many Requests", stdhttp.StatusTooManyRequests)
+			return
+		}
+		defer func() {
+			if rateLimitHost != "" {
+				s.opts.ConnRateLimit.Remove(rateLimitHost)
+			}
+		}()
+	}
+
 	id := s.idGen.Add(1)
 	sess := NewHTTPSession(id, w, r)
 
@@ -204,4 +226,14 @@ func (s *Server) Addr() net.Addr {
 // SetHandler sets the raw handler for mode B.
 func (s *Server) SetHandler(h types.RawHandler) {
 	s.handler = h
+}
+
+// splitHostPort splits a host:port string into host and port.
+// Returns host as-is if parsing fails.
+func splitHostPort(addr string) (host, port string, err error) {
+	host, port, err = net.SplitHostPort(addr)
+	if err != nil {
+		return addr, "", err
+	}
+	return host, port, nil
 }

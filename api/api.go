@@ -185,6 +185,19 @@ func WithTCPMaxMessageSize(max int) tcpclient.Option {
 	return tcpclient.WithMaxMessageSize(max)
 }
 
+func WithTCPConnRateLimit(rate int, windowSec int) tcpclient.Option {
+	return tcpclient.WithConnRateLimit(rate, windowSec)
+}
+
+// HTTP Options
+func WithHTTPAddr(host string, port int) http.Option {
+	return http.WithAddr(host, port)
+}
+
+func WithHTTPConnRateLimit(rate int, windowSec int) http.Option {
+	return http.WithConnRateLimit(rate, windowSec)
+}
+
 // Gateway Options
 func WithShutdownTimeout(d time.Duration) gateway.Option {
 	return gateway.WithShutdownTimeout(d)

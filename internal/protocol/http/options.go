@@ -3,7 +3,9 @@ package http
 import (
 	"crypto/tls"
 	"fmt"
+	"time"
 
+	"github.com/X1aSheng/shark-socket/internal/infra/ratelimit"
 	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
@@ -18,9 +20,11 @@ type Options struct {
 	TLSConfig    *tls.Config
 	Plugins      []types.Plugin
 	// HTTP/2 options
-	EnableHTTP2         bool   // Enable HTTP/2 (requires TLS)
-	MaxConcurrentStreams int   // Max concurrent streams per connection (default 250)
-	InitialWindowSize    int32 // Initial flow control window size
+	EnableHTTP2          bool   // Enable HTTP/2 (requires TLS)
+	MaxConcurrentStreams int    // Max concurrent streams per connection (default 250)
+	InitialWindowSize    int32  // Initial flow control window size
+	// ConnRateLimit limits connections per IP. nil to disable.
+	ConnRateLimit *ratelimit.ConnectionLimiter
 }
 
 func defaultOptions() Options {
@@ -84,6 +88,22 @@ func WithHTTP2Config(maxStreams int, initialWindow int32) Option {
 		o.MaxConcurrentStreams = maxStreams
 		o.InitialWindowSize = initialWindow
 	}
+}
+
+// WithConnRateLimit enables connection rate limiting per IP address.
+// rate: max connections per window duration.
+// windowSec: time window in seconds for rate limiting.
+func WithConnRateLimit(rate int, windowSec int) Option {
+	return func(o *Options) {
+		if rate > 0 && windowSec > 0 {
+			o.ConnRateLimit = ratelimit.NewConnectionLimiter(rate, time.Duration(windowSec)*time.Second)
+		}
+	}
+}
+
+// WithConnRateLimiter sets a custom connection rate limiter.
+func WithConnRateLimiter(rl *ratelimit.ConnectionLimiter) Option {
+	return func(o *Options) { o.ConnRateLimit = rl }
 }
 
 func (o Options) validate() error {
