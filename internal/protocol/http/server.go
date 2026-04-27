@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/infra/logger"
+	"github.com/X1aSheng/shark-socket/internal/infra/tracing"
 	"github.com/X1aSheng/shark-socket/internal/plugin"
 	"github.com/X1aSheng/shark-socket/internal/types"
 	"golang.org/x/net/http2"
@@ -142,6 +143,22 @@ func (s *Server) configureHTTP2() error {
 
 func (s *Server) handleWithSession(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	start := time.Now()
+
+	// Start tracing span if tracer is configured
+	var span tracing.Span
+	ctx := r.Context()
+	if s.opts.Tracer != nil {
+		span, ctx = s.opts.Tracer.StartSpan(ctx, "http.request",
+			tracing.WithAttribute("method", r.Method),
+			tracing.WithAttribute("path", r.URL.Path),
+			tracing.WithAttribute("remote_addr", r.RemoteAddr),
+		)
+		defer func() {
+			if span != nil {
+				span.End()
+			}
+		}()
+	}
 
 	// Check connection rate limit if configured
 	var rateLimitHost string

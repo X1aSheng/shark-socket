@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/X1aSheng/shark-socket/internal/infra/tracing"
 	"github.com/X1aSheng/shark-socket/internal/plugin"
 	"github.com/X1aSheng/shark-socket/internal/session"
 	"github.com/X1aSheng/shark-socket/internal/types"
@@ -122,9 +123,21 @@ func (s *Server) acceptLoop() {
 }
 
 func (s *Server) handleConn(conn net.Conn) {
+	var span tracing.Span
+	ctx := context.Background()
+	if s.opts.Tracer != nil {
+		span, ctx = s.opts.Tracer.StartSpan(ctx, "tcp.accept",
+			tracing.WithAttribute("protocol", "tcp"),
+			tracing.WithAttribute("remote_addr", conn.RemoteAddr().String()),
+		)
+	}
+
 	// Check connection rate limit if configured
 	if s.opts.ConnRateLimit != nil {
 		if !s.opts.ConnRateLimit.AllowAddr(conn.RemoteAddr()) {
+			if span != nil {
+				span.End()
+			}
 			conn.Close()
 			return
 		}
@@ -137,6 +150,9 @@ func (s *Server) handleConn(conn net.Conn) {
 	}
 
 	if err := s.manager.Register(sess); err != nil {
+		if span != nil {
+			span.End()
+		}
 		conn.Close()
 		return
 	}
@@ -145,6 +161,9 @@ func (s *Server) handleConn(conn net.Conn) {
 		if err := s.chain.OnAccept(sess); err != nil {
 			s.manager.Unregister(id)
 			sess.Close()
+			if span != nil {
+				span.End()
+			}
 			return
 		}
 	}
@@ -170,6 +189,9 @@ func (s *Server) handleConn(conn net.Conn) {
 	s.manager.Unregister(id)
 	if s.chain != nil {
 		s.chain.OnClose(sess)
+	}
+	if span != nil {
+		span.End()
 	}
 }
 

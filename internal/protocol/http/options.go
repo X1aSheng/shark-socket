@@ -7,6 +7,7 @@ import (
 
 	"github.com/X1aSheng/shark-socket/internal/infra/logger"
 	"github.com/X1aSheng/shark-socket/internal/infra/ratelimit"
+	"github.com/X1aSheng/shark-socket/internal/infra/tracing"
 	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
@@ -28,6 +29,8 @@ type Options struct {
 	ConnRateLimit *ratelimit.ConnectionLimiter
 	// AccessLogger for request access logging. nil to disable.
 	AccessLogger logger.AccessLogger
+	// Tracer for distributed tracing. nil to disable.
+	Tracer tracing.Tracer
 }
 
 func defaultOptions() Options {
@@ -117,6 +120,11 @@ func WithShutdownTimeout(sec int) Option {
 // WithAccessLogger sets the access logger for request logging.
 func WithAccessLogger(l logger.AccessLogger) Option {
 	return func(o *Options) { o.AccessLogger = l }
+}
+
+// WithTracer sets the distributed tracing implementation.
+func WithTracer(t tracing.Tracer) Option {
+	return func(o *Options) { o.Tracer = t }
 }
 
 func (o Options) validate() error {

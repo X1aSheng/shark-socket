@@ -11,6 +11,7 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/infra/metrics"
 	"github.com/X1aSheng/shark-socket/internal/infra/pubsub"
 	"github.com/X1aSheng/shark-socket/internal/infra/store"
+	"github.com/X1aSheng/shark-socket/internal/infra/tracing"
 	"github.com/X1aSheng/shark-socket/internal/plugin"
 	"github.com/X1aSheng/shark-socket/internal/protocol/coap"
 	"github.com/X1aSheng/shark-socket/internal/protocol/http"
@@ -44,6 +45,7 @@ type (
 	Store                            = store.Store
 	PubSub                           = pubsub.PubSub
 	CircuitBreaker                   = circuitbreaker.CircuitBreaker
+	Tracer                           = tracing.Tracer
 )
 
 // === Protocol Constants ===
