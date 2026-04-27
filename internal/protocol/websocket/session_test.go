@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 func setupWSPair(t *testing.T) (*WSSession, *websocket.Conn) {
 	t.Helper()
 
-	var serverSess *WSSession
+	var serverSess atomic.Pointer[WSSession]
 
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true },
@@ -30,7 +31,7 @@ func setupWSPair(t *testing.T) (*WSSession, *websocket.Conn) {
 			t.Logf("upgrade error: %v", err)
 			return
 		}
-		serverSess = NewWSSession(1, conn)
+		serverSess.Store(NewWSSession(1, conn))
 	})
 
 	ts := httptest.NewServer(handler)
@@ -42,17 +43,19 @@ func setupWSPair(t *testing.T) (*WSSession, *websocket.Conn) {
 		t.Fatalf("client dial: %v", err)
 	}
 
-	// Give server a moment to complete upgrade
-	time.Sleep(50 * time.Millisecond)
+	// Wait for server goroutine to create the session
+	for serverSess.Load() == nil {
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	t.Cleanup(func() {
-		if serverSess != nil {
-			serverSess.Close()
+		if s := serverSess.Load(); s != nil {
+			s.Close()
 		}
 		clientConn.Close()
 	})
 
-	return serverSess, clientConn
+	return serverSess.Load(), clientConn
 }
 
 func TestNewWSSession(t *testing.T) {
