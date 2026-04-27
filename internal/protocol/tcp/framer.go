@@ -16,14 +16,12 @@ type Framer interface {
 // LengthPrefixFramer uses a 4-byte big-endian length prefix.
 type LengthPrefixFramer struct {
 	maxSize int
-	br      *bufio.Reader
 }
 
 // NewLengthPrefixFramer creates a new LengthPrefixFramer.
 func NewLengthPrefixFramer(maxSize int) *LengthPrefixFramer {
 	return &LengthPrefixFramer{
 		maxSize: maxSize,
-		br:      bufio.NewReaderSize(nil, 4096),
 	}
 }
 
@@ -34,9 +32,9 @@ func (f *LengthPrefixFramer) ReadFrame(r io.Reader) (payload []byte, err error) 
 		}
 	}()
 
-	f.br.Reset(r)
+	br := bufio.NewReaderSize(r, 4096)
 	header := make([]byte, 4)
-	if _, err := io.ReadFull(f.br, header); err != nil {
+	if _, err := io.ReadFull(br, header); err != nil {
 		return nil, err
 	}
 	size := int(binary.BigEndian.Uint32(header))
@@ -47,7 +45,7 @@ func (f *LengthPrefixFramer) ReadFrame(r io.Reader) (payload []byte, err error) 
 		return nil, nil
 	}
 	payload = make([]byte, size)
-	if _, err := io.ReadFull(f.br, payload); err != nil {
+	if _, err := io.ReadFull(br, payload); err != nil {
 		return nil, err
 	}
 	return payload, nil
