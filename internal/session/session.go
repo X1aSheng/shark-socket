@@ -10,6 +10,9 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
+// DefaultMaxMessageSize is the default maximum message size (8MB).
+const DefaultMaxMessageSize = 8 * 1024 * 1024
+
 // BaseSession provides the core session state machine and metadata management.
 // Protocol-specific sessions embed this and implement Send/SendTyped/Close.
 type BaseSession struct {
@@ -21,6 +24,10 @@ type BaseSession struct {
 
 	state      atomic.Int32
 	lastActive atomic.Int64
+
+	// Memory limits for message protection
+	maxMessageSize atomic.Int64
+	memUsed        atomic.Int64
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -42,6 +49,7 @@ func NewBase(id uint64, proto types.ProtocolType, remote, local net.Addr) *BaseS
 	}
 	b.state.Store(int32(types.Connecting))
 	b.lastActive.Store(time.Now().UnixNano())
+	b.maxMessageSize.Store(DefaultMaxMessageSize)
 	return b
 }
 
@@ -135,4 +143,54 @@ func (b *BaseSession) DoClose() {
 		return true
 	})
 	b.cancel()
+}
+
+// SetMaxMessageSize sets the maximum message size for this session.
+// Default is DefaultMaxMessageSize (8MB). Set to 0 for unlimited.
+func (b *BaseSession) SetMaxMessageSize(size int64) {
+	b.maxMessageSize.Store(size)
+}
+
+// MaxMessageSize returns the current max message size limit.
+func (b *BaseSession) MaxMessageSize() int64 {
+	return b.maxMessageSize.Load()
+}
+
+// CheckMessageSize checks if a message is within the size limit.
+// Returns true if allowed, false if message exceeds limit.
+func (b *BaseSession) CheckMessageSize(size int) bool {
+	limit := b.maxMessageSize.Load()
+	if limit <= 0 {
+		return true // Unlimited
+	}
+	return int64(size) <= limit
+}
+
+// MemUsed returns the current memory usage estimate.
+func (b *BaseSession) MemUsed() int64 {
+	return b.memUsed.Load()
+}
+
+// AddMemUsage atomically adds to the memory usage counter.
+// Call after processing a message, call ReleaseMemUsage when done.
+func (b *BaseSession) AddMemUsage(size int64) {
+	b.memUsed.Add(size)
+}
+
+// ReleaseMemUsage atomically subtracts from the memory usage counter.
+func (b *BaseSession) ReleaseMemUsage(size int64) {
+	b.memUsed.Add(-size)
+}
+
+// InitBase sets up the base session with default values.
+func InitBase(b *BaseSession, id uint64, proto types.ProtocolType, remote, local net.Addr) {
+	b.id = id
+	b.protocol = proto
+	b.remoteAddr = remote
+	b.localAddr = local
+	b.createdAt = time.Now()
+	b.state.Store(int32(types.Connecting))
+	b.lastActive.Store(time.Now().UnixNano())
+	b.maxMessageSize.Store(DefaultMaxMessageSize)
+	b.memUsed.Store(0)
 }

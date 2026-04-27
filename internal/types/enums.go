@@ -12,7 +12,9 @@ const (
 	HTTP      ProtocolType = 4
 	WebSocket ProtocolType = 5
 	CoAP      ProtocolType = 6
+	QUIC      ProtocolType = 7
 	Custom    ProtocolType = 99
+	Unknown   ProtocolType = 0
 )
 
 func (p ProtocolType) String() string {
@@ -29,8 +31,12 @@ func (p ProtocolType) String() string {
 		return "WebSocket"
 	case CoAP:
 		return "CoAP"
+	case QUIC:
+		return "QUIC"
 	case Custom:
 		return "Custom"
+	case Unknown:
+		return "Unknown"
 	default:
 		return "Unknown"
 	}

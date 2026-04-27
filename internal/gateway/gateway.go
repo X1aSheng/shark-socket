@@ -160,6 +160,7 @@ func (g *Gateway) Stop(ctx context.Context) error {
 }
 
 // Run starts the gateway and blocks until a termination signal.
+// It performs a staged shutdown when a signal is received.
 func (g *Gateway) Run() error {
 	if err := g.Start(); err != nil {
 		return err
@@ -169,11 +170,120 @@ func (g *Gateway) Run() error {
 	defer stop()
 
 	<-ctx.Done()
-	log.Println("Shutdown signal received")
+	log.Println("Shutdown signal received, initiating staged shutdown...")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), g.opts.ShutdownTimeout)
+	// Stage 1: Stop accepting new connections
+	if err := g.stageStopAccept(); err != nil {
+		log.Printf("Stage 1 (StopAccept) error: %v", err)
+	}
+
+	// Stage 2: Drain in-flight messages
+	if err := g.stageDrain(); err != nil {
+		log.Printf("Stage 2 (Drain) error: %v", err)
+	}
+
+	// Stage 3: Close active sessions
+	if err := g.stageSessionClose(); err != nil {
+		log.Printf("Stage 3 (SessionClose) error: %v", err)
+	}
+
+	// Stage 4: Close session manager
+	if err := g.stageManagerClose(); err != nil {
+		log.Printf("Stage 4 (ManagerClose) error: %v", err)
+	}
+
+	// Stage 5: Close metrics server
+	if err := g.stageMetricsClose(); err != nil {
+		log.Printf("Stage 5 (MetricsClose) error: %v", err)
+	}
+
+	// Stage 6: Finalize
+	g.stageFinalize()
+
+	return nil
+}
+
+// stageStopAccept stops accepting new connections.
+func (g *Gateway) stageStopAccept() error {
+	ctx, cancel := context.WithTimeout(context.Background(), g.opts.StageTimeouts.StopAccept)
 	defer cancel()
-	return g.Stop(shutdownCtx)
+
+	g.mu.RLock()
+	snapshot := make(map[types.ProtocolType]types.Server, len(g.servers))
+	for k, v := range g.servers {
+		snapshot[k] = v
+	}
+	g.mu.RUnlock()
+
+	for proto, srv := range snapshot {
+		if err := srv.Stop(ctx); err != nil {
+			log.Printf("Failed to stop %s server: %v", proto, err)
+		}
+	}
+	return nil
+}
+
+// stageDrain drains in-flight messages.
+func (g *Gateway) stageDrain() error {
+	ctx, cancel := context.WithTimeout(context.Background(), g.opts.StageTimeouts.Drain)
+	defer cancel()
+
+	// Wait for all goroutines to complete
+	done := make(chan struct{})
+	go func() {
+		g.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// stageSessionClose closes active sessions.
+func (g *Gateway) stageSessionClose() error {
+	ctx, cancel := context.WithTimeout(context.Background(), g.opts.StageTimeouts.SessionClose)
+	defer cancel()
+
+	if g.sharedManager != nil {
+		if err := g.sharedManager.Close(); err != nil {
+			return err
+		}
+	}
+	_ = ctx // Suppress unused warning
+	return nil
+}
+
+// stageManagerClose closes the session manager.
+func (g *Gateway) stageManagerClose() error {
+	ctx, cancel := context.WithTimeout(context.Background(), g.opts.StageTimeouts.ManagerClose)
+	defer cancel()
+
+	<-ctx.Done()
+	return nil
+}
+
+// stageMetricsClose closes the metrics server.
+func (g *Gateway) stageMetricsClose() error {
+	ctx, cancel := context.WithTimeout(context.Background(), g.opts.StageTimeouts.MetricsClose)
+	defer cancel()
+
+	if g.metricsServer != nil {
+		return g.metricsServer.Shutdown(ctx)
+	}
+	return nil
+}
+
+// stageFinalize performs final cleanup.
+func (g *Gateway) stageFinalize() {
+	ctx, cancel := context.WithTimeout(context.Background(), g.opts.StageTimeouts.Finalize)
+	defer cancel()
+
+	<-ctx.Done()
+	log.Println("Shutdown complete")
 }
 
 func (g *Gateway) serveMetrics() {

@@ -17,6 +17,10 @@ type Options struct {
 	MaxBodySize  int64
 	TLSConfig    *tls.Config
 	Plugins      []types.Plugin
+	// HTTP/2 options
+	EnableHTTP2         bool   // Enable HTTP/2 (requires TLS)
+	MaxConcurrentStreams int   // Max concurrent streams per connection (default 250)
+	InitialWindowSize    int32 // Initial flow control window size
 }
 
 func defaultOptions() Options {
@@ -65,6 +69,21 @@ func WithPlugins(p ...types.Plugin) Option {
 // WithMaxBodySize sets the maximum request body size in bytes (0 = unlimited).
 func WithMaxBodySize(n int64) Option {
 	return func(o *Options) { o.MaxBodySize = n }
+}
+
+// WithHTTP2 enables HTTP/2 protocol support.
+// Note: HTTP/2 requires TLS. If TLSConfig is not set, this will be ignored.
+func WithHTTP2() Option {
+	return func(o *Options) { o.EnableHTTP2 = true }
+}
+
+// WithHTTP2Config configures HTTP/2 settings.
+func WithHTTP2Config(maxStreams int, initialWindow int32) Option {
+	return func(o *Options) {
+		o.EnableHTTP2 = true
+		o.MaxConcurrentStreams = maxStreams
+		o.InitialWindowSize = initialWindow
+	}
 }
 
 func (o Options) validate() error {

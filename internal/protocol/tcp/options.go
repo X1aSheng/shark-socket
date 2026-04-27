@@ -4,7 +4,9 @@ import (
 	"crypto/tls"
 	"fmt"
 	"runtime"
+	"time"
 
+	"github.com/X1aSheng/shark-socket/internal/infra/ratelimit"
 	"github.com/X1aSheng/shark-socket/internal/infra/tracing"
 	"github.com/X1aSheng/shark-socket/internal/types"
 )
@@ -33,6 +35,8 @@ type Options struct {
 	TLSConfig           *tls.Config
 	Tracer              tracing.Tracer
 	Plugins             []types.Plugin
+	// ConnRateLimit limits connections per IP. nil to disable.
+	ConnRateLimit *ratelimit.ConnectionLimiter
 }
 
 func defaultOptions() Options {
@@ -141,6 +145,22 @@ func WithMaxConsecutiveErrors(max int) Option {
 //	srv := tcp.NewServer(handler, tcp.WithTracer(otelTracer))
 func WithTracer(t tracing.Tracer) Option {
 	return func(o *Options) { o.Tracer = t }
+}
+
+// WithConnRateLimit enables connection rate limiting per IP address.
+// rate: max connections per window duration.
+// window: time window for rate limiting.
+func WithConnRateLimit(rate int, windowSec int) Option {
+	return func(o *Options) {
+		if rate > 0 && windowSec > 0 {
+			o.ConnRateLimit = ratelimit.NewConnectionLimiter(rate, time.Duration(windowSec)*time.Second)
+		}
+	}
+}
+
+// WithConnRateLimiter sets a custom connection rate limiter.
+func WithConnRateLimiter(rl *ratelimit.ConnectionLimiter) Option {
+	return func(o *Options) { o.ConnRateLimit = rl }
 }
 
 func (o Options) validate() error {

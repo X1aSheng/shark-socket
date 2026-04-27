@@ -28,7 +28,7 @@ type TCPSession struct {
 var _ types.RawSession = (*TCPSession)(nil)
 
 // NewTCPSession creates a new TCP session.
-func NewTCPSession(id uint64, conn net.Conn, framer Framer, writeQueueSize int) *TCPSession {
+func NewTCPSession(id uint64, conn net.Conn, framer Framer, writeQueueSize int, maxMsgSize int) *TCPSession {
 	s := &TCPSession{
 		BaseSession: session.NewBase(id, types.TCP, conn.RemoteAddr(), conn.LocalAddr()),
 		conn:        conn,
@@ -36,6 +36,9 @@ func NewTCPSession(id uint64, conn net.Conn, framer Framer, writeQueueSize int) 
 		writeQueue:  make(chan *bufferpool.Buffer, writeQueueSize),
 		drained:     make(chan struct{}),
 		draining:    make(chan struct{}),
+	}
+	if maxMsgSize > 0 {
+		s.SetMaxMessageSize(int64(maxMsgSize))
 	}
 	s.SetState(types.Active)
 	return s
@@ -125,6 +128,13 @@ func (s *TCPSession) ReadLoop(pool *WorkerPool, chainHandler func(types.RawSessi
 		if err != nil {
 			return
 		}
+
+		// Check message size limit
+		if !s.CheckMessageSize(len(payload)) {
+			s.Close()
+			return
+		}
+
 		s.TouchActive()
 		if chainHandler != nil {
 			chainHandler(s, payload)

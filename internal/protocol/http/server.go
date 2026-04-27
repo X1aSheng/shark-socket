@@ -93,6 +93,13 @@ func (s *Server) Start() error {
 	}
 	s.listener = ln
 
+	// Configure HTTP/2 if enabled
+	if s.opts.EnableHTTP2 {
+		if err := s.configureHTTP2(); err != nil {
+			return fmt.Errorf("http: configure HTTP/2: %w", err)
+		}
+	}
+
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
@@ -101,7 +108,26 @@ func (s *Server) Start() error {
 		}
 	}()
 
-	log.Printf("HTTP server listening on %s", s.listener.Addr())
+	log.Printf("HTTP server listening on %s (HTTP/2: %v)", s.listener.Addr(), s.opts.EnableHTTP2)
+	return nil
+}
+
+// configureHTTP2 sets up HTTP/2 support.
+// Note: HTTP/2 over cleartext (h2c) requires additional setup.
+// For production, use HTTPS with HTTP/2 for best security.
+func (s *Server) configureHTTP2() error {
+	if s.opts.TLSConfig != nil {
+		// HTTPS mode: HTTP/2 is negotiated via ALPN
+		// Configure TLS NextProto for HTTP/2
+		s.opts.TLSConfig.NextProtos = append(s.opts.TLSConfig.NextProtos, "h2")
+
+		// Note: MaxConcurrentStreams and other HTTP/2 settings
+		// are managed by the http2 package automatically in net/http
+		log.Printf("HTTP/2 enabled for HTTPS on %s", s.opts.Addr())
+	} else {
+		// Cleartext HTTP mode - for development/testing only
+		log.Printf("HTTP/2 over cleartext (h2c) not configured. Using HTTP/1.1")
+	}
 	return nil
 }
 

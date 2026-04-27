@@ -128,27 +128,65 @@ func (t *promTimerVec) ObserveDuration(start time.Time, labels ...string) {
 
 // RegisterDefaultMetrics pre-registers all shark_* metrics.
 func RegisterDefaultMetrics(m Metrics) {
-	m.Counter("shark_connections_total", "protocol")
-	m.Counter("shark_connection_errors_total", "protocol")
-	m.Counter("shark_messages_total", "protocol", "type")
-	m.Counter("shark_errors_total", "protocol", "kind")
+	// Connection metrics
+	m.Counter("shark_connections_total", "protocol", "direction")
+	m.Counter("shark_connection_errors_total", "protocol", "error_type")
+	m.Counter("shark_rejected_connections_total", "reason", "protocol")
+
+	// Session metrics
+	m.Counter("shark_sessions_total", "protocol", "session_state")
+	m.Gauge("shark_sessions_active", "protocol")
+
+	// Message metrics
+	m.Counter("shark_messages_total", "protocol", "message_type", "direction")
+	m.Counter("shark_errors_total", "protocol", "error_kind")
+
+	// Worker metrics
 	m.Counter("shark_worker_panics_total", "protocol")
-	m.Counter("shark_session_lru_evictions_total")
-	m.Counter("shark_rejected_connections_total", "reason")
-	m.Counter("shark_write_queue_full_total", "protocol")
-	m.Counter("shark_autoban_total", "ip")
-	m.Counter("shark_bufferpool_hits_total", "level")
-	m.Counter("shark_bufferpool_misses_total", "level")
-
-	m.Gauge("shark_connections_active", "protocol")
 	m.Gauge("shark_worker_queue_depth", "protocol")
-	m.Gauge("shark_fd_usage_ratio")
-	m.Gauge("shark_overloaded")
 
+	// Session management
+	m.Counter("shark_session_lru_evictions_total", "protocol")
+	m.Counter("shark_write_queue_full_total", "protocol")
+
+	// Defense metrics
+	m.Counter("shark_autoban_total", "reason")
+	m.Gauge("shark_overloaded", "protocol")
+
+	// Buffer pool metrics
+	m.Counter("shark_bufferpool_hits_total", "size_level")
+	m.Counter("shark_bufferpool_misses_total", "size_level")
+
+	// Network monitoring
+	m.Gauge("shark_fd_usage_ratio")
+
+	// Histograms
 	m.Histogram("shark_message_bytes", "protocol", "direction")
-	m.Histogram("shark_message_duration_seconds", "protocol")
-	m.Histogram("shark_plugin_duration_seconds", "plugin")
+	m.Histogram("shark_message_duration_seconds", "protocol", "operation")
+	m.Histogram("shark_plugin_duration_seconds", "plugin", "operation")
 }
+
+// SessionState labels for session metrics.
+const (
+	SessionStateActive   = "active"
+	SessionStateClosed   = "closed"
+	SessionStateTimeout = "timeout"
+	SessionStateError   = "error"
+)
+
+// Direction labels.
+const (
+	DirectionIn  = "in"
+	DirectionOut = "out"
+)
+
+// Operation labels for histogram.
+const (
+	OperationEncode   = "encode"
+	OperationDecode   = "decode"
+	OperationSend     = "send"
+	OperationReceive  = "receive"
+)
 
 // NopMetrics returns a no-op metrics implementation for testing.
 func NopMetrics() Metrics { return nopMetrics{} }

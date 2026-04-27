@@ -113,8 +113,16 @@ func (s *Server) acceptLoop() {
 }
 
 func (s *Server) handleConn(conn net.Conn) {
+	// Check connection rate limit if configured
+	if s.opts.ConnRateLimit != nil {
+		if !s.opts.ConnRateLimit.AllowAddr(conn.RemoteAddr()) {
+			conn.Close()
+			return
+		}
+	}
+
 	id := s.manager.NextID()
-	sess := NewTCPSession(id, conn, s.opts.Framer, s.opts.WriteQueueSize)
+	sess := NewTCPSession(id, conn, s.opts.Framer, s.opts.WriteQueueSize, s.opts.MaxMessageSize)
 	if s.opts.DrainTimeout > 0 {
 		sess.SetDrainTimeout(time.Duration(s.opts.DrainTimeout) * time.Second)
 	}
@@ -144,6 +152,12 @@ func (s *Server) handleConn(conn net.Conn) {
 
 	// Cleanup on session exit
 	<-sess.Context().Done()
+
+	// Remove from rate limiter when connection closes
+	if s.opts.ConnRateLimit != nil {
+		s.opts.ConnRateLimit.RemoveAddr(conn.RemoteAddr())
+	}
+
 	s.manager.Unregister(id)
 	if s.chain != nil {
 		s.chain.OnClose(sess)

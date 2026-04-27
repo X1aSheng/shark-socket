@@ -17,7 +17,7 @@ func TestNewTCPSession_StartsActive(t *testing.T) {
 	c, _ := net.Pipe()
 	defer c.Close()
 
-	sess := NewTCPSession(1, c, NewLengthPrefixFramer(1024), 16)
+	sess := NewTCPSession(1, c, NewLengthPrefixFramer(1024), 16, 0)
 
 	if sess.State() != types.Active {
 		t.Errorf("expected Active state, got %v", sess.State())
@@ -38,7 +38,7 @@ func TestTCPSession_SendEnqueues(t *testing.T) {
 	defer c.Close()
 
 	framer := NewLengthPrefixFramer(1024)
-	sess := NewTCPSession(1, s, framer, 16)
+	sess := NewTCPSession(1, s, framer, 16, 0)
 
 	// Start WriteLoop to drain the queue
 	go sess.WriteLoop()
@@ -67,7 +67,7 @@ func TestTCPSession_SendOnClosedSession(t *testing.T) {
 	c, s := net.Pipe()
 	defer c.Close()
 
-	sess := NewTCPSession(1, s, NewLengthPrefixFramer(1024), 16)
+	sess := NewTCPSession(1, s, NewLengthPrefixFramer(1024), 16, 0)
 	go sess.WriteLoop()
 	sess.Close()
 
@@ -81,7 +81,7 @@ func TestTCPSession_CloseDrainsWriteQueue(t *testing.T) {
 	c, s := net.Pipe()
 
 	framer := NewLengthPrefixFramer(1024)
-	sess := NewTCPSession(1, s, framer, 64)
+	sess := NewTCPSession(1, s, framer, 64, 0)
 
 	// Start WriteLoop
 	go sess.WriteLoop()
@@ -110,7 +110,7 @@ func TestTCPSession_CloseDrainsWriteQueue(t *testing.T) {
 func TestTCPSession_CloseIsIdempotent(t *testing.T) {
 	c, _ := net.Pipe()
 
-	sess := NewTCPSession(1, c, NewLengthPrefixFramer(1024), 16)
+	sess := NewTCPSession(1, c, NewLengthPrefixFramer(1024), 16, 0)
 	go sess.WriteLoop()
 
 	// Close multiple times should not panic
@@ -133,7 +133,7 @@ func TestTCPSession_SendWriteQueueFull(t *testing.T) {
 	c, _ := net.Pipe()
 
 	// Very small write queue, no WriteLoop running to drain it
-	sess := NewTCPSession(1, c, NewLengthPrefixFramer(1024), 2)
+	sess := NewTCPSession(1, c, NewLengthPrefixFramer(1024), 2, 0)
 
 	// Fill the queue
 	if err := sess.Send([]byte("msg1")); err != nil {
@@ -158,7 +158,7 @@ func TestTCPSession_SendWriteQueueFull(t *testing.T) {
 func TestTCPSession_ContextCancelledAfterClose(t *testing.T) {
 	c, _ := net.Pipe()
 
-	sess := NewTCPSession(1, c, NewLengthPrefixFramer(1024), 16)
+	sess := NewTCPSession(1, c, NewLengthPrefixFramer(1024), 16, 0)
 	go sess.WriteLoop()
 
 	ctx := sess.Context()
@@ -188,7 +188,7 @@ func TestTCPSession_MetaData(t *testing.T) {
 	c, _ := net.Pipe()
 	defer c.Close()
 
-	sess := NewTCPSession(1, c, NewLengthPrefixFramer(1024), 16)
+	sess := NewTCPSession(1, c, NewLengthPrefixFramer(1024), 16, 0)
 
 	// Set and get metadata
 	sess.SetMeta("user", "alice")
@@ -213,7 +213,7 @@ func TestTCPSession_RemoteAddr(t *testing.T) {
 	defer c.Close()
 	defer s.Close()
 
-	sess := NewTCPSession(1, s, NewLengthPrefixFramer(1024), 16)
+	sess := NewTCPSession(1, s, NewLengthPrefixFramer(1024), 16, 0)
 
 	if sess.RemoteAddr() == nil {
 		t.Error("expected non-nil RemoteAddr")
@@ -228,7 +228,7 @@ func TestTCPSession_SendTyped(t *testing.T) {
 	defer c.Close()
 
 	framer := NewLengthPrefixFramer(1024)
-	sess := NewTCPSession(1, s, framer, 16)
+	sess := NewTCPSession(1, s, framer, 16, 0)
 
 	go sess.WriteLoop()
 
@@ -254,7 +254,7 @@ func TestTCPSession_SendTypedWithEncoder(t *testing.T) {
 	defer c.Close()
 
 	framer := NewLengthPrefixFramer(1024)
-	sess := NewTCPSession(1, s, framer, 16)
+	sess := NewTCPSession(1, s, framer, 16, 0)
 
 	// Set an encoder that prepends a prefix
 	sess.encoder = func(data []byte) ([]byte, error) {
@@ -286,7 +286,7 @@ func TestTCPSession_SendTypedEncoderFailure(t *testing.T) {
 	c, s := net.Pipe()
 	defer c.Close()
 
-	sess := NewTCPSession(1, s, NewLengthPrefixFramer(1024), 16)
+	sess := NewTCPSession(1, s, NewLengthPrefixFramer(1024), 16, 0)
 
 	sess.encoder = func(data []byte) ([]byte, error) {
 		return nil, errors.New("encode failed")
@@ -304,7 +304,7 @@ func TestTCPSession_SendTypedEncoderFailure(t *testing.T) {
 func TestTCPSession_CloseSetsState(t *testing.T) {
 	c, _ := net.Pipe()
 
-	sess := NewTCPSession(1, c, NewLengthPrefixFramer(1024), 16)
+	sess := NewTCPSession(1, c, NewLengthPrefixFramer(1024), 16, 0)
 	go sess.WriteLoop()
 
 	if sess.State() != types.Active {
@@ -336,7 +336,7 @@ func TestTCPSession_ReadLoop_SubmitsToPool(t *testing.T) {
 	pool.Start()
 	defer pool.Stop()
 
-	sess := NewTCPSession(1, s, framer, 16)
+	sess := NewTCPSession(1, s, framer, 16, 0)
 
 	go sess.ReadLoop(pool, nil)
 	go sess.WriteLoop()
