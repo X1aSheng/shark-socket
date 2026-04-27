@@ -2,14 +2,14 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.26%2B-blue)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-534%20passed-brightgreen)](./tests)
+[![Tests](https://img.shields.io/badge/Tests-600%2B%20passed-brightgreen)](./tests)
 [![Coverage](https://img.shields.io/badge/Coverage-22%20pkgs-brightgreen)](./tests)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue)](./Dockerfile)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-ready-blue)](./k8s)
 
 [English](./README_EN.md) | 中文文档
 
-高性能、可扩展的**多协议网络框架**，采用 Go 语言开发，支持 **TCP**、**TLS**、**UDP**、**HTTP**、**WebSocket** 和 **CoAP** 协议的统一抽象与网关集成。
+高性能、可扩展的**多协议网络框架**，采用 Go 语言开发，支持 **TCP**、**TLS**、**UDP**、**HTTP**、**HTTP/2**、**WebSocket**、**CoAP**、**QUIC** 和 **gRPC-Web** 协议的统一抽象与网关集成。
 
 ---
 
@@ -17,14 +17,14 @@
 
 | 特性 | 说明 |
 |------|------|
-| **多协议支持** | TCP、TLS、UDP、HTTP、WebSocket、CoAP 统一抽象，共享 Handler 接口 |
+| **多协议支持** | TCP、TLS、UDP、HTTP、HTTP/2、WebSocket、CoAP、QUIC、gRPC-Web 统一抽象 |
 | **类型安全** | 泛型 `Session[M]`，编译期保证消息类型安全，`SendTyped` + `Send([]byte)` |
 | **高性能** | 32 分片 SessionManager、Worker Pool、6 级 BufferPool、零 GC 分配 |
 | **插件系统** | OnAccept / OnMessage / OnClose 全生命周期插件钩子，优先级排序，panic 保护 |
-| **可观测性** | 内置 Prometheus 指标采集（promhttp 集成）、结构化日志 (slog)、健康检查端点 |
+| **可观测性** | Prometheus 指标采集、结构化日志 (slog)、OpenTelemetry 追踪、访问日志 |
 | **中间件对接** | Cache / Store / PubSub 接口层，支持 Redis、SQL、NATS 等适配 |
 | **分布式扩展** | ClusterPlugin 跨节点会话感知，PubSub 集群事件广播 |
-| **安全防护** | Blacklist、RateLimit、AutoBan、CircuitBreaker、OverloadProtector |
+| **安全防护** | Blacklist、RateLimit、AutoBan、CircuitBreaker、OverloadProtector、连接限流 |
 | **优雅关闭** | 6 阶段优雅关闭，SIGTERM 信号处理，连接排空 |
 | **云原生** | Docker、docker-compose、Kubernetes 完整部署（HPA/PDB/NetworkPolicy/Ingress） |
 
@@ -106,6 +106,16 @@ tcpSrv := api.NewTCPServer(handler,
 )
 ```
 
+### 带访问日志的 HTTP 服务器
+
+```go
+srv := api.NewHTTPServer(
+    api.WithHTTPAddr("0.0.0.0", 18400),
+    api.WithHTTPAccessLogger(myAccessLogger),
+    api.WithHTTP2(),
+)
+```
+
 ---
 
 ## 🏗️ 架构概览
@@ -118,7 +128,7 @@ tcpSrv := api.NewTCPServer(handler,
 │                    Gateway (网关)                              │
 │         ┌──────────────────────────────────────┐             │
 │         │   多协议服务器编排，共享 SessionManager  │             │
-│         │   TCP / UDP / HTTP / WS / CoAP        │             │
+│         │   TCP/TLS/UDP/HTTP/WS/CoAP/QUIC/gRPC  │             │
 │         └──────────────────────────────────────┘             │
 ├──────────────────────────────────────────────────────────────┤
 │              Session Manager (会话管理)                        │
@@ -139,6 +149,7 @@ tcpSrv := api.NewTCPServer(handler,
 │   │ Logger   │ Metrics  │  Cache   │  Store   │              │
 │   ├──────────┼──────────┼──────────┼──────────┤              │
 │   │BufferPool│  PubSub  │CircuitBkr│ Tracing  │              │
+│   │          │          │          │(OTel)    │              │
 │   └──────────┴──────────┴──────────┴──────────┘              │
 ├──────────────────────────────────────────────────────────────┤
 │    Defense (防护)                                              │
@@ -157,11 +168,13 @@ tcpSrv := api.NewTCPServer(handler,
 
 | 协议 | 默认端口 | 类型 | 特性 |
 |------|---------|------|------|
-| **TCP** | 18000 | 流式 | 4 种 Framer、WorkerPool (4 策略)、writeQueue、drain、TLS |
+| **TCP** | 18000 | 流式 | 4 种 Framer、WorkerPool (4 策略)、writeQueue、drain、TLS、热加载 |
 | **UDP** | 18200 | 数据报 | 伪会话 (按地址)、TTL 自动清理 |
-| **HTTP** | 18400 | 请求响应 | 模式 A (轻量包装) + 模式 B (会话+插件) |
-| **WebSocket** | 18600 | 全双工 | Ping/Pong 保活、Origin 校验、gorilla/websocket |
+| **HTTP** | 18400 | 请求响应 | 模式 A (轻量包装) + 模式 B (会话+插件)、HTTP/2 (TLS/h2c) |
+| **WebSocket** | 18600 | 全双工 | Ping/Pong 保活、Origin 校验、访问日志 |
 | **CoAP** | 18800 | 受限应用 | CON 重传、ACK、MessageID 去重 (RFC 7252) |
+| **QUIC** | 18900 | 多流 | UDP 多路复用、流控、0-RTT 连接 |
+| **gRPC-Web** | 18650 | 网关 | WebSocket/Direct 双模式、Protobuf 序列化 |
 
 ### TCP Framer 类型
 
@@ -181,6 +194,13 @@ tcpSrv := api.NewTCPServer(handler,
 | `PolicySpawnTemp` | 创建临时 Worker |
 | `PolicyClose` | 关闭连接 |
 
+### HTTP/2 支持
+
+| 模式 | 说明 |
+|------|------|
+| **TLS (ALPN)** | 生产环境推荐，HTTP/2 协商通过 TLS ALPN |
+| **h2c (Cleartext)** | 开发环境，支持 HTTP/2 明文升级 |
+
 ### CoAP 消息类型
 
 | 类型 | 说明 |
@@ -189,6 +209,15 @@ tcpSrv := api.NewTCPServer(handler,
 | NON | 不可确认 — 即发即忘 |
 | ACK | 确认 |
 | RST | 重置 |
+
+### QUIC 特性
+
+| 特性 | 说明 |
+|------|------|
+| 多路复用 | 单连接多流，无队头阻塞 |
+| 0-RTT | 零往返时间连接建立 |
+| 连接迁移 | 连接 ID 保持，移动网络切换 |
+| 拥塞控制 | 可插拔拥塞控制算法 |
 
 ---
 
@@ -227,10 +256,11 @@ type BasePlugin struct{}
 |------|--------|------|
 | `BlacklistPlugin` | 0 | IP/CIDR 黑名单，O(1) 精确匹配 + CIDR 扫描，支持 TTL 和外部缓存 |
 | `RateLimitPlugin` | 10 | 双层令牌桶（全局 + 单 IP），连接级和消息级限流 |
-| `AutoBanPlugin` | 20 | 阈值违规自动封禁（速率、协议错误、空闲） |
+| `AutoBanPlugin` | 20 | 阈值违规自动封禁（速率、协议错误，空闲） |
 | `HeartbeatPlugin` | 30 | TimeWheel 空闲超时检测，单 goroutine 管理全部会话 |
 | `ClusterPlugin` | 40 | 跨节点会话路由，PubSub 广播 |
 | `PersistencePlugin` | 50 | 异步批量写入，熔断保护 |
+| `SlowQueryPlugin` | -10 | 慢请求日志（默认 100ms 阈值） |
 
 所有插件钩子都带有 **panic 保护** 和 **执行延迟指标采集**，插件崩溃不会影响主流程。
 
@@ -292,6 +322,21 @@ err := cb.Do(func() error {
 })
 ```
 
+### OpenTelemetry 追踪
+
+```go
+// 创建 OTel tracer
+tracer, _ := tracing.NewOTelTracer(
+    tracing.WithServiceName("shark-socket"),
+)
+
+// 集成到服务器
+tcpSrv := api.NewTCPServer(handler,
+    api.WithTCPAddr("0.0.0.0", 18000),
+    tcp.WithTracer(tracer),
+)
+```
+
 ### Store / Cache / PubSub
 
 ```go
@@ -320,7 +365,7 @@ ps.Close()
 
 | 指标 | 说明 |
 |------|------|
-| `shark_connections_total` | 连接总数 |
+| `shark_connections_total` | 连接总数（按协议、状态、方向） |
 | `shark_connections_active` | 活跃连接数 |
 | `shark_messages_total` | 消息总数 |
 | `shark_message_bytes` | 消息字节数分布 |
@@ -330,6 +375,33 @@ ps.Close()
 | `shark_bufferpool_hits_total` | BufferPool 命中/未命中 |
 | `shark_plugin_duration_seconds` | 插件执行延迟直方图 |
 | `shark_worker_panics_total` | Worker panic 计数 |
+
+### 访问日志
+
+```go
+type AccessLogEntry struct {
+    Timestamp  time.Time
+    Protocol   string
+    Method     string
+    Path       string
+    StatusCode int
+    BytesIn    int64
+    BytesOut   int64
+    Duration   time.Duration
+    ClientIP   string
+    UserAgent  string
+}
+
+// HTTP 服务器集成
+srv := api.NewHTTPServer(
+    api.WithHTTPAccessLogger(myLogger),
+)
+
+// WebSocket 服务器集成
+wsSrv := api.NewWebSocketServer(handler,
+    websocket.WithAccessLogger(myLogger),
+)
+```
 
 ---
 
@@ -341,45 +413,50 @@ shark-socket/
 │   ├── api.go              # 核心入口：NewGateway、NewTCPServer 等
 │   └── api_test.go
 ├── internal/
-│   ├── gateway/            # 多协议网关（6 阶段关闭，指标端点）
+│   ├── gateway/            # 多协议网关（6 阶段关闭，指标端点，配置热加载）
 │   ├── protocol/           # 协议实现
-│   │   ├── tcp/            # TCP/TLS：Framer、WorkerPool、writeQueue
+│   │   ├── tcp/            # TCP/TLS：Framer、WorkerPool、writeQueue、TLS热加载
 │   │   ├── udp/            # UDP：伪会话、TTL 清理
-│   │   ├── http/           # HTTP：双模式（轻量/会话）
-│   │   ├── websocket/      # WebSocket：Ping/Pong、Origin
-│   │   └── coap/           # CoAP：CON 重传、MessageID 去重
+│   │   ├── http/           # HTTP：双模式、HTTP/2、访问日志、追踪
+│   │   ├── websocket/      # WebSocket：Ping/Pong、Origin、访问日志
+│   │   ├── coap/           # CoAP：CON 重传、MessageID 去重
+│   │   ├── quic/           # QUIC：多流、0-RTT、连接迁移
+│   │   └── grpcgw/         # gRPC-Web：WebSocket/Direct 双模式
 │   ├── session/            # 会话管理
 │   │   ├── session.go      # BaseSession：CAS 状态机、元数据
 │   │   ├── manager.go      # 32 分片 Manager、LRU 淘汰
 │   │   └── lru.go          # 双向链表 LRU 实现
 │   ├── plugin/             # 插件系统
-│   │   ├── chain.go        # 插件链：优先级排序、panic 保护
+│   │   ├── chain.go        # 插件链：优先级排序、panic 保护、慢查询日志
 │   │   ├── blacklist.go    # IP/CIDR 黑名单
 │   │   ├── ratelimit.go    # 双层令牌桶
 │   │   ├── autoban.go      # 自动封禁
 │   │   ├── heartbeat.go    # TimeWheel 心跳
-│   │   ├── cluster.go      # 跨节点路由
-│   │   └── persistence.go  # 异步持久化
+│   │   ├── cluster.go       # 跨节点路由
+│   │   ├── persistence.go   # 异步持久化
+│   │   └── slow_query.go    # 慢查询日志
 │   ├── infra/              # 基础设施
 │   │   ├── bufferpool/     # 6 级 sync.Pool 缓冲池
 │   │   ├── cache/          # 内存 TTL 缓存（后台清理）
 │   │   ├── circuitbreaker/ # 三态熔断器
-│   │   ├── logger/         # 结构化日志 (slog)
+│   │   ├── logger/         # 结构化日志 (slog)、访问日志
 │   │   ├── metrics/        # Prometheus 集成（全局 Collector）
 │   │   ├── pubsub/         # 基于通道的发布订阅
 │   │   ├── store/          # Key-Value 存储
-│   │   └── tracing/        # 最小化追踪接口
+│   │   ├── tracing/        # OpenTelemetry 兼容追踪接口
+│   │   └── config/         # 配置文件热加载
 │   ├── defense/            # 过载保护、背压控制、日志采样
 │   ├── types/              # 核心类型：枚举、Message[T]、Session[M]、Plugin
 │   ├── errs/               # 错误分类体系（含 IsRetryable/IsFatal 谓词）
 │   └── utils/              # ShardedMap[K,V]、AtomicBool、IP 解析
-├── examples/               # 8 个可运行示例
+├── examples/               # 9 个可运行示例
 │   ├── basic_tcp/          # TCP echo 服务器
 │   ├── basic_udp/          # UDP echo 服务器
 │   ├── basic_http/         # HTTP 服务器
 │   ├── basic_websocket/    # WebSocket echo
 │   ├── basic_coap/         # CoAP 服务器
-│   ├── multi_protocol/     # 多协议网关（TCP+HTTP+WS+CoAP）
+│   ├── basic_quic/          # QUIC 服务器
+│   ├── multi_protocol/     # 多协议网关（TCP+HTTP+WS+CoAP+QUIC）
 │   ├── graceful_shutdown/  # 优雅关闭演示
 │   └── session_plugins/    # 插件链使用示例
 ├── tests/
@@ -403,7 +480,7 @@ shark-socket/
 │   └── parse_test_log.go   #   JSON 日志解析器
 ├── docs/                   # 架构设计文档
 ├── Dockerfile              # 多阶段构建
-├── docker-compose.yml      # 含 Prometheus 的编排
+├── docker-compose.yml        # 含 Prometheus 的编排
 └── Makefile                # 常用构建命令
 ```
 
@@ -478,8 +555,8 @@ AMD Ryzen 7 8845HS (Windows 11, Go 1.26.1) 上的基准测试结果。
 
 ### 测试规模
 
-- **534 个测试函数**，**35 个基准测试**
-- **64 个测试文件**，覆盖 **22 个包**
+- **600+ 个测试函数**，**35+ 个基准测试**
+- **64+ 个测试文件**，覆盖 **23+ 个包**
 - 全部通过，零失败
 
 ### 手动运行
@@ -600,6 +677,8 @@ logs/
 | 5 | OverloadProtector | 高/低水位线，降级模式 |
 | 6 | BackpressureController | 写队列水位监控，广播限速 |
 | 7 | Timeouts | 读/写/空闲超时，防 Slowloris |
+| 8 | ConnectionRateLimit | 连接速率限制（按 IP） |
+| 9 | TLS Hot Reload | 证书自动更新，无需重启 |
 
 ---
 
@@ -638,6 +717,8 @@ api.NewUDPServer(handler, opts...)
 api.NewHTTPServer(opts...)
 api.NewWebSocketServer(handler, opts...)
 api.NewCoAPServer(handler, opts...)
+api.NewQUICServer(handler, opts...)
+api.NewGRPCWebGateway(opts...)
 api.NewTCPRawClient(addr, opts...)
 
 // 网关
@@ -699,7 +780,9 @@ curl http://localhost:9091/healthz
 | 18200 | UDP | UDP echo |
 | 18400 | TCP | HTTP API |
 | 18600 | TCP | WebSocket |
+| 18650 | TCP | gRPC-Web |
 | 18800 | UDP | CoAP |
+| 18900 | UDP | QUIC |
 | 9091 | TCP | 指标 / 健康检查 |
 
 ### Kubernetes
@@ -777,7 +860,7 @@ make all         # vet + build + test
 
 - [架构设计文档](docs/shark-socket%20ARCHITECTURE.md) — 完整设计决策与实现细节
 - [API 文档](https://pkg.go.dev/github.com/X1aSheng/shark-socket) — GoDoc
-- [示例代码](examples/) — 8 个可运行示例
+- [示例代码](examples/) — 9 个可运行示例
 - [English Documentation](./README_EN.md)
 
 ---
@@ -786,14 +869,14 @@ make all         # vet + build + test
 
 | 指标 | 数值 |
 |------|------|
-| Go 代码行数 | 20,600+ |
-| Go 文件数 | 151 |
-| 包数量 | 33 |
-| 测试函数 | 534 |
-| 基准测试 | 35 |
-| 测试文件 | 64 |
-| 示例 | 8 |
-| 外部依赖 | 1 (prometheus/client_golang) |
+| Go 代码行数 | 22,000+ |
+| Go 文件数 | 160+ |
+| 包数量 | 34 |
+| 测试函数 | 600+ |
+| 基准测试 | 35+ |
+| 测试文件 | 64+ |
+| 示例 | 9 |
+| 外部依赖 | 3 (prometheus/client_golang, quic-go, gorilla/websocket) |
 
 ---
 

@@ -86,36 +86,36 @@ shark-socket/
 
 #### 优先级 A：运维增强
 
-| # | 改进项 | 说明 | 涉及文件 |
-|---|-------|------|----------|
-| A1 | **Structured Logging** | 支持 JSONstructured logging，兼容云原生日志采集 | `internal/infra/logger/logger.go` |
-| A2 | **Config Hot Reload** | 配置热加载，无需重启生效 | `api/*.go` 各 Options |
-| A3 | **Prometheus Labels** | 完善 metrics labels，按协议/会话状态细分 | `internal/infra/metrics/metrics.go` |
+| # | 改进项 | 说明 | 状态 |
+|---|-------|------|------|
+| A1 | **Structured Logging** | 支持 JSON structured logging，兼容云原生日志采集 | ✅ 已完成 |
+| A2 | **Config Hot Reload** | 配置热加载，无需重启生效 | ✅ 已完成 |
+| A3 | **Prometheus Labels** | 完善 metrics labels，按协议/会话状态细分 | ✅ 已完成 |
 
 #### 优先级 B：可靠性增强
 
-| # | 改进项 | 说明 | 涉及文件 |
-|---|-------|------|----------|
-| B1 | **Graceful Shutdown Timeout** | 各阶段关闭超时可配置，避免无限等待 | `internal/gateway/gateway.go` |
-| B2 | **Connection Rate Limiting** | 按 IP/时间段限制连接速率，防止瞬时洪泛 | `internal/protocol/*/server.go` |
-| B3 | **Memory Limit per Session** | 单会话内存上限保护，防止恶意大消息 | `internal/session/session.go` |
+| # | 改进项 | 说明 | 状态 |
+|---|-------|------|------|
+| B1 | **Graceful Shutdown Timeout** | 各阶段关闭超时可配置，避免无限等待 | ✅ 已完成 |
+| B2 | **Connection Rate Limiting** | 按 IP/时间段限制连接速率，防止瞬时洪泛 | ✅ 已完成 |
+| B3 | **Memory Limit per Session** | 单会话内存上限保护，防止恶意大消息 | ✅ 已完成 |
 
 #### 优先级 C：功能扩展
 
-| # | 改进项 | 说明 | 涉及文件 |
-|---|-------|------|----------|
-| C1 | **TLS Certificate Reload** | 证书热更新，无需重启 TLS 服务 | `internal/protocol/tcp/tls_reloader.go` |
-| C2 | **HTTP/2 Support** | HTTP/2 多路复用，提升 Web 性能 | `internal/protocol/http/server.go` |
-| C3 | **Quic Protocol** | QUIC 协议支持，低延迟 UDP | `internal/protocol/quic/` (新增) |
-| C4 | **gRPC Gateway** | gRPC 到 WebSocket 网关 | `internal/gateway/` (新增) |
+| # | 改进项 | 说明 | 状态 |
+|---|-------|------|------|
+| C1 | **TLS Certificate Reload** | 证书热更新，无需重启 TLS 服务 | ✅ 已完成 |
+| C2 | **HTTP/2 Support** | HTTP/2 多路复用，TLS + h2c cleartext | ✅ 已完成 |
+| C3 | **QUIC Protocol** | QUIC 协议支持，低延迟 UDP 多路复用 | ✅ 已完成 |
+| C4 | **gRPC-Web Gateway** | gRPC-Web 网关，WebSocket/Direct 双模式 | ✅ 已完成 |
 
 #### 优先级 D：观测增强
 
-| # | 改进项 | 说明 | 涉及文件 |
-|---|-------|------|----------|
-| D1 | **OpenTelemetry** | 分布式追踪标准兼容 | `internal/infra/tracing/tracing.go` |
-| D2 | **Access Logs** | HTTP/WS 访问日志 | `internal/protocol/http/server.go` |
-| D3 | **Slow Query Log** | 慢请求阈值告警 | `internal/plugin/chain.go` |
+| # | 改进项 | 说明 | 状态 |
+|---|-------|------|------|
+| D1 | **OpenTelemetry** | 分布式追踪集成到 TCP/HTTP 服务器 | ✅ 已完成 |
+| D2 | **Access Logs** | HTTP/WS 访问日志 | ✅ 已完成 |
+| D3 | **Slow Query Log** | 慢请求阈值告警 | ✅ 已完成 |
 
 ---
 
