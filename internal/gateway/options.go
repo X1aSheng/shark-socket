@@ -15,6 +15,11 @@ type Options struct {
 	MetricsAddr   string
 	EnableMetrics bool
 	GlobalPlugins []types.Plugin
+
+	// ConfigPath enables configuration hot reload from a JSON file.
+	ConfigPath string
+	// ConfigReloadInterval is the interval for checking config file changes.
+	ConfigReloadInterval time.Duration
 }
 
 // StageTimeouts defines timeouts for each shutdown stage.

@@ -15,6 +15,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/X1aSheng/shark-socket/internal/errs"
+	"github.com/X1aSheng/shark-socket/internal/infra/config"
 	"github.com/X1aSheng/shark-socket/internal/session"
 	"github.com/X1aSheng/shark-socket/internal/types"
 )
@@ -30,6 +31,7 @@ type Gateway struct {
 	metricsServer *stdhttp.Server
 	startTime     atomic.Value // time.Time, accessed from metrics handlers
 	started       atomic.Bool
+	configReloader *config.FileReloader
 }
 
 // Compile-time verification.
@@ -75,6 +77,13 @@ func (g *Gateway) Start() error {
 
 	g.sharedManager = session.NewManager(session.WithMaxSessions(1000000))
 	g.startTime.Store(time.Now())
+
+	// Start config hot reload if configured
+	if g.opts.ConfigPath != "" {
+		if err := g.startConfigReload(); err != nil {
+			log.Printf("gateway: config reload init failed: %v", err)
+		}
+	}
 
 	if g.opts.EnableMetrics {
 		go g.serveMetrics()
@@ -284,6 +293,34 @@ func (g *Gateway) stageFinalize() {
 
 	<-ctx.Done()
 	log.Println("Shutdown complete")
+
+	// Stop config reloader if running
+	if g.configReloader != nil {
+		_ = g.configReloader.Stop()
+	}
+}
+
+// startConfigReload initializes the configuration file reloader.
+func (g *Gateway) startConfigReload() error {
+	cfg := &GatewayConfig{}
+	reloader := config.NewFileReloader(g.opts.ConfigPath, cfg,
+		config.WithReloadInterval(g.opts.ConfigReloadInterval),
+		config.WithOnReload(func(newCfg any) {
+			if c, ok := newCfg.(*GatewayConfig); ok {
+				if err := g.ApplyConfig(c); err != nil {
+					log.Printf("gateway: config apply failed: %v", err)
+				}
+			}
+		}),
+	)
+
+	if err := reloader.Start(); err != nil {
+		return err
+	}
+
+	g.configReloader = reloader
+	log.Printf("gateway: config hot reload enabled, watching %s", g.opts.ConfigPath)
+	return nil
 }
 
 func (g *Gateway) serveMetrics() {
