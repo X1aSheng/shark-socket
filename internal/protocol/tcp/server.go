@@ -124,14 +124,11 @@ func (s *Server) acceptLoop() {
 
 func (s *Server) handleConn(conn net.Conn) {
 	var span tracing.Span
-	ctx := context.Background()
 	if s.opts.Tracer != nil {
-		var spanCtx context.Context
-		span, spanCtx = s.opts.Tracer.StartSpan(ctx, "tcp.accept",
+		span, _ = s.opts.Tracer.StartSpan(context.Background(), "tcp.accept",
 			tracing.WithAttribute("protocol", "tcp"),
 			tracing.WithAttribute("remote_addr", conn.RemoteAddr().String()),
 		)
-		ctx = spanCtx
 	}
 
 	// Check connection rate limit if configured

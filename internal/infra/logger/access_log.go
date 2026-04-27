@@ -101,7 +101,6 @@ type AccessLogOption func(*accessLogConfig)
 
 type accessLogConfig struct {
 	excludePaths  []string
-	includeBody   bool // reserved for future body logging feature
 	slowThreshold time.Duration
 }
 

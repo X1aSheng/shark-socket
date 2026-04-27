@@ -146,15 +146,12 @@ func (s *Server) handleWithSession(w stdhttp.ResponseWriter, r *stdhttp.Request)
 
 	// Start tracing span if tracer is configured
 	var span tracing.Span
-	ctx := r.Context()
 	if s.opts.Tracer != nil {
-		var spanCtx context.Context
-		span, spanCtx = s.opts.Tracer.StartSpan(ctx, "http.request",
+		span, _ = s.opts.Tracer.StartSpan(r.Context(), "http.request",
 			tracing.WithAttribute("method", r.Method),
 			tracing.WithAttribute("path", r.URL.Path),
 			tracing.WithAttribute("remote_addr", r.RemoteAddr),
 		)
-		ctx = spanCtx
 		defer func() {
 			if span != nil {
 				span.End()
