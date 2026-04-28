@@ -29,7 +29,7 @@ shark-socket/
 
 | 层级 | 测试文件数 | Test 函数 | Benchmark 函数 |
 |------|-----------|-----------|----------------|
-| tests/unit | 3 | 24 | 0 |
+| tests/unit | 3 | 40 | 0 |
 | tests/integration | 2 | 16 | 0 |
 | tests/benchmark | 2 | 0 | 24 |
 | internal/defense | 3 | 14 | 0 |
@@ -42,10 +42,12 @@ shark-socket/
 | internal/protocol/http | 4 | 19 | 0 |
 | internal/protocol/websocket | 4 | 20 | 0 |
 | internal/protocol/coap | 5 | 27 | 0 |
+| internal/protocol/quic | 1 | 0 | 0 |
+| internal/protocol/grpcgw | 2 | 0 | 0 |
 | internal/session | 4 | 30 | 5 |
 | internal/types | 4 | 7 | 0 |
 | internal/utils | 3 | 18 | 0 |
-| **合计** | **60** | **335** | **46** |
+| **合计** | **73** | **619** | **46** |
 
 ---
 

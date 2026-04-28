@@ -2,7 +2,7 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.26%2B-blue)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-600%2B%20passed-brightgreen)](./tests)
+[![Tests](https://img.shields.io/badge/Tests-619%20passed-brightgreen)](./tests)
 [![Coverage](https://img.shields.io/badge/Coverage-22%20pkgs-brightgreen)](./tests)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue)](./Dockerfile)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-ready-blue)](./k8s)
@@ -555,8 +555,8 @@ AMD Ryzen 7 8845HS (Windows 11, Go 1.26.1) 上的基准测试结果。
 
 ### 测试规模
 
-- **600+ 个测试函数**，**35+ 个基准测试**
-- **64+ 个测试文件**，覆盖 **23+ 个包**
+- **619 个测试函数**，**24 个基准测试**
+- **73 个测试文件**，覆盖 **34 个包**
 - 全部通过，零失败
 
 ### 手动运行
@@ -872,9 +872,9 @@ make all         # vet + build + test
 | Go 代码行数 | 22,000+ |
 | Go 文件数 | 160+ |
 | 包数量 | 34 |
-| 测试函数 | 600+ |
-| 基准测试 | 35+ |
-| 测试文件 | 64+ |
+| 测试函数 | 619 |
+| 基准测试 | 24 |
+| 测试文件 | 73 |
 | 示例 | 9 |
 | 外部依赖 | 3 (prometheus/client_golang, quic-go, gorilla/websocket) |
 
