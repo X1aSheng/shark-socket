@@ -391,24 +391,28 @@ Supported modes: `--all` (default), `--unit`, `--integration`, `--benchmark`, `-
 | errs | 100.0% |
 | infra/cache | 100.0% |
 | infra/store | 100.0% |
-| infra/tracing | 100.0% |
-| infra/pubsub | 96.1% |
-| defense | 95.1% |
-| api | 92.6% |
+| defense | 95.3% |
+| infra/pubsub | 94.0% |
 | types | 92.3% |
-| session | 87.8% |
-| infra/bufferpool | 86.8% |
-| protocol/tcp | 85.4% |
+| infra/config | 87.5% |
+| infra/bufferpool | 86.6% |
 | utils | 84.7% |
-| protocol/websocket | 80.2% |
+| session | 80.1% |
 | infra/circuitbreaker | 79.4% |
-| protocol/udp | 78.4% |
-| protocol/coap | 75.2% |
-| protocol/http | 75.2% |
-| infra/logger | 73.9% |
-| plugin | 62.7% |
-| infra/metrics | 53.3% |
-| gateway | 52.1% |
+| protocol/tcp | 79.0% |
+| protocol/coap | 76.4% |
+| protocol/websocket | 75.3% |
+| protocol/udp | 75.0% |
+| infra/ratelimit | 66.2% |
+| protocol/http | 65.0% |
+| api | 58.1% |
+| plugin | 58.0% |
+| infra/metrics | 52.5% |
+| gateway | 31.5% |
+| infra/logger | 29.2% |
+| protocol/quic | 28.0% |
+| protocol/grpcgw | 30.3% |
+| infra/tracing | 12.5% |
 
 Test methodology: Server readiness is verified via polling (`waitForTCPServer` / `waitForUDPServer`) instead of fixed sleeps, ensuring stability across CI and local environments.
 
@@ -570,7 +574,7 @@ curl http://localhost:9091/metrics
 - [Test Coverage Document](docs/TEST_COVERAGE.md) — All 627 tests detailed
 - [Code Review Report](docs/REVIEW_PHASE3.md) — 3-round expert review, 25/25 issues resolved
 - [API Documentation](https://pkg.go.dev/github.com/X1aSheng/shark-socket)
-- [Example Code](examples/) — 9 runnable examples
+- [Example Code](examples/) — 8 runnable examples
 - [中文文档](./README.md)
 
 ---
@@ -585,8 +589,8 @@ curl http://localhost:9091/metrics
 | Test Functions | 627 (620 Test + 7 Fuzz) |
 | Benchmarks | 55 |
 | Test Files | 75 |
-| Examples | 9 |
-| External Dependencies | 3 (prometheus/client_golang, quic-go, gorilla/websocket) |
+| Examples | 8 |
+| External Dependencies | 4 core modules (prometheus, quic-go, gorilla/websocket, opentelemetry) |
 | Code Review | 25/25 complete (3-round expert review) |
 
 ---

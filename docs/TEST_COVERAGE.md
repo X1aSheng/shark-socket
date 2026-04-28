@@ -4,6 +4,8 @@
 
 ```
 shark-socket/
+├── api/
+│   └── *_test.go             # 公开 API 接口验证
 ├── tests/
 │   ├── unit/                 # 跨模块单元测试
 │   ├── integration/          # 端到端集成测试
@@ -12,14 +14,26 @@ shark-socket/
     ├── defense/*_test.go     # 防御模块测试
     ├── errs/*_test.go        # 错误定义测试
     ├── gateway/*_test.go     # 网关模块测试
-    ├── infra/*_test.go       # 基础设施测试
+    ├── infra/                # 基础设施测试
+    │   ├── bufferpool/       #   缓冲池
+    │   ├── cache/            #   内存缓存
+    │   ├── circuitbreaker/   #   熔断器
+    │   ├── config/           #   配置热加载
+    │   ├── logger/           #   日志
+    │   ├── metrics/          #   指标
+    │   ├── pubsub/           #   发布订阅
+    │   ├── ratelimit/        #   连接速率限制
+    │   ├── store/            #   KV 存储
+    │   └── tracing/          #   链路追踪
     ├── plugin/*_test.go      # 插件系统测试
     ├── protocol/
     │   ├── tcp/*_test.go     # TCP 协议测试
     │   ├── udp/*_test.go     # UDP 协议测试
     │   ├── http/*_test.go    # HTTP 协议测试
     │   ├── websocket/*_test.go # WebSocket 协议测试
-    │   └── coap/*_test.go    # CoAP 协议测试
+    │   ├── coap/*_test.go    # CoAP 协议测试
+    │   ├── quic/*_test.go    # QUIC 协议测试
+    │   └── grpcgw/*_test.go  # gRPC-Web 协议测试
     ├── session/*_test.go     # 会话管理测试
     ├── types/*_test.go       # 类型系统测试
     └── utils/*_test.go       # 工具库测试
@@ -29,25 +43,26 @@ shark-socket/
 
 | 层级 | 测试文件数 | Test 函数 | Fuzz 函数 | Benchmark 函数 |
 |------|-----------|-----------|-----------|----------------|
+| api | 1 | 42 | 0 | 0 |
 | tests/unit | 3 | 40 | 0 | 0 |
 | tests/integration | 2 | 18 | 0 | 0 |
 | tests/benchmark | 2 | 0 | 0 | 24 |
-| internal/defense | 3 | 14 | 0 | 0 |
+| internal/defense | 3 | 18 | 0 | 0 |
 | internal/errs | 1 | 7 | 0 | 0 |
-| internal/gateway | 2 | 7 | 0 | 0 |
-| internal/infra | 8 | 52 | 0 | 7 |
-| internal/plugin | 6 | 28 | 0 | 6 |
-| internal/protocol/tcp | 10 | 58 | 5 | 4 |
-| internal/protocol/udp | 4 | 14 | 0 | 0 |
-| internal/protocol/http | 4 | 19 | 0 | 0 |
-| internal/protocol/websocket | 4 | 20 | 0 | 0 |
-| internal/protocol/coap | 6 | 27 | 2 | 0 |
-| internal/protocol/quic | 1 | 0 | 0 | 0 |
-| internal/protocol/grpcgw | 2 | 0 | 0 | 0 |
-| internal/session | 4 | 30 | 0 | 5 |
-| internal/types | 4 | 7 | 0 | 0 |
-| internal/utils | 3 | 18 | 0 | 0 |
-| **合计** | **75** | **620** | **7** | **46** |
+| internal/gateway | 2 | 8 | 0 | 0 |
+| internal/infra | 11 | 84 | 0 | 7 |
+| internal/plugin | 6 | 37 | 0 | 7 |
+| internal/protocol/tcp | 10 | 115 | 5 | 4 |
+| internal/protocol/udp | 4 | 20 | 0 | 0 |
+| internal/protocol/http | 6 | 44 | 0 | 4 |
+| internal/protocol/websocket | 4 | 33 | 0 | 0 |
+| internal/protocol/coap | 6 | 49 | 2 | 0 |
+| internal/protocol/quic | 2 | 22 | 0 | 0 |
+| internal/protocol/grpcgw | 1 | 16 | 0 | 3 |
+| internal/session | 4 | 34 | 0 | 6 |
+| internal/types | 4 | 12 | 0 | 0 |
+| internal/utils | 3 | 21 | 0 | 0 |
+| **合计** | **75** | **620** | **7** | **55** |
 
 ---
 
@@ -255,6 +270,8 @@ shark-socket/
 
 | 函数 | 说明 |
 |------|------|
+| `TestBenchmarkLevelsExist` | 所有池级别非 nil |
+| `TestBenchmarkPoolGetPutCorrectness` | Get→Put 往返正确性 |
 | `BenchmarkPoolGetPutByLevel` | 各级别 Get+Put 性能 |
 | `BenchmarkBufferPoolDirectAlloc` | 直接分配对比基准 |
 | `BenchmarkBufferPoolParallel` | 并发池访问 |
@@ -292,6 +309,17 @@ shark-socket/
 | `TestHalfOpen_FailureTransitionsBackToOpen` | Half-Open 失败 → Open |
 | `TestReset_ForcesBackToClosed` | 强制重置为 Closed |
 
+### config/ — 配置热加载
+
+| 函数 | 说明 |
+|------|------|
+| `TestNewFileReloader` | 文件配置加载器创建 |
+| `TestFileReloader_Options` | 加载器选项配置 |
+| `TestFileReloader_FileNotFound` | 文件不存在时错误处理 |
+| `TestFileReloader_InvalidJSON` | 无效 JSON 处理 |
+| `TestFileReloader_Reload` | 配置热重载 |
+| `TestFileReloader_Stop` | 停止文件监控 |
+
 ### logger/ — 日志
 
 | 函数 | 说明 |
@@ -323,6 +351,22 @@ shark-socket/
 | `TestClose_RejectsFurtherOperations` | 关闭拒绝后续操作 |
 | `TestPublish_NoSubscribers_NoError` | 无订阅者发布不报错 |
 | `TestPublishSubscribe_ConcurrentStress` | 并发压力测试 |
+
+### ratelimit/ — 连接速率限制
+
+| 函数 | 说明 |
+|------|------|
+| `TestNewConnectionLimiter` | 连接限制器创建 |
+| `TestConnectionLimiter_Allow` | 限额内放行连接 |
+| `TestConnectionLimiter_WindowExpiry` | 时间窗口过期重置 |
+| `TestConnectionLimiter_AllowAddr` | 地址级别限流 |
+| `TestConnectionLimiter_Remove` | 移除 IP 计数器 |
+| `TestConnectionLimiter_DifferentIPs` | 不同 IP 独立限流 |
+| `TestConnectionLimiter_SetRate` | 动态调整速率 |
+| `TestConnectionLimiter_Reset` | 重置所有计数器 |
+| `TestConnectionLimiter_ActiveCount` | 活跃连接计数 |
+| `TestConnectionLimiter_AllowNilAddr` | nil 地址处理 |
+| `TestConnectionLimiter_AllowInvalidAddr` | 无效地址处理 |
 
 ### store/ — KV 存储
 

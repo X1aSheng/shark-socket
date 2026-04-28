@@ -450,13 +450,12 @@ shark-socket/
 │   ├── types/              # 核心类型：枚举、Message[T]、Session[M]、Plugin
 │   ├── errs/               # 错误分类体系（含 IsRetryable/IsFatal 谓词）
 │   └── utils/              # ShardedMap[K,V]、AtomicBool、IP 解析
-├── examples/               # 9 个可运行示例
+├── examples/               # 8 个可运行示例
 │   ├── basic_tcp/          # TCP echo 服务器
 │   ├── basic_udp/          # UDP echo 服务器
 │   ├── basic_http/         # HTTP 服务器
 │   ├── basic_websocket/    # WebSocket echo
 │   ├── basic_coap/         # CoAP 服务器
-│   ├── basic_quic/          # QUIC 服务器
 │   ├── multi_protocol/     # 多协议网关（TCP+HTTP+WS+CoAP+QUIC）
 │   ├── graceful_shutdown/  # 优雅关闭演示
 │   └── session_plugins/    # 插件链使用示例
@@ -643,24 +642,28 @@ logs/
 | errs | 100.0% |
 | infra/cache | 100.0% |
 | infra/store | 100.0% |
-| infra/tracing | 100.0% |
-| infra/pubsub | 96.1% |
-| defense | 95.1% |
-| api | 92.6% |
+| defense | 95.3% |
+| infra/pubsub | 94.0% |
 | types | 92.3% |
-| session | 87.8% |
-| infra/bufferpool | 86.8% |
-| protocol/tcp | 85.4% |
+| infra/config | 87.5% |
+| infra/bufferpool | 86.6% |
 | utils | 84.7% |
-| protocol/websocket | 80.2% |
+| session | 80.1% |
 | infra/circuitbreaker | 79.4% |
-| protocol/udp | 78.4% |
-| protocol/coap | 75.2% |
-| protocol/http | 75.2% |
-| infra/logger | 73.9% |
-| plugin | 62.7% |
-| infra/metrics | 53.3% |
-| gateway | 52.1% |
+| protocol/tcp | 79.0% |
+| protocol/coap | 76.4% |
+| protocol/websocket | 75.3% |
+| protocol/udp | 75.0% |
+| infra/ratelimit | 66.2% |
+| protocol/http | 65.0% |
+| api | 58.1% |
+| plugin | 58.0% |
+| infra/metrics | 52.5% |
+| gateway | 31.5% |
+| infra/logger | 29.2% |
+| protocol/quic | 28.0% |
+| protocol/grpcgw | 30.3% |
+| infra/tracing | 12.5% |
 
 测试方法论：使用轮询检测 (`waitForTCPServer` / `waitForUDPServer`) 替代固定睡眠，确保 CI 和本地环境的稳定性。
 
@@ -864,7 +867,7 @@ make all         # vet + build + test
 - [测试覆盖文档](docs/TEST_COVERAGE.md) — 全部 627 个测试详解
 - [代码审查报告](docs/REVIEW_PHASE3.md) — 3 轮专家审查，25/25 问题已修复
 - [API 文档](https://pkg.go.dev/github.com/X1aSheng/shark-socket) — GoDoc
-- [示例代码](examples/) — 9 个可运行示例
+- [示例代码](examples/) — 8 个可运行示例
 - [English Documentation](./README_EN.md)
 
 ---
@@ -879,8 +882,8 @@ make all         # vet + build + test
 | 测试函数 | 627 (620 Test + 7 Fuzz) |
 | 基准测试 | 55 |
 | 测试文件 | 75 |
-| 示例 | 9 |
-| 外部依赖 | 3 (prometheus/client_golang, quic-go, gorilla/websocket) |
+| 示例 | 8 |
+| 外部依赖 | 4 个核心模块 (prometheus, quic-go, gorilla/websocket, opentelemetry) |
 | 代码审查 | 25/25 全部完成 (3 轮专家审查) |
 
 ---

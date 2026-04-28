@@ -1,6 +1,6 @@
 # Shark-Socket 架构设计文档
 
-> 高性能、可扩展的多协议网络框架，采用 Go 语言开发（Go >= 1.26），支持 TCP、TLS、UDP、HTTP、WebSocket 和 CoAP 协议的统一抽象与网关集成。
+> 高性能、可扩展的多协议网络框架，采用 Go 语言开发（Go >= 1.26），支持 TCP、TLS、UDP、HTTP、HTTP/2、WebSocket、CoAP、QUIC 和 gRPC-Web 协议的统一抽象与网关集成。
 
 ---
 
@@ -1122,6 +1122,42 @@ Options：
   DTLSConfig（可选，基于 pion/dtls）
 ```
 
+### 9.6 QUIC 协议
+
+```
+QUIC Session（嵌入 *BaseSession）：
+  conn       *quic.Connection     // QUIC 连接（多流复用）
+  writeQueue chan []byte          // 写队列
+  writeLoop  goroutine            // 从队列读取，为每条消息打开 unidirectional stream 写入
+  Close()    使用 sync.Once 保护，先 close(draining) 触发排空，再等待 drained channel
+
+特性：
+  多路复用 — 单连接多流，无队头阻塞
+  0-RTT    — 零往返时间连接建立
+  连接迁移 — 连接 ID 保持，移动网络切换
+  TLS 1.3  — quic-go 内置 TLS 加密
+  流控     — 可插拔拥塞控制算法
+
+Server：
+  监听 UDP 端口，quic-go 管理连接
+  handleConn → 启动 writeLoop，阻塞等待 ctx.Done()
+  与 TCP/UDP 不同的生命周期：长连接流模型
+```
+
+### 9.7 gRPC-Web 协议
+
+```
+gRPC-Web Gateway（双模式）：
+  WebSocket 模式 — 双向流，支持 Server Streaming
+  Direct 模式  — HTTP POST，支持 Unary RPC
+
+Server：
+  注册 gRPC service handler
+  支持 Protobuf 序列化（可扩展 JSON 等）
+  路径匹配 → 转发到对应的 gRPC 处理器
+  客户端兼容 grpc-web JavaScript 库
+```
+
 ---
 
 ## 10. 网关层（internal/gateway/）
@@ -1651,22 +1687,40 @@ protocol：
 
 ```
 TCP：
-  Echo 单连接 / 多连接并发 / 压力（1K 客户端）
-  会话计数准确性 / MaxSessions 边界 / 连续错误断连
-  TLS 握手 / 证书热加载
-  泛型 SendTyped 端到端验证
+  Echo 单连接 / 多连接并发 / 压力（20 客户端 × 50 消息）
+  多尺寸负载（空/1B/1KB/32KB）完整性验证
+  PingPong 严格顺序（200 条消息）
+  大包往返（1KB/8KB/64KB/128KB 逐字节验证）
 
-UDP：Echo Session 复用 / sweepLoop TTL 清理
-HTTP：模式A Ping / 模式B Plugin 集成
-WebSocket：Text / Binary Echo / Ping-Pong 超时断开 / AllowedOrigins 拒绝
-CoAP：GET / POST 请求响应 / ACK 重传（模拟丢包）/ MessageID 去重
+UDP：Echo Session 复用 / TTL 清理 / 并发客户端
+HTTP：Query 参数回声 / Binary Body 回声 / 并发请求
+WebSocket：Text / Binary Echo / 多客户端并发 / 多尺寸（256B~16KB）
+CoAP：NON 消息 / CON-ACK 交换 / MessageID 去重
 
 Gateway：
-  多协议并发启动 / 共享 SessionManager 跨协议查询
-  6 阶段优雅关闭（SIGTERM）
+  跨协议通信（TCP+WS+HTTP+UDP 同时运行）
+  跨协议压力（5 客户端 × 4 协议）
+  共享 SessionManager 跨协议全局唯一 ID
+  优雅关闭（超时+端口释放）
+  活跃连接时的优雅关闭（飞行中请求完成+新连接被拒）
 ```
 
-### 18.3 基准测试（tests/benchmark/）
+### 18.3 Fuzz 测试
+
+```
+TCP Framer（5 个 Fuzz 目标）：
+  FuzzLengthPrefixFramer    — 任意字节输入不 panic（~830K 迭代）
+  FuzzLineFramer            — 任意字节输入不 panic（~67K 迭代）
+  FuzzRawFramer             — 任意字节输入不 panic（~409K 迭代）
+  FuzzFixedSizeFramer       — 任意字节输入不 panic（~420K 迭代）
+  FuzzLengthPrefixRoundtrip — WriteFrame → ReadFrame 往返一致性
+
+CoAP（2 个 Fuzz 目标）：
+  FuzzParseMessage          — 任意字节解析不 panic，合法结果往返验证（~481K 迭代）
+  FuzzCoAPRoundtrip         — 构造消息 → Serialize → ParseMessage 往返（~548K 迭代）
+```
+
+### 18.4 基准测试（tests/benchmark/）
 
 ```
 BenchmarkSessionRegister     并行 CRUD（验证分片锁效果）
@@ -1688,7 +1742,7 @@ BenchmarkSendTyped           SendTyped vs Send 开销对比（M=[]byte 验证零
   SendTyped（M=[]byte）与 Send 开销差异 < 1ns
 ```
 
-### 18.4 异常测试矩阵（24 项）
+### 18.5 异常测试矩阵（24 项）
 
 | # | 场景 | 验证点 |
 |---|------|--------|
