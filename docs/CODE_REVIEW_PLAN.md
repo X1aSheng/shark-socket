@@ -17,9 +17,10 @@
 |-------|--------|--------|
 | Batch 1 | Pushed | C1, C2, C3, C4, C5, C7, C8, H2, H3, H4, H5, H6, H7, H8, H9, H10, M8, M14, L7, L8, L14 |
 | Batch 2 | Pushed | C6, H11, H12, H13, H14, M1, M2, M3, M4, M7, M13, M16, M17 |
-| Remaining | Open | H15, M5, M6, M9, M10, M11, M12, M15, M18, L1-L14 (partial) |
+| Batch 3 | Pushed | M5, M9, M12 |
+| Remaining | Open | H15, M6, M10, M11, M15, M18, L1-L14 (partial) |
 
-**Remaining issues** are primarily performance optimizations (M6, M9, M11), configuration tuning (M12, M18), dead code removal (L1, L3), or design changes requiring broader refactoring (H15).
+**Remaining issues** are primarily performance optimizations (H15, M6, M11), dead code removal (L1, L3), or not applicable / already addressed by design (M10 has cleanup loop, M15 has no manager field, M18 is security-through-obscurity).
 
 ---
 
