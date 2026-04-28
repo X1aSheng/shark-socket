@@ -287,3 +287,163 @@ func TestGateway_GracefulShutdown(t *testing.T) {
 		t.Fatal("server should be down after Stop")
 	}
 }
+
+// TestGateway_SharedManager verifies that the shared session manager
+// assigns globally unique IDs across protocols.
+func TestGateway_SharedManager(t *testing.T) {
+	var tcpIDs []uint64
+	var wsIDs []uint64
+
+	tcpHandler := func(sess types.RawSession, msg types.RawMessage) error {
+		tcpIDs = append(tcpIDs, sess.ID())
+		return nil
+	}
+	wsHandler := func(sess types.RawSession, msg types.RawMessage) error {
+		wsIDs = append(wsIDs, sess.ID())
+		return nil
+	}
+
+	tcpSrv := tcpproto.NewServer(tcpHandler,
+		tcpproto.WithAddr("127.0.0.1", 0),
+	)
+	wsSrv := wsproto.NewServer(wsHandler,
+		wsproto.WithAddr("127.0.0.1", 0),
+		wsproto.WithPath("/ws"),
+		wsproto.WithAllowedOrigins("*"),
+	)
+
+	gw := gateway.New(gateway.WithMetricsEnabled(false))
+	gw.Register(tcpSrv)
+	gw.Register(wsSrv)
+
+	if err := gw.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		gw.Stop(ctx)
+	}()
+
+	tcpAddr := tcpSrv.Addr().String()
+	wsAddr := wsSrv.Addr().String()
+	waitForTCP(t, tcpAddr, 5*time.Second)
+	waitForTCP(t, wsAddr, 5*time.Second)
+
+	// Connect TCP client
+	conn, err := net.DialTimeout("tcp", tcpAddr, 3*time.Second)
+	if err != nil {
+		t.Fatalf("dial TCP: %v", err)
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
+	framer := tcpproto.NewLengthPrefixFramer(4096)
+	framer.WriteFrame(conn, []byte("hello"))
+	framer.ReadFrame(conn)
+
+	// Connect WebSocket client
+	wsURL := fmt.Sprintf("ws://%s/ws", wsAddr)
+	wsConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial WS: %v", err)
+	}
+	defer wsConn.Close()
+	wsConn.WriteMessage(websocket.BinaryMessage, []byte("hello"))
+	wsConn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	wsConn.ReadMessage()
+
+	// Both should have session IDs and they should be different
+	if len(tcpIDs) == 0 || len(wsIDs) == 0 {
+		t.Fatal("expected session IDs for both protocols")
+	}
+	if tcpIDs[0] == wsIDs[0] {
+		t.Errorf("shared manager should produce unique IDs across protocols, got TCP=%d WS=%d",
+			tcpIDs[0], wsIDs[0])
+	}
+	t.Logf("TCP session ID=%d, WS session ID=%d", tcpIDs[0], wsIDs[0])
+}
+
+// TestGateway_GracefulShutdownWithActiveConnections verifies that graceful
+// shutdown with active connections: (a) allows inflight requests to complete,
+// (b) eventually terminates, and (c) rejects new connections after shutdown.
+func TestGateway_GracefulShutdownWithActiveConnections(t *testing.T) {
+	// Long-poll endpoint that blocks until shutdown begins
+	var inflightCompleted atomic.Bool
+	longPollDone := make(chan struct{})
+
+	httpSrv := httpproto.NewServer(httpproto.WithAddr("127.0.0.1", 0))
+	httpSrv.HandleFunc("/slow", func(w http.ResponseWriter, r *http.Request) {
+		// Simulate an in-flight request that completes after shutdown signal
+		select {
+		case <-r.Context().Done():
+			w.WriteHeader(http.StatusServiceUnavailable)
+		case <-time.After(500 * time.Millisecond):
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("done"))
+		}
+		inflightCompleted.Store(true)
+		close(longPollDone)
+	})
+	httpSrv.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("pong"))
+	})
+
+	gw := gateway.New(
+		gateway.WithMetricsEnabled(false),
+		gateway.WithShutdownTimeout(5*time.Second),
+	)
+	gw.Register(httpSrv)
+
+	if err := gw.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	addr := httpSrv.Addr().String()
+	waitForTCP(t, addr, 5*time.Second)
+
+	// Start a long-running request in background
+	errCh := make(chan error, 1)
+	go func() {
+		resp, err := http.Get(fmt.Sprintf("http://%s/slow", addr))
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			errCh <- fmt.Errorf("expected 200, got %d", resp.StatusCode)
+			return
+		}
+		errCh <- nil
+	}()
+
+	// Give the slow request time to start
+	time.Sleep(50 * time.Millisecond)
+
+	// Initiate shutdown while the slow request is in-flight
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := gw.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	// The inflight request should complete (not be cut off by shutdown)
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("slow request failed: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("slow request did not complete within timeout")
+	}
+
+	if !inflightCompleted.Load() {
+		t.Error("inflight request should have completed")
+	}
+
+	// After shutdown, new connections should be rejected
+	_, err := http.Get(fmt.Sprintf("http://%s/ping", addr))
+	if err == nil {
+		t.Fatal("new connections should be rejected after shutdown")
+	}
+}

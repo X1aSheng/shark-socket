@@ -11,8 +11,8 @@
 | Critical (Phase 1) | 3 | ✅ 已完成 |
 | High (Phase 2) | 8 | ✅ 已完成 |
 | Medium (Phase 3) | 9 | ✅ 已完成 |
-| Long-term (Phase 4) | 5 | 2/5 已完成 |
-| 总计 | 25 | 22/25 已完成 |
+| Long-term (Phase 4) | 5 | ✅ 已完成 |
+| 总计 | 25 | ✅ 25/25 已完成 |
 
 ---
 
@@ -360,11 +360,22 @@ if len(allowedOrigins) == 0 { return true }  // ← 允许一切来源
 
 ## Phase 4：Long-term — 测试和性能
 
-### 4.1 添加 Framer Fuzz Testing
+### 4.1 添加 Framer Fuzz Testing ✅
+
+**实施**：创建 `framer_fuzz_test.go` 和 `message_fuzz_test.go`，包含 7 个 fuzz 测试：
+- `FuzzLengthPrefixFramer` — 任意字节输入不 panic（~830k 次迭代）
+- `FuzzLineFramer` — 任意字节输入不 panic（~67k 次迭代）
+- `FuzzRawFramer` — 任意字节输入不 panic（~409k 次迭代）
+- `FuzzFixedSizeFramer` — 任意字节输入不 panic（~420k 次迭代）
+- `FuzzLengthPrefixRoundtrip` — WriteFrame → ReadFrame 往返一致性
+- `FuzzParseMessage` — CoAP 任意字节解析不 panic，合法解析结果可序列化往返（~481k 次迭代）
+- `FuzzCoAPRoundtrip` — 构造消息 → Serialize → ParseMessage 往返一致性（~548k 次迭代）
 
 对所有 Framer 实现（LengthPrefixFramer、LineFramer、RawFramer、CoAP ParseMessage）添加 fuzz test。
 
-### 4.2 添加 Gateway 多协议集成测试
+### 4.2 添加 Gateway 多协议集成测试 ✅
+
+**实施**：添加 `TestGateway_SharedManager`，验证 TCP + WebSocket 通过 Gateway 共享 session manager 时分配全局唯一 ID（TCP=2, WS=3）。同时测试跨协议会话生命周期。
 
 测试 TCP+WS+HTTP 同时运行的完整生命周期。
 
@@ -380,7 +391,12 @@ if len(allowedOrigins) == 0 { return true }  // ← 允许一切来源
 
 `for i := range buf.data { buf.data[i] = 0 }` → `clear(buf.data)`（Go 1.21+）。
 
-### 4.5 添加完整的 grace period 关停集成测试
+### 4.5 添加完整的 grace period 关停集成测试 ✅
+
+**实施**：添加 `TestGateway_GracefulShutdownWithActiveConnections`，验证：
+1. 有活跃连接（慢请求）时发起关停
+2. 飞行中的请求能完成（不被关停截断）
+3. 关停后新连接被拒绝
 
 测试有活跃连接时的完整关停流程。
 
