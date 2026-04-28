@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -105,6 +106,7 @@ func NewSlogLoggerWithOptions(opts ...Option) Logger {
 	handler := slog.NewJSONHandler(o.output, &slog.HandlerOptions{
 		Level:     slog.Level(o.level),
 		AddSource: o.addSource,
+		ReplaceAttr: replaceSourcePath,
 	})
 	logger := slog.New(handler)
 	return &slogLogger{
@@ -245,6 +247,20 @@ func ContextWithSessionID(ctx context.Context, sessionID string) context.Context
 // ContextWithProtocol creates a context with protocol type.
 func ContextWithProtocol(ctx context.Context, proto string) context.Context {
 	return context.WithValue(ctx, protocolKeyType, proto)
+}
+
+// modulePrefix is stripped from slog source file paths to keep log output short.
+const modulePrefix = "github.com/X1aSheng/shark-socket/"
+
+func replaceSourcePath(groups []string, a slog.Attr) slog.Attr {
+	if a.Key == slog.SourceKey {
+		if src, ok := a.Value.Any().(*slog.Source); ok {
+			if after, found := strings.CutPrefix(src.File, modulePrefix); found {
+				src.File = after
+			}
+		}
+	}
+	return a
 }
 
 type nopLogger struct{}
