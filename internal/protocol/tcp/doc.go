@@ -259,5 +259,4 @@
 //
 //	// Rate limiting
 //	WithConnRateLimit(rate, window) // Connection rate limit
-//
 package tcp

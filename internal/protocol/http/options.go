@@ -13,18 +13,18 @@ import (
 
 // Options holds HTTP server configuration.
 type Options struct {
-	Host         string
-	Port         int
-	ReadTimeout  int // seconds
-	WriteTimeout int // seconds
-	IdleTimeout  int // seconds
+	Host            string
+	Port            int
+	ReadTimeout     int // seconds
+	WriteTimeout    int // seconds
+	IdleTimeout     int // seconds
 	ShutdownTimeout int // seconds, timeout for graceful shutdown (default 30)
-	MaxBodySize  int64
-	TLSConfig    *tls.Config
-	Plugins      []types.Plugin
+	MaxBodySize     int64
+	TLSConfig       *tls.Config
+	Plugins         []types.Plugin
 	// HTTP/2 options
-	EnableHTTP2          bool   // Enable HTTP/2 (with TLS or h2c for cleartext)
-	MaxConcurrentStreams int    // Max concurrent streams per connection (default 250)
+	EnableHTTP2          bool // Enable HTTP/2 (with TLS or h2c for cleartext)
+	MaxConcurrentStreams int  // Max concurrent streams per connection (default 250)
 	// ConnRateLimit limits connections per IP. nil to disable.
 	ConnRateLimit *ratelimit.ConnectionLimiter
 	// AccessLogger for request access logging. nil to disable.
@@ -35,13 +35,13 @@ type Options struct {
 
 func defaultOptions() Options {
 	return Options{
-		Host:             "0.0.0.0",
-		Port:             18400,
-		ReadTimeout:      30,
-		WriteTimeout:     30,
-		IdleTimeout:      120,
-		ShutdownTimeout:  30,
-		MaxBodySize:      10 * 1024 * 1024, // 10MB default
+		Host:            "0.0.0.0",
+		Port:            18400,
+		ReadTimeout:     30,
+		WriteTimeout:    30,
+		IdleTimeout:     120,
+		ShutdownTimeout: 30,
+		MaxBodySize:     10 * 1024 * 1024, // 10MB default
 	}
 }
 

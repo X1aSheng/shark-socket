@@ -63,6 +63,7 @@
 //	└─────────────────────────────────────────────────────────────────┘
 //
 // Opcodes:
+//
 //	0x0: Continuation
 //	0x1: Text frame
 //	0x2: Binary frame
@@ -128,9 +129,9 @@
 //	)
 //
 // AllowedOrigins should include:
-//	- Your production domain
-//	- localhost for development
-//	- Specific subdomains as needed
+//   - Your production domain
+//   - localhost for development
+//   - Specific subdomains as needed
 //
 // Empty AllowedOrigins = reject all cross-origin connections.
 //
@@ -145,23 +146,23 @@
 //	)
 //
 // AccessLog fields:
-//	- Timestamp, Method (WS upgrade), Path
-//	- Status (101 for successful upgrade)
-//	- Duration, BytesIn, BytesOut
-//	- RemoteAddr, UserAgent, RequestID
+//   - Timestamp, Method (WS upgrade), Path
+//   - Status (101 for successful upgrade)
+//   - Duration, BytesIn, BytesOut
+//   - RemoteAddr, UserAgent, RequestID
 //
 // # Close Frame Handling
 //
 // Proper WebSocket close sequence:
 //
-//	1. Server sends Close frame (code + reason)
-//	2. Client acknowledges with Close frame
-//	3. Connection closed
+//  1. Server sends Close frame (code + reason)
+//  2. Client acknowledges with Close frame
+//  3. Connection closed
 //
 // shark-socket implements graceful close:
-//	- Session close triggers Close frame send
-//	- writeLoop drains queue
-//	- Connection closed after drain
+//   - Session close triggers Close frame send
+//   - writeLoop drains queue
+//   - Connection closed after drain
 //
 // # Comparison with TCP
 //
@@ -180,19 +181,19 @@
 // # Use Cases
 //
 // WebSocket excels for:
-//	- Real-time chat applications
-//	- Live dashboards and updates
-//	- Multiplayer gaming
-//	- Collaborative editing
-//	- Streaming data feeds
-//	- IoT device control
+//   - Real-time chat applications
+//   - Live dashboards and updates
+//   - Multiplayer gaming
+//   - Collaborative editing
+//   - Streaming data feeds
+//   - IoT device control
 //
 // # Limitations
 //
-//	- Upgrade overhead (initial HTTP handshake)
-//	- Connection persistence (more resources than HTTP)
-//	- Load balancer challenges (sticky sessions needed)
-//	- Proxy timeout issues (keep-alive required)
+//   - Upgrade overhead (initial HTTP handshake)
+//   - Connection persistence (more resources than HTTP)
+//   - Load balancer challenges (sticky sessions needed)
+//   - Proxy timeout issues (keep-alive required)
 //
 // # Configuration Options
 //
@@ -232,5 +233,4 @@
 //	shark_ws_message_bytes               // Data transferred
 //	shark_ws_ping_timeout_total          // Ping/Pong timeouts
 //	shark_ws_errors_total                // Errors
-//
 package websocket

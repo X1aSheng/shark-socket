@@ -24,13 +24,13 @@ const (
 type Option func(*options)
 
 type options struct {
-	level          Level
-	output         io.Writer
-	addSource      bool
-	timeFormat     string
-	timeZone       *time.Location
-	contextFuncs   []ContextExtractor
-	accessLogger   AccessLogger
+	level        Level
+	output       io.Writer
+	addSource    bool
+	timeFormat   string
+	timeZone     *time.Location
+	contextFuncs []ContextExtractor
+	accessLogger AccessLogger
 }
 
 // AccessLogger logs access entries.
@@ -95,9 +95,9 @@ func NewSlogLogger() Logger {
 // NewSlogLoggerWithOptions creates a Logger with custom options.
 func NewSlogLoggerWithOptions(opts ...Option) Logger {
 	o := &options{
-		level:    LevelInfo,
-		output:   os.Stdout,
-		addSource: false,
+		level:      LevelInfo,
+		output:     os.Stdout,
+		addSource:  false,
 		timeFormat: "2006-01-02T15:04:05.000Z07:00",
 	}
 	for _, opt := range opts {
@@ -105,8 +105,8 @@ func NewSlogLoggerWithOptions(opts ...Option) Logger {
 	}
 
 	handler := slog.NewJSONHandler(o.output, &slog.HandlerOptions{
-		Level:     slog.Level(o.level),
-		AddSource: o.addSource,
+		Level:       slog.Level(o.level),
+		AddSource:   o.addSource,
 		ReplaceAttr: replaceSourcePath,
 	})
 	logger := slog.New(handler)
@@ -153,7 +153,7 @@ func (l *slogLogger) WithContext(ctx context.Context) Logger {
 }
 
 const (
-	traceIDKey    = "trace_id"
+	traceIDKey   = "trace_id"
 	requestIDKey = "request_id"
 	userIDKey    = "user_id"
 	sessionIDKey = "session_id"
@@ -266,11 +266,11 @@ func replaceSourcePath(groups []string, a slog.Attr) slog.Attr {
 
 type nopLogger struct{}
 
-func (nopLogger) Debug(string, ...any)          {}
-func (nopLogger) Info(string, ...any)           {}
-func (nopLogger) Warn(string, ...any)           {}
-func (nopLogger) Error(string, ...any)          {}
-func (l nopLogger) With(...any) Logger          { return l }
+func (nopLogger) Debug(string, ...any)                 {}
+func (nopLogger) Info(string, ...any)                  {}
+func (nopLogger) Warn(string, ...any)                  {}
+func (nopLogger) Error(string, ...any)                 {}
+func (l nopLogger) With(...any) Logger                 { return l }
 func (l nopLogger) WithContext(context.Context) Logger { return l }
 
 // NopLogger returns a no-op logger for benchmarks and testing.

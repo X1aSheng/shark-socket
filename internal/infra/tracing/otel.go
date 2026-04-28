@@ -13,9 +13,9 @@ import (
 
 // OTelTracer is a Tracer implementation backed by OpenTelemetry.
 type OTelTracer struct {
-	tracer    oteltrace.Tracer
+	tracer     oteltrace.Tracer
 	propagator propagation.TextMapPropagator
-	exporter  sdktrace.SpanExporter // kept for lifecycle management
+	exporter   sdktrace.SpanExporter // kept for lifecycle management
 }
 
 // OTelOption configures the OTelTracer.

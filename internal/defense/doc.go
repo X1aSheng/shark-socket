@@ -51,18 +51,19 @@
 //	}
 //
 // Monitored resources:
-//	- Memory usage (heap in-use)
-//	- File descriptor usage
-//	- Goroutine count
-//	- Session count vs max
-//	- Worker pool queue depth
+//   - Memory usage (heap in-use)
+//   - File descriptor usage
+//   - Goroutine count
+//   - Session count vs max
+//   - Worker pool queue depth
 //
 // Hysteresis prevents oscillation:
-//	- High watermark: Enter overload state
-//	- Low watermark: Exit overload state
-//	- Gap between thresholds prevents rapid toggling
+//   - High watermark: Enter overload state
+//   - Low watermark: Exit overload state
+//   - Gap between thresholds prevents rapid toggling
 //
 // Degradation matrix:
+//
 //	┌──────────────────────┬──────────────────────────────────────────┐
 //	│  Condition           │  Action                                   │
 //	├──────────────────────┼──────────────────────────────────────────┤
@@ -120,15 +121,15 @@
 //	// Output: first message + "9999 additional same messages"
 //
 // Sampling strategy:
-//	- First occurrence: full log output
-//	- Subsequent within interval: increment counter
-//	- End of interval: summary line "N additional same messages"
-//	- New interval: reset counter, full output again
+//   - First occurrence: full log output
+//   - Subsequent within interval: increment counter
+//   - End of interval: summary line "N additional same messages"
+//   - New interval: reset counter, full output again
 //
 // This prevents:
-//	- Log file explosion under attack
-//	- I/O bottleneck from logging
-//	- Loss of other log messages in noise
+//   - Log file explosion under attack
+//   - I/O bottleneck from logging
+//   - Loss of other log messages in noise
 //
 // # Integration Points
 //
@@ -196,5 +197,4 @@
 //	- alert: SharkMemoryPressure
 //	  expr: shark_memory_usage_bytes > 0.8 * process_resident_memory_bytes
 //	  for: 2m
-//
 package defense

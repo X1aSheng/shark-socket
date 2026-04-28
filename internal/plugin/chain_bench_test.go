@@ -12,11 +12,11 @@ type benchPlugin struct {
 	priority int
 }
 
-func (p *benchPlugin) Name() string                                        { return p.name }
-func (p *benchPlugin) Priority() int                                       { return p.priority }
-func (p *benchPlugin) OnAccept(types.RawSession) error                     { return nil }
+func (p *benchPlugin) Name() string                                              { return p.name }
+func (p *benchPlugin) Priority() int                                             { return p.priority }
+func (p *benchPlugin) OnAccept(types.RawSession) error                           { return nil }
 func (p *benchPlugin) OnMessage(_ types.RawSession, data []byte) ([]byte, error) { return data, nil }
-func (p *benchPlugin) OnClose(types.RawSession)                            {}
+func (p *benchPlugin) OnClose(types.RawSession)                                  {}
 
 // BenchmarkPluginChain_Empty benchmarks the plugin chain with no plugins.
 // This measures the base overhead of the chain dispatch loop.

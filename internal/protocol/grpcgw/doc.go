@@ -148,5 +148,4 @@
 //
 // Note: gRPC-Web connections may span multiple HTTP requests (streaming).
 // Plugin hooks follow HTTP session semantics (not TCP connection semantics).
-//
 package grpcgw

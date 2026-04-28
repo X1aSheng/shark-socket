@@ -41,12 +41,12 @@ type StageTimeouts struct {
 func defaultOptions() Options {
 	return Options{
 		StageTimeouts: StageTimeouts{
-			StopAccept:    5 * time.Second,
-			Drain:         5 * time.Second,
-			SessionClose:  10 * time.Second,
-			ManagerClose:  5 * time.Second,
-			MetricsClose:  5 * time.Second,
-			Finalize:      2 * time.Second,
+			StopAccept:   5 * time.Second,
+			Drain:        5 * time.Second,
+			SessionClose: 10 * time.Second,
+			ManagerClose: 5 * time.Second,
+			MetricsClose: 5 * time.Second,
+			Finalize:     2 * time.Second,
 		},
 		MetricsAddr:   ":9090",
 		EnableMetrics: true,
@@ -61,12 +61,12 @@ type Option func(*Options)
 func WithShutdownTimeout(d time.Duration) Option {
 	return func(o *Options) {
 		o.StageTimeouts = StageTimeouts{
-			StopAccept:    d / 3,
-			Drain:         d / 3,
-			SessionClose:  d / 3,
-			ManagerClose:  d / 6,
-			MetricsClose:  d / 6,
-			Finalize:      d / 6,
+			StopAccept:   d / 3,
+			Drain:        d / 3,
+			SessionClose: d / 3,
+			ManagerClose: d / 6,
+			MetricsClose: d / 6,
+			Finalize:     d / 6,
 		}
 	}
 }

@@ -74,7 +74,7 @@ type RateLimitPlugin struct {
 	stopCh       chan struct{}
 	wg           sync.WaitGroup
 
-	violations      sync.Map // string -> *violationEntry
+	violations sync.Map // string -> *violationEntry
 }
 
 type violationEntry struct {
@@ -93,11 +93,11 @@ func WithRateLimitMessageRate(rate, burst float64) RateLimitOption {
 // NewRateLimitPlugin creates a new rate limiter.
 func NewRateLimitPlugin(rate, burst float64, opts ...RateLimitOption) *RateLimitPlugin {
 	p := &RateLimitPlugin{
-		rate:    rate,
-		burst:   burst,
-		msgRate: rate * 10, // default message rate = 10x connection rate
+		rate:     rate,
+		burst:    burst,
+		msgRate:  rate * 10, // default message rate = 10x connection rate
 		msgBurst: burst * 10,
-		stopCh:  make(chan struct{}),
+		stopCh:   make(chan struct{}),
 	}
 	p.globalBucket = newTokenBucket(rate, int64(burst))
 	for _, opt := range opts {

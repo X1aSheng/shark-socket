@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/errs"
+	"github.com/X1aSheng/shark-socket/internal/gateway"
 	"github.com/X1aSheng/shark-socket/internal/infra/cache"
 	"github.com/X1aSheng/shark-socket/internal/infra/circuitbreaker"
 	"github.com/X1aSheng/shark-socket/internal/infra/logger"
@@ -21,32 +22,31 @@ import (
 	udp "github.com/X1aSheng/shark-socket/internal/protocol/udp"
 	websocket "github.com/X1aSheng/shark-socket/internal/protocol/websocket"
 	"github.com/X1aSheng/shark-socket/internal/types"
-	"github.com/X1aSheng/shark-socket/internal/gateway"
 )
 
 // === Type Aliases ===
 
 type (
-	Session[M types.MessageConstraint] = types.Session[M]
-	RawSession                       = types.RawSession
-	SessionManager                   = types.SessionManager
-	SessionState                     = types.SessionState
-	Message[T any]                   = types.Message[T]
-	RawMessage                       = types.RawMessage
-	MessageConstraint                = types.MessageConstraint
+	Session[M types.MessageConstraint]        = types.Session[M]
+	RawSession                                = types.RawSession
+	SessionManager                            = types.SessionManager
+	SessionState                              = types.SessionState
+	Message[T any]                            = types.Message[T]
+	RawMessage                                = types.RawMessage
+	MessageConstraint                         = types.MessageConstraint
 	MessageHandler[T types.MessageConstraint] = types.MessageHandler[T]
-	RawHandler                       = types.RawHandler
-	Server                           = types.Server
-	Plugin                           = types.Plugin
-	BasePlugin                       = types.BasePlugin
-	ProtocolType                     = types.ProtocolType
-	MessageType                      = types.MessageType
-	Logger                           = logger.Logger
-	Cache                            = cache.Cache
-	Store                            = store.Store
-	PubSub                           = pubsub.PubSub
-	CircuitBreaker                   = circuitbreaker.CircuitBreaker
-	Tracer                           = tracing.Tracer
+	RawHandler                                = types.RawHandler
+	Server                                    = types.Server
+	Plugin                                    = types.Plugin
+	BasePlugin                                = types.BasePlugin
+	ProtocolType                              = types.ProtocolType
+	MessageType                               = types.MessageType
+	Logger                                    = logger.Logger
+	Cache                                     = cache.Cache
+	Store                                     = store.Store
+	PubSub                                    = pubsub.PubSub
+	CircuitBreaker                            = circuitbreaker.CircuitBreaker
+	Tracer                                    = tracing.Tracer
 )
 
 // === Protocol Constants ===
@@ -61,11 +61,11 @@ const (
 	QUIC      = types.QUIC
 	Custom    = types.Custom
 
-	Text    = types.Text
-	Binary  = types.Binary
-	Ping    = types.Ping
-	Pong    = types.Pong
-	Close   = types.Close
+	Text   = types.Text
+	Binary = types.Binary
+	Ping   = types.Ping
+	Pong   = types.Pong
+	Close  = types.Close
 
 	Connecting = types.Connecting
 	Active     = types.Active
@@ -271,9 +271,9 @@ func WithQUICMaxMessageSize(max int) quic.Option {
 
 // Error variables re-export
 var (
-	ErrSkip            = errs.ErrSkip
-	ErrDrop            = errs.ErrDrop
-	ErrBlock           = errs.ErrBlock
-	ErrSessionClosed   = errs.ErrSessionClosed
-	ErrWriteQueueFull  = errs.ErrWriteQueueFull
+	ErrSkip           = errs.ErrSkip
+	ErrDrop           = errs.ErrDrop
+	ErrBlock          = errs.ErrBlock
+	ErrSessionClosed  = errs.ErrSessionClosed
+	ErrWriteQueueFull = errs.ErrWriteQueueFull
 )

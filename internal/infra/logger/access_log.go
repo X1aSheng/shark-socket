@@ -7,11 +7,11 @@ import (
 
 // AccessLogEntry represents a single access log entry.
 type AccessLogEntry struct {
-	Timestamp   time.Time
-	Protocol    string
-	Method      string
-	Path        string
-	StatusCode  int
+	Timestamp  time.Time
+	Protocol   string
+	Method     string
+	Path       string
+	StatusCode int
 	BytesIn    int64
 	BytesOut   int64
 	Duration   time.Duration

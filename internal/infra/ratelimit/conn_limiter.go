@@ -8,13 +8,13 @@ import (
 
 // ConnectionLimiter limits connections per IP address.
 type ConnectionLimiter struct {
-	mu       sync.RWMutex
-	counts   map[string]*ipCount
-	rate     int           // max connections per window
-	window   time.Duration // time window
+	mu              sync.RWMutex
+	counts          map[string]*ipCount
+	rate            int           // max connections per window
+	window          time.Duration // time window
 	cleanupInterval time.Duration
-	stopCh   chan struct{}
-	wg       sync.WaitGroup
+	stopCh          chan struct{}
+	wg              sync.WaitGroup
 }
 
 // ipCount tracks connection count for an IP.
@@ -27,11 +27,11 @@ type ipCount struct {
 // rate: max connections allowed per window duration.
 func NewConnectionLimiter(rate int, window time.Duration) *ConnectionLimiter {
 	cl := &ConnectionLimiter{
-		counts: make(map[string]*ipCount),
-		rate:   rate,
-		window: window,
+		counts:          make(map[string]*ipCount),
+		rate:            rate,
+		window:          window,
 		cleanupInterval: window * 2,
-		stopCh: make(chan struct{}),
+		stopCh:          make(chan struct{}),
 	}
 	cl.wg.Add(1)
 	go cl.cleanupLoop()

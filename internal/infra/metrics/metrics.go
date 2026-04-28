@@ -138,16 +138,16 @@ type promCounterVec struct {
 	inner *prometheus.CounterVec
 }
 
-func (c *promCounterVec) Inc(labels ...string)             { c.inner.WithLabelValues(labels...).Inc() }
-func (c *promCounterVec) Add(n float64, labels ...string)  { c.inner.WithLabelValues(labels...).Add(n) }
+func (c *promCounterVec) Inc(labels ...string)            { c.inner.WithLabelValues(labels...).Inc() }
+func (c *promCounterVec) Add(n float64, labels ...string) { c.inner.WithLabelValues(labels...).Add(n) }
 
 type promGaugeVec struct {
 	inner *prometheus.GaugeVec
 }
 
 func (g *promGaugeVec) Set(v float64, labels ...string) { g.inner.WithLabelValues(labels...).Set(v) }
-func (g *promGaugeVec) Inc(labels ...string)             { g.inner.WithLabelValues(labels...).Inc() }
-func (g *promGaugeVec) Dec(labels ...string)             { g.inner.WithLabelValues(labels...).Dec() }
+func (g *promGaugeVec) Inc(labels ...string)            { g.inner.WithLabelValues(labels...).Inc() }
+func (g *promGaugeVec) Dec(labels ...string)            { g.inner.WithLabelValues(labels...).Dec() }
 
 type promHistogramVec struct {
 	inner *prometheus.HistogramVec
@@ -207,8 +207,8 @@ func RegisterDefaultMetrics(m Metrics) {
 
 // SessionState labels for session metrics.
 const (
-	SessionStateActive   = "active"
-	SessionStateClosed   = "closed"
+	SessionStateActive  = "active"
+	SessionStateClosed  = "closed"
 	SessionStateTimeout = "timeout"
 	SessionStateError   = "error"
 )
@@ -221,10 +221,10 @@ const (
 
 // Operation labels for histogram.
 const (
-	OperationEncode   = "encode"
-	OperationDecode   = "decode"
-	OperationSend     = "send"
-	OperationReceive  = "receive"
+	OperationEncode  = "encode"
+	OperationDecode  = "decode"
+	OperationSend    = "send"
+	OperationReceive = "receive"
 )
 
 // NopMetrics returns a no-op metrics implementation for testing.
@@ -242,16 +242,16 @@ type nopGauge struct{}
 type nopHistogram struct{}
 type nopTimer struct{}
 
-func (nopCounter) Inc(...string)                   {}
-func (nopCounter) Add(float64, ...string)          {}
-func (nopGauge) Set(float64, ...string)            {}
-func (nopGauge) Inc(...string)                     {}
-func (nopGauge) Dec(...string)                     {}
-func (nopHistogram) Observe(float64, ...string)    {}
+func (nopCounter) Inc(...string)                      {}
+func (nopCounter) Add(float64, ...string)             {}
+func (nopGauge) Set(float64, ...string)               {}
+func (nopGauge) Inc(...string)                        {}
+func (nopGauge) Dec(...string)                        {}
+func (nopHistogram) Observe(float64, ...string)       {}
 func (nopTimer) ObserveDuration(time.Time, ...string) {}
 
 var (
-	_ Metrics  = (*PrometheusMetrics)(nil)
+	_ Metrics    = (*PrometheusMetrics)(nil)
 	_ CounterVec = (*promCounterVec)(nil)
 	_ GaugeVec   = (*promGaugeVec)(nil)
 	_ TimerVec   = (*promTimerVec)(nil)

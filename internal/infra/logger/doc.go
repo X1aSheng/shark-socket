@@ -33,6 +33,7 @@
 //	log.Info("listener ready")
 //
 // Output (JSON format):
+//
 //	{"level":"INFO","msg":"listener ready","host":"0.0.0.0","port":18000}
 //
 // # Access Logger
@@ -128,9 +129,9 @@
 //	logger.SetDefault(asyncLogger)
 //
 // Benefits:
-//  - Log writes don't block application threads
-//  - Batched writes reduce I/O overhead
-//  - Graceful degradation on queue full (sync fallback)
+//   - Log writes don't block application threads
+//   - Batched writes reduce I/O overhead
+//   - Graceful degradation on queue full (sync fallback)
 //
 // # Security: Log Sanitization
 //
@@ -157,9 +158,9 @@
 // | nopLogger | ~10ns | No-op, benchmark use |
 //
 // For high-throughput servers, consider:
-//   1. Sampling for debug logs
-//   2. Async writer with buffer tuning
-//   3. Selective field inclusion
+//  1. Sampling for debug logs
+//  2. Async writer with buffer tuning
+//  3. Selective field inclusion
 //
 // # Integration
 //
@@ -172,5 +173,4 @@
 //	)
 //
 // If no logger specified, default logger is used.
-//
 package logger

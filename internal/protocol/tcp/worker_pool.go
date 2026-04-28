@@ -37,6 +37,7 @@ type WorkerPool struct {
 	tempCount  atomic.Int32
 	closed     atomic.Bool
 	policy     FullPolicy
+	closeMu    sync.RWMutex // protects taskQueue during close
 }
 
 // NewWorkerPool creates a new worker pool.
@@ -70,6 +71,11 @@ func (wp *WorkerPool) Start() {
 
 // Submit sends a task to the worker pool.
 func (wp *WorkerPool) Submit(sess types.RawSession, data []byte) error {
+	wp.closeMu.RLock()
+	defer wp.closeMu.RUnlock()
+	if wp.closed.Load() {
+		return errs.ErrServerClosed
+	}
 	t := task{sess: sess, data: data}
 	switch wp.policy {
 	case PolicyBlock:
@@ -115,9 +121,11 @@ func (wp *WorkerPool) Submit(sess types.RawSession, data []byte) error {
 
 // Stop closes the task queue and waits for workers to finish.
 func (wp *WorkerPool) Stop() {
+	wp.closeMu.Lock()
 	if wp.closed.CompareAndSwap(false, true) {
 		close(wp.taskQueue)
 	}
+	wp.closeMu.Unlock()
 	wp.wg.Wait()
 }
 

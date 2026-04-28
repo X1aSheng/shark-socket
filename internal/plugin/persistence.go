@@ -21,13 +21,13 @@ type persistEntry struct {
 
 // PersistencePlugin asynchronously persists session state to a Store.
 type PersistencePlugin struct {
-	store        store.Store
-	cb           *circuitbreaker.CircuitBreaker
-	writeCh      chan *persistEntry
-	batchSize    int
+	store         store.Store
+	cb            *circuitbreaker.CircuitBreaker
+	writeCh       chan *persistEntry
+	batchSize     int
 	flushInterval time.Duration
-	stopCh       chan struct{}
-	wg           sync.WaitGroup
+	stopCh        chan struct{}
+	wg            sync.WaitGroup
 }
 
 // PersistenceOption configures PersistencePlugin.

@@ -47,20 +47,20 @@ func newMockSession(id uint64, remoteIP string) *mockRawSession {
 	}
 }
 
-func (m *mockRawSession) ID() uint64                    { return m.id }
-func (m *mockRawSession) Protocol() types.ProtocolType  { return m.protocol }
-func (m *mockRawSession) RemoteAddr() net.Addr          { return m.remoteAddr }
-func (m *mockRawSession) LocalAddr() net.Addr           { return m.localAddr }
-func (m *mockRawSession) CreatedAt() time.Time          { return m.createdAt }
-func (m *mockRawSession) State() types.SessionState     { return m.state }
-func (m *mockRawSession) IsAlive() bool                 { return m.alive }
-func (m *mockRawSession) LastActiveAt() time.Time       { return m.lastActive }
-func (m *mockRawSession) Send(data []byte) error        { return nil }
-func (m *mockRawSession) SendTyped(msg []byte) error    { return nil }
-func (m *mockRawSession) Context() context.Context      { return context.Background() }
-func (m *mockRawSession) SetMeta(key string, val any)   { m.meta[key] = val }
+func (m *mockRawSession) ID() uint64                     { return m.id }
+func (m *mockRawSession) Protocol() types.ProtocolType   { return m.protocol }
+func (m *mockRawSession) RemoteAddr() net.Addr           { return m.remoteAddr }
+func (m *mockRawSession) LocalAddr() net.Addr            { return m.localAddr }
+func (m *mockRawSession) CreatedAt() time.Time           { return m.createdAt }
+func (m *mockRawSession) State() types.SessionState      { return m.state }
+func (m *mockRawSession) IsAlive() bool                  { return m.alive }
+func (m *mockRawSession) LastActiveAt() time.Time        { return m.lastActive }
+func (m *mockRawSession) Send(data []byte) error         { return nil }
+func (m *mockRawSession) SendTyped(msg []byte) error     { return nil }
+func (m *mockRawSession) Context() context.Context       { return context.Background() }
+func (m *mockRawSession) SetMeta(key string, val any)    { m.meta[key] = val }
 func (m *mockRawSession) GetMeta(key string) (any, bool) { v, ok := m.meta[key]; return v, ok }
-func (m *mockRawSession) DelMeta(key string)            { delete(m.meta, key) }
+func (m *mockRawSession) DelMeta(key string)             { delete(m.meta, key) }
 func (m *mockRawSession) Close() error {
 	m.closed.Store(true)
 	m.alive = false
@@ -73,11 +73,11 @@ func (m *mockRawSession) Close() error {
 // ---------------------------------------------------------------------------
 
 type stubPlugin struct {
-	name      string
-	priority  int
-	onAccept  func(types.RawSession) error
-	onMessage func(types.RawSession, []byte) ([]byte, error)
-	onClose   func(types.RawSession)
+	name        string
+	priority    int
+	onAccept    func(types.RawSession) error
+	onMessage   func(types.RawSession, []byte) ([]byte, error)
+	onClose     func(types.RawSession)
 	closeCalled atomic.Int32
 }
 
@@ -271,17 +271,17 @@ func TestChain_OnClose_ReverseOrder(t *testing.T) {
 	p1 := &stubPlugin{
 		name:     "first",
 		priority: 1,
-		onClose: func(_ types.RawSession) { orderSeen = append(orderSeen, "first") },
+		onClose:  func(_ types.RawSession) { orderSeen = append(orderSeen, "first") },
 	}
 	p2 := &stubPlugin{
 		name:     "second",
 		priority: 2,
-		onClose: func(_ types.RawSession) { orderSeen = append(orderSeen, "second") },
+		onClose:  func(_ types.RawSession) { orderSeen = append(orderSeen, "second") },
 	}
 	p3 := &stubPlugin{
 		name:     "third",
 		priority: 3,
-		onClose: func(_ types.RawSession) { orderSeen = append(orderSeen, "third") },
+		onClose:  func(_ types.RawSession) { orderSeen = append(orderSeen, "third") },
 	}
 
 	chain := NewChain(p1, p2, p3)

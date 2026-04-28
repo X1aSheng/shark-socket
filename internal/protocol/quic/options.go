@@ -23,32 +23,32 @@ type Options struct {
 	ShutdownTimeout int // seconds
 	MaxSessions     int64
 	// QUIC specific
-	TLSConfig         *tls.Config
+	TLSConfig          *tls.Config
 	MaxIncomingStreams int // Max incoming bidirectional streams (0 = unlimited)
-	MaxDatagramSize   int // Max datagram frame size
-	HandshakeTimeout  int // seconds
-	IdleTimeoutQUIC   int // seconds (QUIC idle timeout)
-	Plugins           []types.Plugin
+	MaxDatagramSize    int // Max datagram frame size
+	HandshakeTimeout   int // seconds
+	IdleTimeoutQUIC    int // seconds (QUIC idle timeout)
+	Plugins            []types.Plugin
 }
 
 func defaultOptions() Options {
 	return Options{
-		Host:              "0.0.0.0",
-		Port:             18900,
-		WorkerCount:      4,
-		TaskQueueSize:    512,
-		WriteQueueSize:   16,
-		MaxMessageSize:   1024 * 1024, // 1MB
-		ReadTimeout:      30,
-		WriteTimeout:     30,
-		IdleTimeout:      120,
-		DrainTimeout:     5,
-		ShutdownTimeout:  15,
-		MaxSessions:      100000,
+		Host:               "0.0.0.0",
+		Port:               18900,
+		WorkerCount:        4,
+		TaskQueueSize:      512,
+		WriteQueueSize:     16,
+		MaxMessageSize:     1024 * 1024, // 1MB
+		ReadTimeout:        30,
+		WriteTimeout:       30,
+		IdleTimeout:        120,
+		DrainTimeout:       5,
+		ShutdownTimeout:    15,
+		MaxSessions:        100000,
 		MaxIncomingStreams: 100,
-		MaxDatagramSize:  1350,
-		HandshakeTimeout: 10,
-		IdleTimeoutQUIC:  30,
+		MaxDatagramSize:    1350,
+		HandshakeTimeout:   10,
+		IdleTimeoutQUIC:    30,
 	}
 }
 

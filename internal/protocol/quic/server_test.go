@@ -14,7 +14,7 @@ func TestNewServer_Creation(t *testing.T) {
 
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
-		NextProtos:        []string{"quic-test"},
+		NextProtos:         []string{"quic-test"},
 	}
 
 	srv := NewServer(handler,
@@ -36,7 +36,7 @@ func TestServer_ProtocolReturnsQUIC(t *testing.T) {
 
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
-		NextProtos:        []string{"quic-test"},
+		NextProtos:         []string{"quic-test"},
 	}
 
 	srv := NewServer(handler, WithTLS(tlsConfig))
@@ -52,7 +52,7 @@ func TestServer_SetHandler(t *testing.T) {
 
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
-		NextProtos:        []string{"quic-test"},
+		NextProtos:         []string{"quic-test"},
 	}
 
 	srv := NewServer(handler, WithTLS(tlsConfig))
@@ -70,7 +70,7 @@ func TestServer_Options(t *testing.T) {
 
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
-		NextProtos:        []string{"quic-test"},
+		NextProtos:         []string{"quic-test"},
 	}
 
 	srv := NewServer(handler,
@@ -158,28 +158,28 @@ func TestOptions_Validate(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "valid options",
-			opts: Options{Port: 18900, TLSConfig: &tls.Config{}},
+			name:    "valid options",
+			opts:    Options{Port: 18900, TLSConfig: &tls.Config{}},
 			wantErr: false,
 		},
 		{
-			name: "invalid port negative",
-			opts: Options{Port: -1, TLSConfig: &tls.Config{}},
+			name:    "invalid port negative",
+			opts:    Options{Port: -1, TLSConfig: &tls.Config{}},
 			wantErr: true,
 		},
 		{
-			name: "invalid port too large",
-			opts: Options{Port: 70000, TLSConfig: &tls.Config{}},
+			name:    "invalid port too large",
+			opts:    Options{Port: 70000, TLSConfig: &tls.Config{}},
 			wantErr: true,
 		},
 		{
-			name: "missing TLS config",
-			opts: Options{Port: 18900, TLSConfig: nil},
+			name:    "missing TLS config",
+			opts:    Options{Port: 18900, TLSConfig: nil},
 			wantErr: true,
 		},
 		{
-			name: "negative max streams",
-			opts: Options{Port: 18900, TLSConfig: &tls.Config{}, MaxIncomingStreams: -1},
+			name:    "negative max streams",
+			opts:    Options{Port: 18900, TLSConfig: &tls.Config{}, MaxIncomingStreams: -1},
 			wantErr: true,
 		},
 	}
@@ -201,7 +201,7 @@ func TestWithPlugins(t *testing.T) {
 
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
-		NextProtos:        []string{"quic-test"},
+		NextProtos:         []string{"quic-test"},
 	}
 
 	srv := NewServer(handler,
@@ -216,8 +216,8 @@ func TestWithPlugins(t *testing.T) {
 
 type mockPlugin struct{}
 
-func (m *mockPlugin) Name() string         { return "mock" }
-func (m *mockPlugin) Priority() int     { return 0 }
+func (m *mockPlugin) Name() string                      { return "mock" }
+func (m *mockPlugin) Priority() int                     { return 0 }
 func (m *mockPlugin) OnAccept(s types.RawSession) error { return nil }
 func (m *mockPlugin) OnMessage(s types.RawSession, data []byte) ([]byte, error) {
 	return data, nil

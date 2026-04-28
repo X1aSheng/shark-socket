@@ -12,12 +12,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/X1aSheng/shark-socket/internal/errs"
 	"github.com/X1aSheng/shark-socket/internal/infra/logger"
 	"github.com/X1aSheng/shark-socket/internal/plugin"
 	"github.com/X1aSheng/shark-socket/internal/session"
 	"github.com/X1aSheng/shark-socket/internal/types"
+	"github.com/gorilla/websocket"
 )
 
 // Server is a WebSocket protocol server.

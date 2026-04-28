@@ -169,8 +169,7 @@
 //	}
 //
 // Callers should:
-//   1. Check with errors.Is()
-//   2. Return fallback value or cached data
-//   3. Log circuit state for monitoring
-//
+//  1. Check with errors.Is()
+//  2. Return fallback value or cached data
+//  3. Log circuit state for monitoring
 package circuitbreaker

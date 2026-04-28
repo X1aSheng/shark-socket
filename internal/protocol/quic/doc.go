@@ -132,9 +132,9 @@
 //
 // QUIC sessions map to framework Session interface:
 //
-//	- Each QUIC connection = one framework RawSession
-//  - Each QUIC stream within connection = application message boundary
-//  - Stream data reassembled into Message for plugin chain
+//   - Each QUIC connection = one framework RawSession
+//   - Each QUIC stream within connection = application message boundary
+//   - Stream data reassembled into Message for plugin chain
 //
 // Session ID uses QUIC connection ID (CID) for cross-node routing.
 //
@@ -196,5 +196,4 @@
 //   - Kernel bypass recommended for high performance (io_uring)
 //   - 0-RTT data replay protection is application's responsibility
 //   - TLS certificates must support key exchange (ECDHE required)
-//
 package quic

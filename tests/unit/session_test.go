@@ -46,7 +46,7 @@ func (m *mockRawSession) Close() error {
 	return nil
 }
 func (m *mockRawSession) Context() context.Context    { return context.Background() }
-func (m *mockRawSession) SetMeta(key string, val any)  { m.meta[key] = val }
+func (m *mockRawSession) SetMeta(key string, val any) { m.meta[key] = val }
 func (m *mockRawSession) GetMeta(key string) (any, bool) {
 	v, ok := m.meta[key]
 	return v, ok

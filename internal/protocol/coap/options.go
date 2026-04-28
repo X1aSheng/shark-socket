@@ -11,24 +11,24 @@ var errConfig = func(msg string) error { return fmt.Errorf("coap config: %s", ms
 
 // Options holds CoAP server configuration.
 type Options struct {
-	Host            string
-	Port            int
-	MaxSessions     int64
-	SessionTTL      time.Duration
-	AckTimeout      time.Duration
-	MaxRetransmit   int
+	Host               string
+	Port               int
+	MaxSessions        int64
+	SessionTTL         time.Duration
+	AckTimeout         time.Duration
+	MaxRetransmit      int
 	MessageIDCacheSize int
-	Plugins         []types.Plugin
+	Plugins            []types.Plugin
 }
 
 func defaultOptions() Options {
 	return Options{
-		Host:            "0.0.0.0",
-		Port:            18800,
-		MaxSessions:     100000,
-		SessionTTL:      5 * time.Minute,
-		AckTimeout:      2 * time.Second,
-		MaxRetransmit:   4,
+		Host:               "0.0.0.0",
+		Port:               18800,
+		MaxSessions:        100000,
+		SessionTTL:         5 * time.Minute,
+		AckTimeout:         2 * time.Second,
+		MaxRetransmit:      4,
 		MessageIDCacheSize: 500,
 	}
 }

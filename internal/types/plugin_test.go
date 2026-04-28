@@ -20,21 +20,21 @@ func newMockSession(id uint64) *mockSession {
 	return &mockSession{id: id, protocol: TCP, state: Active, meta: make(map[string]any), ctx: context.Background()}
 }
 
-func (m *mockSession) ID() uint64            { return m.id }
-func (m *mockSession) Protocol() ProtocolType { return m.protocol }
-func (m *mockSession) RemoteAddr() net.Addr   { return nil }
-func (m *mockSession) LocalAddr() net.Addr    { return nil }
-func (m *mockSession) CreatedAt() time.Time   { return time.Time{} }
-func (m *mockSession) State() SessionState    { return m.state }
-func (m *mockSession) IsAlive() bool          { return m.state == Active }
-func (m *mockSession) LastActiveAt() time.Time { return time.Now() }
-func (m *mockSession) Send(data []byte) error { return nil }
-func (m *mockSession) SendTyped(msg []byte) error { return nil }
-func (m *mockSession) Close() error           { m.state = Closed; return nil }
-func (m *mockSession) Context() context.Context { return m.ctx }
-func (m *mockSession) SetMeta(key string, val any)  { m.meta[key] = val }
+func (m *mockSession) ID() uint64                     { return m.id }
+func (m *mockSession) Protocol() ProtocolType         { return m.protocol }
+func (m *mockSession) RemoteAddr() net.Addr           { return nil }
+func (m *mockSession) LocalAddr() net.Addr            { return nil }
+func (m *mockSession) CreatedAt() time.Time           { return time.Time{} }
+func (m *mockSession) State() SessionState            { return m.state }
+func (m *mockSession) IsAlive() bool                  { return m.state == Active }
+func (m *mockSession) LastActiveAt() time.Time        { return time.Now() }
+func (m *mockSession) Send(data []byte) error         { return nil }
+func (m *mockSession) SendTyped(msg []byte) error     { return nil }
+func (m *mockSession) Close() error                   { m.state = Closed; return nil }
+func (m *mockSession) Context() context.Context       { return m.ctx }
+func (m *mockSession) SetMeta(key string, val any)    { m.meta[key] = val }
 func (m *mockSession) GetMeta(key string) (any, bool) { v, ok := m.meta[key]; return v, ok }
-func (m *mockSession) DelMeta(key string)     { delete(m.meta, key) }
+func (m *mockSession) DelMeta(key string)             { delete(m.meta, key) }
 
 var _ RawSession = (*mockSession)(nil)
 

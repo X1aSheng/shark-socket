@@ -32,7 +32,7 @@ type BaseSession struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	meta     sync.Map
+	meta      sync.Map
 	closeOnce sync.Once
 }
 

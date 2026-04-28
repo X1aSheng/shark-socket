@@ -179,5 +179,4 @@
 //
 //  4. Recovery suggestions via classification
 //     Callers know whether to retry, fail, or degrade
-//
 package errs

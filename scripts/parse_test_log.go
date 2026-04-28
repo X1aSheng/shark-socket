@@ -97,7 +97,7 @@ func parseFile(path string) error {
 			}
 			if !pkgSet[ev.Package] && ev.Package != "" {
 				pkgSet[ev.Package] = true
-					pkgOrder = append(pkgOrder, stripModule(ev.Package))
+				pkgOrder = append(pkgOrder, stripModule(ev.Package))
 			}
 		case "pass", "fail", "skip":
 			if ev.Test != "" {

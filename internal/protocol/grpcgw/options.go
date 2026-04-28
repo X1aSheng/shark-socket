@@ -3,16 +3,16 @@ package grpcgw
 import (
 	"crypto/tls"
 	"fmt"
-	stdhttp "net/http"
 	"net"
+	stdhttp "net/http"
 	"sync"
 
-	"github.com/gorilla/websocket"
 	"github.com/X1aSheng/shark-socket/internal/errs"
 	"github.com/X1aSheng/shark-socket/internal/infra/logger"
 	"github.com/X1aSheng/shark-socket/internal/infra/tracing"
 	"github.com/X1aSheng/shark-socket/internal/session"
 	"github.com/X1aSheng/shark-socket/internal/types"
+	"github.com/gorilla/websocket"
 )
 
 // Options holds gRPC-Web gateway configuration.

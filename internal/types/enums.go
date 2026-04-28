@@ -51,16 +51,16 @@ func ProtocolLabel(p ProtocolType) string {
 type MessageType uint8
 
 const (
-	Text      MessageType = 1
-	Binary    MessageType = 2
-	Ping      MessageType = 3
-	Pong      MessageType = 4
-	Close     MessageType = 5
-	CoAPGet   MessageType = 10
-	CoAPPost  MessageType = 11
-	CoAPPut   MessageType = 12
-	CoAPDel   MessageType = 13
-	CoAPACK   MessageType = 14
+	Text     MessageType = 1
+	Binary   MessageType = 2
+	Ping     MessageType = 3
+	Pong     MessageType = 4
+	Close    MessageType = 5
+	CoAPGet  MessageType = 10
+	CoAPPost MessageType = 11
+	CoAPPut  MessageType = 12
+	CoAPDel  MessageType = 13
+	CoAPACK  MessageType = 14
 )
 
 func (m MessageType) String() string {

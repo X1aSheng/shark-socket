@@ -86,14 +86,15 @@
 //
 // Message IDs enable duplicate detection:
 //
-//	- 16-bit ID (0-65535)
-//	- Server tracks recent MessageIDs (LRU cache, 500 entries)
-//	- Duplicate CON → resend previous ACK (don't reprocess)
-//	- Duplicate NON → silently ignore
+//   - 16-bit ID (0-65535)
+//   - Server tracks recent MessageIDs (LRU cache, 500 entries)
+//   - Duplicate CON → resend previous ACK (don't reprocess)
+//   - Duplicate NON → silently ignore
 //
 // # Code Values
 //
 // Request codes (Class 0):
+//
 //	0.00 Empty
 //	0.01 GET
 //	0.02 POST
@@ -101,6 +102,7 @@
 //	0.04 DELETE
 //
 // Response codes (Class 2/4/5):
+//
 //	2.00 Created
 //	2.01 Deleted
 //	2.02 Valid
@@ -166,8 +168,10 @@
 //	GET /temperature
 //	Observe: 1 (register)
 //	...later...
-	//GET /temperature
-	//Observe: 1, Option: 6 (cancel)
+//
+// GET /temperature
+// Observe: 1, Option: 6 (cancel)
+//
 //	→ Server stops sending updates
 //
 // # DTLS Support
@@ -177,18 +181,18 @@
 //	coap.WithDTLS(dtlsConfig)
 //
 // DTLS is required for:
-//	- IoT with security requirements
-//	- Certificate-based authentication
-//	- Encrypted communication
+//   - IoT with security requirements
+//   - Certificate-based authentication
+//   - Encrypted communication
 //
 // # Use Cases
 //
 // CoAP is ideal for:
-//	- IoT sensor networks (constrained devices)
-//	- Smart home protocols
-//	- Industrial automation
-//	- Smart city infrastructure
-//	- Energy management systems
+//   - IoT sensor networks (constrained devices)
+//   - Smart home protocols
+//   - Industrial automation
+//   - Smart city infrastructure
+//   - Energy management systems
 //
 // # Configuration Options
 //
@@ -226,17 +230,16 @@
 //
 // ACK responses use Micro-level BufferPool (≤512 bytes):
 //
-//	- ACK packets are small (header + token)
-//	- Micro pool prevents fragmentation
-//	- Reduces memory allocations
+//   - ACK packets are small (header + token)
+//   - Micro pool prevents fragmentation
+//   - Reduces memory allocations
 //
 // # Thread Safety
 //
 // Concurrent handling:
-//	- readLoop: single goroutine per server
-//	- Retransmission: dedicated goroutine per session
-//	- Message cache: protected by mutex
+//   - readLoop: single goroutine per server
+//   - Retransmission: dedicated goroutine per session
+//   - Message cache: protected by mutex
 //
 // All shared state (pendingACKs, msgCache) is protected by appropriate synchronization.
-//
 package coap

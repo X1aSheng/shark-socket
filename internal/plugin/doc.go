@@ -252,5 +252,4 @@
 //	shark_autoban_total{ip, reason}           // Auto-ban count
 //	shark_heartbeat_timeout_total             // Heartbeat timeout count
 //	shark_ratelimit_rejected_total{ip}        // Rate limit rejections
-//
 package plugin

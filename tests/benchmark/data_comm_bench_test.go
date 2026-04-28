@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/X1aSheng/shark-socket/internal/gateway"
 	httpproto "github.com/X1aSheng/shark-socket/internal/protocol/http"
 	tcpproto "github.com/X1aSheng/shark-socket/internal/protocol/tcp"
 	"github.com/X1aSheng/shark-socket/internal/protocol/udp"
 	wsproto "github.com/X1aSheng/shark-socket/internal/protocol/websocket"
 	"github.com/X1aSheng/shark-socket/internal/types"
+	"github.com/gorilla/websocket"
 )
 
 // ---------------------------------------------------------------------------
@@ -282,10 +282,28 @@ func BenchmarkTCPEcho_BinaryIntegrity(b *testing.B) {
 		payload []byte
 	}{
 		{"AllZero", make([]byte, 1024)},
-		{"AllFF", func() []byte { p := make([]byte, 1024); for i := range p { p[i] = 0xFF }; return p }()},
+		{"AllFF", func() []byte {
+			p := make([]byte, 1024)
+			for i := range p {
+				p[i] = 0xFF
+			}
+			return p
+		}()},
 		{"Ascending", makePayload(1024)},
-		{"Descending", func() []byte { p := make([]byte, 1024); for i := range p { p[i] = byte(255 - i%256) }; return p }()},
-		{"RandomLike", func() []byte { p := make([]byte, 1024); for i := range p { p[i] = byte(i*7 + i*i*3) }; return p }()},
+		{"Descending", func() []byte {
+			p := make([]byte, 1024)
+			for i := range p {
+				p[i] = byte(255 - i%256)
+			}
+			return p
+		}()},
+		{"RandomLike", func() []byte {
+			p := make([]byte, 1024)
+			for i := range p {
+				p[i] = byte(i*7 + i*i*3)
+			}
+			return p
+		}()},
 	}
 
 	b.ReportAllocs()
@@ -794,7 +812,7 @@ func BenchmarkHTTP_Concurrent(b *testing.B) {
 		Timeout: 5 * time.Second,
 		Transport: &http.Transport{
 			MaxIdleConnsPerHost: 64,
-			IdleConnTimeout:    90 * time.Second,
+			IdleConnTimeout:     90 * time.Second,
 		},
 	}
 
@@ -927,7 +945,7 @@ func BenchmarkGateway_MultiProtocol(b *testing.B) {
 			Timeout: 10 * time.Second,
 			Transport: &http.Transport{
 				MaxIdleConnsPerHost: 128,
-				IdleConnTimeout:    120 * time.Second,
+				IdleConnTimeout:     120 * time.Second,
 			},
 		}
 

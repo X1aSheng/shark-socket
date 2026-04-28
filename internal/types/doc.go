@@ -149,5 +149,4 @@
 //	var _ types.Server = (*TCPServer)(nil)
 //
 // This ensures the implementation satisfies the interface at compile time.
-//
 package types

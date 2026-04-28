@@ -10,18 +10,18 @@ func FuzzParseMessage(f *testing.F) {
 	// Seed corpus: valid CoAP messages and edge cases.
 	// CON GET, empty token, no options, no payload
 	f.Add([]byte{
-		0x40,             // Ver=1, Type=CON, TKL=0
-		byte(CodeGet),    // GET
-		0x00, 0x01,       // Message ID = 1
+		0x40,          // Ver=1, Type=CON, TKL=0
+		byte(CodeGet), // GET
+		0x00, 0x01,    // Message ID = 1
 	})
 
 	// NON POST with token and payload
 	f.Add([]byte{
-		0x52,              // Ver=1, Type=NON, TKL=2
-		byte(CodePost),    // POST
-		0x00, 0x02,        // Message ID = 2
-		0xAB, 0xCD,        // 2-byte token
-		0xFF,              // Payload marker
+		0x52,           // Ver=1, Type=NON, TKL=2
+		byte(CodePost), // POST
+		0x00, 0x02,     // Message ID = 2
+		0xAB, 0xCD, // 2-byte token
+		0xFF, // Payload marker
 		'h', 'e', 'l', 'l', 'o',
 	})
 
@@ -36,22 +36,22 @@ func FuzzParseMessage(f *testing.F) {
 	})
 
 	// Edge cases
-	f.Add([]byte{})                                                       // empty
-	f.Add([]byte{0x00})                                                   // too short (1 byte)
-	f.Add([]byte{0x00, 0x00, 0x00})                                      // too short (3 bytes)
-	f.Add([]byte{0x00, 0x00, 0x00, 0x00})                                // Ver=0 (invalid)
-	f.Add([]byte{0x40, 0x00, 0x00, 0x00})                                // valid header only
-	f.Add([]byte{0x4F, 0x00, 0x00, 0x01})                                // TKL=15 > 8 (invalid)
-	f.Add([]byte{0xC0, 0x00, 0x00, 0x01})                                // Ver=3 (invalid)
-	f.Add([]byte{0x41, 0x00, 0x00, 0x01, 0x00})                          // TKL=1, token present
-	f.Add([]byte{0x41, 0x00, 0x00, 0x01})                                // TKL=1, token missing (truncated)
-	f.Add([]byte{0x40, 0x00, 0x00, 0x01, 0xDD})                          // option extended delta (13)
-	f.Add([]byte{0x40, 0x00, 0x00, 0x01, 0xDE, 0x00})                    // option extended delta (14, 2 bytes)
-	f.Add([]byte{0x40, 0x00, 0x00, 0x01, 0xD1})                          // option extended len (13)
-	f.Add([]byte{0x40, 0x00, 0x00, 0x01, 0xE1, 0x00})                    // option extended len (14, 2 bytes)
-	f.Add([]byte{0x40, 0x00, 0x00, 0x01, 0x11, 0x00})                    // option delta=1, len=1, val=0
-	f.Add([]byte{0x40, 0x00, 0x00, 0x01, 0xFF})                          // payload marker without payload
-	f.Add([]byte{0x40, 0x00, 0x00, 0x01, 0xDD})                          // truncated extended delta
+	f.Add([]byte{})                                   // empty
+	f.Add([]byte{0x00})                               // too short (1 byte)
+	f.Add([]byte{0x00, 0x00, 0x00})                   // too short (3 bytes)
+	f.Add([]byte{0x00, 0x00, 0x00, 0x00})             // Ver=0 (invalid)
+	f.Add([]byte{0x40, 0x00, 0x00, 0x00})             // valid header only
+	f.Add([]byte{0x4F, 0x00, 0x00, 0x01})             // TKL=15 > 8 (invalid)
+	f.Add([]byte{0xC0, 0x00, 0x00, 0x01})             // Ver=3 (invalid)
+	f.Add([]byte{0x41, 0x00, 0x00, 0x01, 0x00})       // TKL=1, token present
+	f.Add([]byte{0x41, 0x00, 0x00, 0x01})             // TKL=1, token missing (truncated)
+	f.Add([]byte{0x40, 0x00, 0x00, 0x01, 0xDD})       // option extended delta (13)
+	f.Add([]byte{0x40, 0x00, 0x00, 0x01, 0xDE, 0x00}) // option extended delta (14, 2 bytes)
+	f.Add([]byte{0x40, 0x00, 0x00, 0x01, 0xD1})       // option extended len (13)
+	f.Add([]byte{0x40, 0x00, 0x00, 0x01, 0xE1, 0x00}) // option extended len (14, 2 bytes)
+	f.Add([]byte{0x40, 0x00, 0x00, 0x01, 0x11, 0x00}) // option delta=1, len=1, val=0
+	f.Add([]byte{0x40, 0x00, 0x00, 0x01, 0xFF})       // payload marker without payload
+	f.Add([]byte{0x40, 0x00, 0x00, 0x01, 0xDD})       // truncated extended delta
 
 	// Valid roundtrip message (serialize then feed back as seed)
 	msg := &CoAPMessage{

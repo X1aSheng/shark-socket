@@ -87,5 +87,5 @@ type nopSpan struct {
 	ctx context.Context
 }
 
-func (nopSpan) End()                      {}
+func (nopSpan) End()                       {}
 func (s nopSpan) Context() context.Context { return s.ctx }

@@ -63,9 +63,9 @@
 //	sharded.Delete("key1")
 //
 // Advantages over sync.Map:
-//	- More predictable lock behavior
-//	- Better performance under specific access patterns
-//	- Easier to reason about concurrency
+//   - More predictable lock behavior
+//   - Better performance under specific access patterns
+//   - Easier to reason about concurrency
 //
 // ## RWMutex Helpers
 //
@@ -112,10 +112,10 @@
 //	ip2 := utils.Uint32ToIP(n)
 //
 // Common private ranges:
-//	- 10.0.0.0/8
-//	- 172.16.0.0/12
-//	- 192.168.0.0/16
-//	- 127.0.0.0/8 (loopback)
+//   - 10.0.0.0/8
+//   - 172.16.0.0/12
+//   - 192.168.0.0/16
+//   - 127.0.0.0/8 (loopback)
 //
 // ## Port Parsing
 //
@@ -147,8 +147,8 @@
 //	elapsed := utils.MonotonicSince(start)
 //
 // Benefits over time.Now():
-//	- Immune to system clock changes
-//	- More precise for measuring elapsed time
+//   - Immune to system clock changes
+//   - More precise for measuring elapsed time
 //
 // # Pool Utilities
 //
@@ -168,11 +168,11 @@
 //
 // All utilities are optimized for performance:
 //
-//	1. Atomic operations over locks for simple patterns
-//	2. Sharded structures for high-contention scenarios
-//	3. Pre-allocated capacity for maps/slices
-//	4. Inline small functions for compiler optimization
-//	5. Zero-allocation hot paths where possible
+//  1. Atomic operations over locks for simple patterns
+//  2. Sharded structures for high-contention scenarios
+//  3. Pre-allocated capacity for maps/slices
+//  4. Inline small functions for compiler optimization
+//  5. Zero-allocation hot paths where possible
 //
 // Benchmark comparison:
 //
@@ -223,5 +223,4 @@
 //	        fmt.Println("In subnet")
 //	    }
 //	}
-//
 package utils

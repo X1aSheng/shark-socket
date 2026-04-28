@@ -38,12 +38,12 @@ func (g *Gateway) ApplyConfig(cfg *GatewayConfig) error {
 			log.Printf("gateway: invalid shutdown_timeout %q: %v", cfg.ShutdownTimeout, err)
 		} else {
 			g.opts.StageTimeouts = StageTimeouts{
-				StopAccept:    d / 3,
-				Drain:         d / 3,
-				SessionClose:  d / 3,
-				ManagerClose:  d / 6,
-				MetricsClose:  d / 6,
-				Finalize:      d / 6,
+				StopAccept:   d / 3,
+				Drain:        d / 3,
+				SessionClose: d / 3,
+				ManagerClose: d / 6,
+				MetricsClose: d / 6,
+				Finalize:     d / 6,
 			}
 			changed = append(changed, "shutdown_timeout")
 		}

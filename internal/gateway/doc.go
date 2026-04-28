@@ -83,24 +83,24 @@
 //	)
 //
 // Plugin ordering:
-//	1. Global plugins merged with protocol plugins
-//	2. Sorted by Priority() ascending
-//	3. Same Priority: global before protocol
-//	4. Same name: later registration wins
+//  1. Global plugins merged with protocol plugins
+//  2. Sorted by Priority() ascending
+//  3. Same Priority: global before protocol
+//  4. Same name: later registration wins
 //
 // # Startup Sequence
 //
 // Gateway.Start():
 //
-//	1. Validate: at least one server registered
-//	2. ServeMetrics: start Prometheus HTTP server (if enabled)
-//	3. StartAll: concurrently start all servers
-//	4. WaitGroup: block until error or shutdown signal
+//  1. Validate: at least one server registered
+//  2. ServeMetrics: start Prometheus HTTP server (if enabled)
+//  3. StartAll: concurrently start all servers
+//  4. WaitGroup: block until error or shutdown signal
 //
 // Concurrent startup with errgroup:
-//	- All servers start in parallel
-//	- Fast startup (not sequential)
-//	- Any failure triggers rollback of successful starts
+//   - All servers start in parallel
+//   - Fast startup (not sequential)
+//   - Any failure triggers rollback of successful starts
 //
 // # Graceful Shutdown (6-Phase)
 //
@@ -148,10 +148,10 @@
 //	gw.Run()
 //
 // Internally:
-//	1. Start() all servers
-//	2. Wait for signal (SIGINT, SIGTERM)
-//	3. Stop() with graceful shutdown
-//	4. Return after shutdown complete
+//  1. Start() all servers
+//  2. Wait for signal (SIGINT, SIGTERM)
+//  3. Stop() with graceful shutdown
+//  4. Return after shutdown complete
 //
 // This is the recommended entry point for production deployments.
 //
@@ -175,15 +175,18 @@
 //	  }
 //
 // Status values:
-//	- healthy: All systems nominal
-//	- overloaded: System under stress, some features degraded
-//	- degraded: Core functionality impaired
 //
-//	GET /readyz
-//	Response: {"status": "ready"}
+//   - healthy: All systems nominal
 //
-//	GET /metrics
-//	Response: Prometheus text format
+//   - overloaded: System under stress, some features degraded
+//
+//   - degraded: Core functionality impaired
+//
+//     GET /readyz
+//     Response: {"status": "ready"}
+//
+//     GET /metrics
+//     Response: Prometheus text format
 //
 // # Configuration Options
 //
@@ -226,9 +229,9 @@
 // # Thread Safety
 //
 // Gateway is safe for concurrent access:
-//	- Server registration happens before Start()
-//	- All servers share same SessionManager (thread-safe)
-//	- Shutdown is single-use operation
+//   - Server registration happens before Start()
+//   - All servers share same SessionManager (thread-safe)
+//   - Shutdown is single-use operation
 //
 // # Error Handling
 //
@@ -240,5 +243,4 @@
 //
 // This prevents partial startup where some servers are running
 // while others failed.
-//
 package gateway

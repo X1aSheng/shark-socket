@@ -4,18 +4,18 @@ import "errors"
 
 // System errors.
 var (
-	ErrServerClosed   = errors.New("shark: server closed")
+	ErrServerClosed     = errors.New("shark: server closed")
 	ErrServerNotStarted = errors.New("shark: server not started")
-	ErrListenFailed   = errors.New("shark: listen failed")
+	ErrListenFailed     = errors.New("shark: listen failed")
 )
 
 // Session errors.
 var (
-	ErrSessionNotFound = errors.New("shark: session not found")
-	ErrSessionClosed   = errors.New("shark: session closed")
+	ErrSessionNotFound  = errors.New("shark: session not found")
+	ErrSessionClosed    = errors.New("shark: session closed")
 	ErrSessionCapacity  = errors.New("shark: session capacity exceeded")
 	ErrDuplicateSession = errors.New("shark: duplicate session")
-	ErrSessionLimit    = errors.New("shark: session limit reached")
+	ErrSessionLimit     = errors.New("shark: session limit reached")
 )
 
 // Message errors.
@@ -52,9 +52,9 @@ var (
 
 // Security errors.
 var (
-	ErrRateLimited       = errors.New("shark: rate limited")
-	ErrBlacklisted       = errors.New("shark: ip blacklisted")
-	ErrAutoBanned        = errors.New("shark: auto banned")
+	ErrRateLimited         = errors.New("shark: rate limited")
+	ErrBlacklisted         = errors.New("shark: ip blacklisted")
+	ErrAutoBanned          = errors.New("shark: auto banned")
 	ErrMessageRateExceeded = errors.New("shark: message rate exceeded")
 )
 
@@ -68,12 +68,12 @@ var (
 
 // Infrastructure errors.
 var (
-	ErrCacheMiss       = errors.New("shark: cache miss")
-	ErrStoreNotFound   = errors.New("shark: store not found")
-	ErrPubSubClosed    = errors.New("shark: pubsub closed")
-	ErrCircuitOpen     = errors.New("shark: circuit breaker open")
-	ErrInfrastructure  = errors.New("shark: infrastructure error")
-	ErrDegraded        = errors.New("shark: service degraded")
+	ErrCacheMiss      = errors.New("shark: cache miss")
+	ErrStoreNotFound  = errors.New("shark: store not found")
+	ErrPubSubClosed   = errors.New("shark: pubsub closed")
+	ErrCircuitOpen    = errors.New("shark: circuit breaker open")
+	ErrInfrastructure = errors.New("shark: infrastructure error")
+	ErrDegraded       = errors.New("shark: service degraded")
 )
 
 // Gateway errors.

@@ -16,13 +16,13 @@ import (
 
 // Server is a QUIC protocol server.
 type Server struct {
-	opts    Options
+	opts     Options
 	listener *quic.Listener
-	handler types.RawHandler
-	chain   *plugin.Chain
-	manager *session.Manager
-	wg      sync.WaitGroup
-	closed  atomic.Bool
+	handler  types.RawHandler
+	chain    *plugin.Chain
+	manager  *session.Manager
+	wg       sync.WaitGroup
+	closed   atomic.Bool
 }
 
 // Compile-time verification.

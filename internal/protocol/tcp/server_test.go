@@ -453,15 +453,15 @@ func TestWithMaxConsecutiveErrors(t *testing.T) {
 
 func TestAcceptBackoff(t *testing.T) {
 	tests := []struct {
-		errors  int
-		want    time.Duration
+		errors int
+		want   time.Duration
 		capped bool
 	}{
-		{1, 5 * time.Millisecond, false},           // 5 << 0
-		{2, 10 * time.Millisecond, false},           // 5 << 1
-		{3, 20 * time.Millisecond, false},           // 5 << 2
-		{11, 5120 * time.Millisecond, false},        // 5 << 10 = 5120ms
-		{20, 5120 * time.Millisecond, false},        // 5 << 10 = 5120ms (min caps shift at 10)
+		{1, 5 * time.Millisecond, false},     // 5 << 0
+		{2, 10 * time.Millisecond, false},    // 5 << 1
+		{3, 20 * time.Millisecond, false},    // 5 << 2
+		{11, 5120 * time.Millisecond, false}, // 5 << 10 = 5120ms
+		{20, 5120 * time.Millisecond, false}, // 5 << 10 = 5120ms (min caps shift at 10)
 	}
 
 	for _, tt := range tests {

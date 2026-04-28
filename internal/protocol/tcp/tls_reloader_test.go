@@ -205,11 +205,11 @@ func generateTestCertPEM(t *testing.T, dir, suffix string) (certFile, keyFile st
 
 	template := &x509.Certificate{
 		SerialNumber:          big.NewInt(time.Now().UnixNano()),
-		Subject:              pkix.Name{CommonName: "test-" + suffix},
-		NotBefore:            time.Now().Add(-time.Hour),
-		NotAfter:             time.Now().Add(24 * time.Hour),
-		KeyUsage:             x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:          []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		Subject:               pkix.Name{CommonName: "test-" + suffix},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 	}
 

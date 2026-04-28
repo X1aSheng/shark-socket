@@ -10,13 +10,13 @@ import (
 
 // OverloadProtector monitors system resources and triggers degradation.
 type OverloadProtector struct {
-	highWater    int64
-	lowWater     int64
-	overloaded   atomic.Bool
+	highWater     int64
+	lowWater      int64
+	overloaded    atomic.Bool
 	checkInterval time.Duration
-	stopCh       chan struct{}
-	sessions     func() int64
-	wg           sync.WaitGroup
+	stopCh        chan struct{}
+	sessions      func() int64
+	wg            sync.WaitGroup
 }
 
 // NewOverloadProtector creates a new overload protector.

@@ -219,5 +219,4 @@
 //
 //	var _ types.RawSession = (*TCPSession)(nil)
 //	var _ types.SessionManager = (*Manager)(nil)
-//
 package session

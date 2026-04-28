@@ -9,9 +9,9 @@ import (
 
 type testPlugin struct{}
 
-func (testPlugin) Name() string                              { return "test" }
-func (testPlugin) Priority() int                             { return 0 }
-func (testPlugin) OnAccept(sess types.RawSession) error      { return nil }
+func (testPlugin) Name() string                         { return "test" }
+func (testPlugin) Priority() int                        { return 0 }
+func (testPlugin) OnAccept(sess types.RawSession) error { return nil }
 func (testPlugin) OnMessage(sess types.RawSession, data []byte) ([]byte, error) {
 	return data, nil
 }

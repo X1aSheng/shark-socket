@@ -82,9 +82,9 @@
 // # Huge Buffer Handling
 //
 // Buffers larger than 256 KB are NOT pooled:
-//  - Direct allocation with make()
-//  - Tracked separately in HugeAlloc counter
-//  - Returned to caller without pooling overhead
+//   - Direct allocation with make()
+//   - Tracked separately in HugeAlloc counter
+//   - Returned to caller without pooling overhead
 //
 // This prevents large messages from polluting the pool.
 // Large buffers have different lifecycle patterns and don't benefit from reuse.
@@ -114,8 +114,8 @@
 //	stats.HugeAlloc   // Huge buffer count
 //
 // Metrics are also exposed via Prometheus:
-//  - shark_bufferpool_hits_total{level="level0..4"}
-//  - shark_bufferpool_misses_total{level="level0..4"}
+//   - shark_bufferpool_hits_total{level="level0..4"}
+//   - shark_bufferpool_misses_total{level="level0..4"}
 //
 // # Multi-Level Pooling Strategy
 //
@@ -149,9 +149,9 @@
 // # Thread Safety
 //
 // All operations are thread-safe:
-//  - sync.Pool handles concurrent access
-//  - Atomic counters for statistics
-//  - No external synchronization required
+//   - sync.Pool handles concurrent access
+//   - Atomic counters for statistics
+//   - No external synchronization required
 //
 // # Integration Points
 //
@@ -181,5 +181,4 @@
 //
 //  5. Don't hold buffers indefinitely
 //     Return promptly to maintain availability
-//
 package bufferpool

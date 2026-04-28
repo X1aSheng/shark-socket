@@ -14,13 +14,13 @@ import (
 // TCPSession implements types.Session for TCP connections.
 type TCPSession struct {
 	*session.BaseSession
-	conn       net.Conn
-	framer     Framer
-	writeQueue chan *bufferpool.Buffer
-	encoder    func([]byte) ([]byte, error)
-	drained    chan struct{}
-	closeOnce  sync.Once
-	draining   chan struct{}
+	conn         net.Conn
+	framer       Framer
+	writeQueue   chan *bufferpool.Buffer
+	encoder      func([]byte) ([]byte, error)
+	drained      chan struct{}
+	closeOnce    sync.Once
+	draining     chan struct{}
 	drainTimeout time.Duration
 }
 

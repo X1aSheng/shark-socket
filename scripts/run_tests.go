@@ -234,5 +234,5 @@ func printBanner(title, subtitle string) {
 	fmt.Println("========================================")
 }
 
-func printCyan(msg string) { fmt.Printf("\x1b[36m%s\x1b[0m\n", msg) }
+func printCyan(msg string)  { fmt.Printf("\x1b[36m%s\x1b[0m\n", msg) }
 func printGreen(msg string) { fmt.Printf("\x1b[32m%s\x1b[0m\n", msg) }

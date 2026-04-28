@@ -26,21 +26,21 @@ func newMockSession(id uint64) *mockSession {
 	return m
 }
 
-func (m *mockSession) ID() uint64                              { return m.id }
-func (m *mockSession) Protocol() types.ProtocolType            { return m.protocol }
-func (m *mockSession) RemoteAddr() net.Addr                    { return mockAddr{} }
-func (m *mockSession) LocalAddr() net.Addr                     { return mockAddr{} }
-func (m *mockSession) CreatedAt() time.Time                    { return time.Now() }
-func (m *mockSession) State() types.SessionState               { return types.Active }
-func (m *mockSession) IsAlive() bool                           { return m.alive.Load() }
-func (m *mockSession) LastActiveAt() time.Time                 { return time.Now() }
-func (m *mockSession) Send(data []byte) error                  { return nil }
-func (m *mockSession) SendTyped(msg []byte) error              { return nil }
-func (m *mockSession) Close() error                            { m.closed.Store(true); return nil }
-func (m *mockSession) Context() context.Context                { return context.Background() }
-func (m *mockSession) SetMeta(key string, val any)             {}
-func (m *mockSession) GetMeta(key string) (any, bool)          { return nil, false }
-func (m *mockSession) DelMeta(key string)                      {}
+func (m *mockSession) ID() uint64                     { return m.id }
+func (m *mockSession) Protocol() types.ProtocolType   { return m.protocol }
+func (m *mockSession) RemoteAddr() net.Addr           { return mockAddr{} }
+func (m *mockSession) LocalAddr() net.Addr            { return mockAddr{} }
+func (m *mockSession) CreatedAt() time.Time           { return time.Now() }
+func (m *mockSession) State() types.SessionState      { return types.Active }
+func (m *mockSession) IsAlive() bool                  { return m.alive.Load() }
+func (m *mockSession) LastActiveAt() time.Time        { return time.Now() }
+func (m *mockSession) Send(data []byte) error         { return nil }
+func (m *mockSession) SendTyped(msg []byte) error     { return nil }
+func (m *mockSession) Close() error                   { m.closed.Store(true); return nil }
+func (m *mockSession) Context() context.Context       { return context.Background() }
+func (m *mockSession) SetMeta(key string, val any)    {}
+func (m *mockSession) GetMeta(key string) (any, bool) { return nil, false }
+func (m *mockSession) DelMeta(key string)             {}
 
 // mockAddr is a minimal net.Addr implementation for mocks.
 type mockAddr struct{}

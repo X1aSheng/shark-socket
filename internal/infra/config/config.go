@@ -27,15 +27,15 @@ type ConfigFunc func() (any, error)
 
 // FileReloader watches a config file and reloads it on changes.
 type FileReloader struct {
-	path      string
-	interval  time.Duration
-	parser    ConfigFunc
-	config    any
-	mu        sync.RWMutex
-	ctx       context.Context
-	cancel    context.CancelFunc
-	onReload  func(any)
-	lastMod   int64
+	path     string
+	interval time.Duration
+	parser   ConfigFunc
+	config   any
+	mu       sync.RWMutex
+	ctx      context.Context
+	cancel   context.CancelFunc
+	onReload func(any)
+	lastMod  int64
 }
 
 // Option configures the FileReloader.
@@ -168,5 +168,5 @@ type GatewayConfig struct {
 	ShutdownTimeout string `json:"shutdown_timeout"`
 	MetricsAddr     string `json:"metrics_addr"`
 	EnableMetrics   bool   `json:"enable_metrics"`
-	LogLevel       string `json:"log_level"`
+	LogLevel        string `json:"log_level"`
 }

@@ -35,21 +35,21 @@ func (t CoAPMsgType) String() string {
 type CoAPCode uint8
 
 const (
-	CodeEmpty    CoAPCode = 0
-	CodeGet      CoAPCode = 1
-	CodePost     CoAPCode = 2
-	CodePut      CoAPCode = 3
-	CodeDelete   CoAPCode = 4
-	CodeCreated  CoAPCode = 0x41 // 2.01
-	CodeDeleted  CoAPCode = 0x42 // 2.02
-	CodeValid    CoAPCode = 0x43 // 2.03
-	CodeChanged  CoAPCode = 0x44 // 2.04
-	CodeContent  CoAPCode = 0x45 // 2.05
-	CodeBadRequest   CoAPCode = 0x80 // 4.00
-	CodeUnauthorized CoAPCode = 0x81 // 4.01
-	CodeNotFound     CoAPCode = 0x84 // 4.04
+	CodeEmpty            CoAPCode = 0
+	CodeGet              CoAPCode = 1
+	CodePost             CoAPCode = 2
+	CodePut              CoAPCode = 3
+	CodeDelete           CoAPCode = 4
+	CodeCreated          CoAPCode = 0x41 // 2.01
+	CodeDeleted          CoAPCode = 0x42 // 2.02
+	CodeValid            CoAPCode = 0x43 // 2.03
+	CodeChanged          CoAPCode = 0x44 // 2.04
+	CodeContent          CoAPCode = 0x45 // 2.05
+	CodeBadRequest       CoAPCode = 0x80 // 4.00
+	CodeUnauthorized     CoAPCode = 0x81 // 4.01
+	CodeNotFound         CoAPCode = 0x84 // 4.04
 	CodeMethodNotAllowed CoAPCode = 0x85 // 4.05
-	CodeInternalError CoAPCode = 0xA0 // 5.00
+	CodeInternalError    CoAPCode = 0xA0 // 5.00
 )
 
 // CoAPOption represents a CoAP option.

@@ -49,8 +49,8 @@ func (p *BlacklistPlugin) WithCache(c cache.Cache) *BlacklistPlugin {
 	return p
 }
 
-func (p *BlacklistPlugin) Name() string     { return "blacklist" }
-func (p *BlacklistPlugin) Priority() int    { return 0 }
+func (p *BlacklistPlugin) Name() string             { return "blacklist" }
+func (p *BlacklistPlugin) Priority() int            { return 0 }
 func (p *BlacklistPlugin) OnClose(types.RawSession) {}
 
 func (p *BlacklistPlugin) OnAccept(sess types.RawSession) error {

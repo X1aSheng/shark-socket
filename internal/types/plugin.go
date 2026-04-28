@@ -16,11 +16,11 @@ type Plugin interface {
 // Embed this struct and override only the methods you need.
 type BasePlugin struct{}
 
-func (BasePlugin) Name() string                                          { return "base" }
-func (BasePlugin) Priority() int                                         { return 100 }
-func (BasePlugin) OnAccept(RawSession) error                             { return nil }
-func (BasePlugin) OnMessage(_ RawSession, data []byte) ([]byte, error)   { return data, nil }
-func (BasePlugin) OnClose(RawSession)                                    {}
+func (BasePlugin) Name() string                                        { return "base" }
+func (BasePlugin) Priority() int                                       { return 100 }
+func (BasePlugin) OnAccept(RawSession) error                           { return nil }
+func (BasePlugin) OnMessage(_ RawSession, data []byte) ([]byte, error) { return data, nil }
+func (BasePlugin) OnClose(RawSession)                                  {}
 
 // IsPluginBlock checks if the error indicates a connection should be blocked.
 func IsPluginBlock(err error) bool { return err == errs.ErrBlock }

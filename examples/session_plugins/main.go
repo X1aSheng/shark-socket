@@ -17,8 +17,8 @@ func main() {
 	// --- Plugin 1: Blacklist ---
 	// Block specific IPs from connecting.
 	blacklist := api.NewBlacklistPlugin(
-		"192.168.1.100",  // block a single IP
-		"10.0.0.0/8",     // block an entire CIDR range
+		"192.168.1.100", // block a single IP
+		"10.0.0.0/8",    // block an entire CIDR range
 	)
 	defer blacklist.Close()
 
@@ -29,8 +29,8 @@ func main() {
 	// 100 connections/second global burst, 10 per-IP burst.
 	// Per-IP message rate: 1000 messages/second with 100 burst.
 	rateLimit := api.NewRateLimitPlugin(
-		100,   // rate: connections per second
-		200,   // burst: max concurrent connections
+		100, // rate: connections per second
+		200, // burst: max concurrent connections
 		plugin.WithRateLimitMessageRate(1000, 1000), // message rate per IP
 	)
 	defer rateLimit.Close()

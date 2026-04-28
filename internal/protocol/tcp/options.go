@@ -15,26 +15,26 @@ var errConfig = func(msg string) error { return fmt.Errorf("tcp config: %s", msg
 
 // Options holds TCP server configuration.
 type Options struct {
-	Host                string
-	Port                int
-	WorkerCount         int
-	TaskQueueSize       int
-	MaxWorkers          int
-	FullPolicy          FullPolicy
-	WriteQueueSize      int
-	MaxSessions         int64
-	MaxMessageSize      int
-	ReadTimeout         int // seconds, 0 = no timeout
-	WriteTimeout        int // seconds
-	IdleTimeout         int // seconds
-	HandlerTimeout      int // seconds
-	DrainTimeout        int // seconds
-	ShutdownTimeout     int // seconds
+	Host                 string
+	Port                 int
+	WorkerCount          int
+	TaskQueueSize        int
+	MaxWorkers           int
+	FullPolicy           FullPolicy
+	WriteQueueSize       int
+	MaxSessions          int64
+	MaxMessageSize       int
+	ReadTimeout          int // seconds, 0 = no timeout
+	WriteTimeout         int // seconds
+	IdleTimeout          int // seconds
+	HandlerTimeout       int // seconds
+	DrainTimeout         int // seconds
+	ShutdownTimeout      int // seconds
 	MaxConsecutiveErrors int
-	Framer              Framer
-	TLSConfig           *tls.Config
-	Tracer              tracing.Tracer
-	Plugins             []types.Plugin
+	Framer               Framer
+	TLSConfig            *tls.Config
+	Tracer               tracing.Tracer
+	Plugins              []types.Plugin
 	// ConnRateLimit limits connections per IP. nil to disable.
 	ConnRateLimit *ratelimit.ConnectionLimiter
 	// TLS certificate files for hot reload (use TLSConfig if already provided)
@@ -45,19 +45,19 @@ type Options struct {
 func defaultOptions() Options {
 	workers := runtime.NumCPU() * 2
 	return Options{
-		Host:                "0.0.0.0",
-		Port:                18000,
-		WorkerCount:         workers,
-		TaskQueueSize:       workers * 128,
-		MaxWorkers:          workers * 4,
-		FullPolicy:          PolicyDrop,
-		WriteQueueSize:      128,
-		MaxSessions:         100000,
-		MaxMessageSize:      1024 * 1024, // 1MB
-		DrainTimeout:        5,
-		ShutdownTimeout:     10,
+		Host:                 "0.0.0.0",
+		Port:                 18000,
+		WorkerCount:          workers,
+		TaskQueueSize:        workers * 128,
+		MaxWorkers:           workers * 4,
+		FullPolicy:           PolicyDrop,
+		WriteQueueSize:       128,
+		MaxSessions:          100000,
+		MaxMessageSize:       1024 * 1024, // 1MB
+		DrainTimeout:         5,
+		ShutdownTimeout:      10,
 		MaxConsecutiveErrors: 100,
-		Framer:              NewLengthPrefixFramer(1024 * 1024),
+		Framer:               NewLengthPrefixFramer(1024 * 1024),
 	}
 }
 

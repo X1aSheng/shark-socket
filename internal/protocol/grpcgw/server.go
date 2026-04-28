@@ -12,12 +12,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/X1aSheng/shark-socket/internal/errs"
 	"github.com/X1aSheng/shark-socket/internal/infra/logger"
 	"github.com/X1aSheng/shark-socket/internal/plugin"
 	"github.com/X1aSheng/shark-socket/internal/session"
 	"github.com/X1aSheng/shark-socket/internal/types"
+	"github.com/gorilla/websocket"
 )
 
 // ProtocolMode defines how the gateway handles gRPC-Web requests.
@@ -32,16 +32,16 @@ const (
 
 // Server is a gRPC-Web gateway server.
 type Server struct {
-	opts      Options
-	server    *stdhttp.Server
-	listener  net.Listener
-	manager   *session.Manager
-	chain     *plugin.Chain
-	upgrader  websocket.Upgrader
-	wg        sync.WaitGroup
-	closed    atomic.Bool
+	opts     Options
+	server   *stdhttp.Server
+	listener net.Listener
+	manager  *session.Manager
+	chain    *plugin.Chain
+	upgrader websocket.Upgrader
+	wg       sync.WaitGroup
+	closed   atomic.Bool
 	// serveHTTP is reserved for enabling plain HTTP health checks
-	_         bool
+	_ bool
 }
 
 // Compile-time verification.

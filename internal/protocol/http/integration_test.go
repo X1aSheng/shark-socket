@@ -207,4 +207,3 @@ func TestIntegration_HTTP_ModeB_SessionHandler(t *testing.T) {
 	}
 	t.Log("Mode B session handler verified")
 }
-

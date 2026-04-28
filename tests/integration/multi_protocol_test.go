@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/X1aSheng/shark-socket/internal/gateway"
 	"github.com/X1aSheng/shark-socket/internal/protocol/coap"
+	httpproto "github.com/X1aSheng/shark-socket/internal/protocol/http"
 	tcpproto "github.com/X1aSheng/shark-socket/internal/protocol/tcp"
 	"github.com/X1aSheng/shark-socket/internal/protocol/udp"
-	httpproto "github.com/X1aSheng/shark-socket/internal/protocol/http"
 	wsproto "github.com/X1aSheng/shark-socket/internal/protocol/websocket"
 	"github.com/X1aSheng/shark-socket/internal/types"
+	"github.com/gorilla/websocket"
 )
 
 func waitForTCP(t *testing.T, addr string, timeout time.Duration) {

@@ -164,5 +164,4 @@
 //	    WithMaxEntries(100000),     // Entry limit
 //	    WithMaxMemory(100*1024*1024), // Memory limit
 //	)
-//
 package store

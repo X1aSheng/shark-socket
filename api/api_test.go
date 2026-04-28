@@ -119,9 +119,9 @@ func TestSessionStateConstants(t *testing.T) {
 
 func TestErrorReExports(t *testing.T) {
 	tests := []struct {
-		name    string
-		got     error
-		want    error
+		name string
+		got  error
+		want error
 	}{
 		{"ErrSkip", ErrSkip, errs.ErrSkip},
 		{"ErrDrop", ErrDrop, errs.ErrDrop},

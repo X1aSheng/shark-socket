@@ -9,14 +9,14 @@ import (
 
 // TimeWheel manages session timeouts with a single goroutine.
 type TimeWheel struct {
-	mu      sync.Mutex
-	slots   []map[uint64]time.Time
-	current int
+	mu           sync.Mutex
+	slots        []map[uint64]time.Time
+	current      int
 	tickInterval time.Duration
-	size    int
-	done    chan struct{}
-	onTimeout func(uint64)
-	wg      sync.WaitGroup
+	size         int
+	done         chan struct{}
+	onTimeout    func(uint64)
+	wg           sync.WaitGroup
 }
 
 // NewTimeWheel creates a time wheel with the given tick interval and number of slots.

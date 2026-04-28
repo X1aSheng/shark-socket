@@ -84,23 +84,26 @@
 // # Async Distribution Model
 //
 // Each subscription creates:
+//
 //   - Buffered channel (capacity configurable)
+//
 //   - Goroutine for message processing
+//
 //   - Done channel for clean shutdown
 //
-//	type subscription struct {
-//	    handler func([]byte)
-//	    ch      chan []byte
-//	    done    chan struct{}
-//	}
+//     type subscription struct {
+//     handler func([]byte)
+//     ch      chan []byte
+//     done    chan struct{}
+//     }
 //
-//	// Process loop
-//	func (s *subscription) process() {
-//	    defer close(s.done)
-//	    for data := range s.ch {
-//	        s.handler(data)
-//	    }
-//	}
+//     // Process loop
+//     func (s *subscription) process() {
+//     defer close(s.done)
+//     for data := range s.ch {
+//     s.handler(data)
+//     }
+//     }
 //
 // This model ensures:
 //   - Publisher never blocks (writes to buffered channel)
@@ -203,5 +206,4 @@
 //	    WithBufferSize(256),       // Per-subscriber channel capacity
 //	    WithDropPolicy(DropOldest), // Slow consumer strategy
 //	)
-//
 package pubsub

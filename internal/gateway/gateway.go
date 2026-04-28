@@ -13,24 +13,24 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/X1aSheng/shark-socket/internal/errs"
 	"github.com/X1aSheng/shark-socket/internal/infra/config"
 	"github.com/X1aSheng/shark-socket/internal/session"
 	"github.com/X1aSheng/shark-socket/internal/types"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Gateway orchestrates multiple protocol servers with shared session management.
 type Gateway struct {
-	mu            sync.RWMutex
-	servers       map[types.ProtocolType]types.Server
-	globalPlugins []types.Plugin
-	sharedManager *session.Manager
-	opts          Options
-	wg            sync.WaitGroup
-	metricsServer *stdhttp.Server
-	startTime     atomic.Value // time.Time, accessed from metrics handlers
-	started       atomic.Bool
+	mu             sync.RWMutex
+	servers        map[types.ProtocolType]types.Server
+	globalPlugins  []types.Plugin
+	sharedManager  *session.Manager
+	opts           Options
+	wg             sync.WaitGroup
+	metricsServer  *stdhttp.Server
+	startTime      atomic.Value // time.Time, accessed from metrics handlers
+	started        atomic.Bool
 	configReloader *config.FileReloader
 }
 

@@ -206,5 +206,4 @@
 //	metrics.SetDefault(metrics.NopMetrics())
 //
 // Useful for benchmarks or testing environments.
-//
 package metrics

@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/X1aSheng/shark-socket/internal/gateway"
 	"github.com/X1aSheng/shark-socket/internal/protocol/coap"
 	httpproto "github.com/X1aSheng/shark-socket/internal/protocol/http"
@@ -21,6 +20,7 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/protocol/udp"
 	wsproto "github.com/X1aSheng/shark-socket/internal/protocol/websocket"
 	"github.com/X1aSheng/shark-socket/internal/types"
+	"github.com/gorilla/websocket"
 )
 
 // safeFramer creates a per-read bufio.Reader to avoid shared state across sessions.
@@ -95,11 +95,41 @@ func TestTCP_EchoIntegrity(t *testing.T) {
 		{"Empty", []byte{}},
 		{"SingleByte", []byte{0x00}},
 		{"AllZeros_1KB", make([]byte, 1024)},
-		{"AllFF_1KB", func() []byte { p := make([]byte, 1024); for i := range p { p[i] = 0xFF }; return p }()},
-		{"Ascending_4KB", func() []byte { p := make([]byte, 4096); for i := range p { p[i] = byte(i % 256) }; return p }()},
-		{"Descending_4KB", func() []byte { p := make([]byte, 4096); for i := range p { p[i] = byte(255 - i%256) }; return p }()},
-		{"Alternating_2KB", func() []byte { p := make([]byte, 2048); for i := range p { p[i] = byte(i % 2) * 0xFF }; return p }()},
-		{"Large_32KB", func() []byte { p := make([]byte, 32768); for i := range p { p[i] = byte(i * 7 % 256) }; return p }()},
+		{"AllFF_1KB", func() []byte {
+			p := make([]byte, 1024)
+			for i := range p {
+				p[i] = 0xFF
+			}
+			return p
+		}()},
+		{"Ascending_4KB", func() []byte {
+			p := make([]byte, 4096)
+			for i := range p {
+				p[i] = byte(i % 256)
+			}
+			return p
+		}()},
+		{"Descending_4KB", func() []byte {
+			p := make([]byte, 4096)
+			for i := range p {
+				p[i] = byte(255 - i%256)
+			}
+			return p
+		}()},
+		{"Alternating_2KB", func() []byte {
+			p := make([]byte, 2048)
+			for i := range p {
+				p[i] = byte(i%2) * 0xFF
+			}
+			return p
+		}()},
+		{"Large_32KB", func() []byte {
+			p := make([]byte, 32768)
+			for i := range p {
+				p[i] = byte(i * 7 % 256)
+			}
+			return p
+		}()},
 	}
 
 	for _, pat := range patterns {
@@ -355,7 +385,13 @@ func TestUDP_EchoIntegrity(t *testing.T) {
 		{"Small", []byte("hello")},
 		{"Medium", make([]byte, 512)},
 		{"Large", make([]byte, 1400)},
-		{"Binary", func() []byte { p := make([]byte, 256); for i := range p { p[i] = byte(i) }; return p }()},
+		{"Binary", func() []byte {
+			p := make([]byte, 256)
+			for i := range p {
+				p[i] = byte(i)
+			}
+			return p
+		}()},
 	}
 
 	for _, pp := range payloads {
@@ -490,9 +526,27 @@ func TestWebSocket_EchoIntegrity(t *testing.T) {
 	}{
 		{"Text_Short", websocket.TextMessage, []byte("hello websocket")},
 		{"Text_UTF8", websocket.TextMessage, []byte("你好世界 🌍")},
-		{"Binary_256B", websocket.BinaryMessage, func() []byte { p := make([]byte, 256); for i := range p { p[i] = byte(i) }; return p }()},
-		{"Binary_4KB", websocket.BinaryMessage, func() []byte { p := make([]byte, 4096); for i := range p { p[i] = byte(i % 256) }; return p }()},
-		{"Binary_16KB", websocket.BinaryMessage, func() []byte { p := make([]byte, 16384); for i := range p { p[i] = byte(i * 3 % 256) }; return p }()},
+		{"Binary_256B", websocket.BinaryMessage, func() []byte {
+			p := make([]byte, 256)
+			for i := range p {
+				p[i] = byte(i)
+			}
+			return p
+		}()},
+		{"Binary_4KB", websocket.BinaryMessage, func() []byte {
+			p := make([]byte, 4096)
+			for i := range p {
+				p[i] = byte(i % 256)
+			}
+			return p
+		}()},
+		{"Binary_16KB", websocket.BinaryMessage, func() []byte {
+			p := make([]byte, 16384)
+			for i := range p {
+				p[i] = byte(i * 3 % 256)
+			}
+			return p
+		}()},
 	}
 
 	for _, tc := range cases {
@@ -780,7 +834,13 @@ func TestCoAP_MessageRoundTrip(t *testing.T) {
 		payload []byte
 	}{
 		{"Short", []byte("coap-hello")},
-		{"Binary", func() []byte { p := make([]byte, 128); for i := range p { p[i] = byte(i) }; return p }()},
+		{"Binary", func() []byte {
+			p := make([]byte, 128)
+			for i := range p {
+				p[i] = byte(i)
+			}
+			return p
+		}()},
 		{"Medium", []byte("coap-medium-payload-for-integrity-testing")},
 	}
 

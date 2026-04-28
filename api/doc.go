@@ -121,9 +121,9 @@
 //	err := sess.SendTyped(myMessage)  // Compile-time checked
 //
 // SendTyped internals:
-//	1. encode(msg) → []byte using registered encoder
-//	2. Send([]byte) → unified write queue
-//	3. When T=[]byte, encode is identity, zero overhead
+//  1. encode(msg) → []byte using registered encoder
+//  2. Send([]byte) → unified write queue
+//  3. When T=[]byte, encode is identity, zero overhead
 //
 // # Protocol Support
 //
@@ -239,12 +239,12 @@
 //	)
 //
 // Built-in metrics include:
-//	- Connections by protocol
-//	- Messages by protocol and type
-//	- Session LRU evictions
-//	- Buffer pool hit rates (6 levels)
-//	- Plugin execution times
-//	- Worker pool queue depth
+//   - Connections by protocol
+//   - Messages by protocol and type
+//   - Session LRU evictions
+//   - Buffer pool hit rates (6 levels)
+//   - Plugin execution times
+//   - Worker pool queue depth
 //
 // # Logging
 //
@@ -308,8 +308,7 @@
 // # See Also
 //
 // For detailed architecture documentation, see:
-//	- docs/shark-socket ARCHITECTURE.md
-//	- docs/IMPROVEMENT_PLAN.md
-//	- docs/TECH_PREPARATION.md
-//
+//   - docs/shark-socket ARCHITECTURE.md
+//   - docs/IMPROVEMENT_PLAN.md
+//   - docs/TECH_PREPARATION.md
 package api

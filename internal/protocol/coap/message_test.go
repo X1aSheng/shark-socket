@@ -48,9 +48,9 @@ func TestParseMessage_WithToken(t *testing.T) {
 	// Version=1, Type=NON(1), TKL=4, Code=POST(2), MessageID=0x1234
 	// Token: 0xAA 0xBB 0xCC 0xDD
 	data := []byte{
-		0x54,                   // Ver=1, Type=NON, TKL=4
-		0x02,                   // Code=POST
-		0x12, 0x34,             // MessageID
+		0x54,       // Ver=1, Type=NON, TKL=4
+		0x02,       // Code=POST
+		0x12, 0x34, // MessageID
 		0xAA, 0xBB, 0xCC, 0xDD, // Token
 	}
 
@@ -73,7 +73,7 @@ func TestParseMessage_WithPayload(t *testing.T) {
 	// Minimal header + payload marker (0xFF) + payload
 	data := []byte{
 		0x40, 0x01, 0x00, 0x01, // header
-		0xFF,                   // payload marker
+		0xFF,                    // payload marker
 		'h', 'e', 'l', 'l', 'o', // payload
 	}
 
@@ -90,10 +90,10 @@ func TestParseMessage_WithOptions(t *testing.T) {
 	// Header + one option (Delta=1, Length=2, Value=0x11 0x22) + payload
 	data := []byte{
 		0x40, 0x01, 0x00, 0x01, // header
-		0x12,                   // option: delta=1, length=2
-		0x11, 0x22,             // option value
-		0xFF,                   // payload marker
-		'o', 'k',               // payload
+		0x12,       // option: delta=1, length=2
+		0x11, 0x22, // option value
+		0xFF,     // payload marker
+		'o', 'k', // payload
 	}
 
 	msg, err := ParseMessage(data)
@@ -217,8 +217,8 @@ func TestParseMessage_OptionValueExceedsMessage(t *testing.T) {
 	// Option with delta=0, length=5 but only 2 bytes remaining
 	data := []byte{
 		0x40, 0x01, 0x00, 0x01, // header
-		0x05,                   // option: delta=0, length=5
-		0x11, 0x22,             // only 2 bytes
+		0x05,       // option: delta=0, length=5
+		0x11, 0x22, // only 2 bytes
 	}
 	_, err := ParseMessage(data)
 	if err == nil {

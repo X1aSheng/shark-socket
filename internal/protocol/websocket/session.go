@@ -3,17 +3,17 @@ package websocket
 import (
 	"sync"
 
-	"github.com/gorilla/websocket"
 	"github.com/X1aSheng/shark-socket/internal/errs"
 	"github.com/X1aSheng/shark-socket/internal/session"
 	"github.com/X1aSheng/shark-socket/internal/types"
+	"github.com/gorilla/websocket"
 )
 
 // WSSession implements types.Session for WebSocket connections.
 type WSSession struct {
 	*session.BaseSession
-	conn     *websocket.Conn
-	writeMu  sync.Mutex
+	conn      *websocket.Conn
+	writeMu   sync.Mutex
 	closeOnce sync.Once
 }
 

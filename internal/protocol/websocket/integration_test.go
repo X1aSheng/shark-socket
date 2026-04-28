@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/X1aSheng/shark-socket/internal/types"
+	"github.com/gorilla/websocket"
 )
 
 func waitForTCPServer(t *testing.T, addr string, timeout time.Duration) {

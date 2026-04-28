@@ -80,8 +80,8 @@
 //	)
 //
 // When capacity exceeded:
-//   1. LRU eviction of least recently used entries
-//   2. Eviction continues until under capacity
+//  1. LRU eviction of least recently used entries
+//  2. Eviction continues until under capacity
 //
 // # Thread Safety
 //
@@ -166,5 +166,4 @@
 //	    WithCleanInterval(1*time.Minute), // Cleanup interval
 //	    WithShardCount(32),           // Sharding for concurrency
 //	)
-//
 package cache

@@ -28,17 +28,17 @@
 //	               key = addr.String()
 //
 // Session lifecycle:
-//	- Created on first datagram from remote address
-//	- Updated on activity (lastActive timestamp)
-//	- Cleaned by sweepLoop after TTL inactivity
+//   - Created on first datagram from remote address
+//   - Updated on activity (lastActive timestamp)
+//   - Cleaned by sweepLoop after TTL inactivity
 //
 // # TTL Cleanup
 //
 // Background sweepLoop manages session lifecycle:
 //
-//	- Runs every sweepInterval (default 60s)
-//	- Checks all sessions for inactivity
-//	- Closes and unregisters sessions exceeding TTL
+//   - Runs every sweepInterval (default 60s)
+//   - Checks all sessions for inactivity
+//   - Closes and unregisters sessions exceeding TTL
 //
 // # No Write Queue
 //
@@ -47,25 +47,24 @@
 //	sess.Send(data) → conn.WriteToUDP(data, addr)
 //
 // UDP is datagram-oriented with no connection state:
-//	- No need for write queue
-//	- Writes are best-effort
-//	- No ordering guarantees
+//   - No need for write queue
+//   - Writes are best-effort
+//   - No ordering guarantees
 //
 // # Use Cases
 //
 // UDP is suitable for:
-//	- DNS-style query/response
-//	- Gaming (low latency, loss-tolerant)
-//	- IoT devices
-//	- Streaming media
+//   - DNS-style query/response
+//   - Gaming (low latency, loss-tolerant)
+//   - IoT devices
+//   - Streaming media
 //
 // # Limitations
 //
 //   - No reliability (packets may be lost)
-//	- No flow control
-//	- Datagram size typically limited to ~1500 bytes
-//	- NAT traversal challenges
+//   - No flow control
+//   - Datagram size typically limited to ~1500 bytes
+//   - NAT traversal challenges
 //
 // Consider CoAP for reliable UDP transport at application layer.
-//
 package udp

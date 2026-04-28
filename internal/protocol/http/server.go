@@ -244,27 +244,27 @@ func (s *Server) handleWithSession(w stdhttp.ResponseWriter, r *stdhttp.Request)
 		body = readBody
 	}
 
-		if s.chain != nil && len(body) > 0 {
-			var err error
-			body, err = s.chain.OnMessage(sess, body)
-			if err != nil {
-				if s.opts.AccessLogger != nil {
-					host, _, _ := splitHostPort(r.RemoteAddr)
-					s.opts.AccessLogger.Log(logger.AccessLogEntry{
-						Protocol:   "http",
-						Method:     r.Method,
-						Path:       r.URL.Path,
-						StatusCode: 400,
-						Duration:   time.Since(start),
-						ClientIP:   host,
-						UserAgent:  r.UserAgent(),
-						Error:      err,
-					})
-				}
-				stdhttp.Error(w, "Bad Request", stdhttp.StatusBadRequest)
-				return
+	if s.chain != nil && len(body) > 0 {
+		var err error
+		body, err = s.chain.OnMessage(sess, body)
+		if err != nil {
+			if s.opts.AccessLogger != nil {
+				host, _, _ := splitHostPort(r.RemoteAddr)
+				s.opts.AccessLogger.Log(logger.AccessLogEntry{
+					Protocol:   "http",
+					Method:     r.Method,
+					Path:       r.URL.Path,
+					StatusCode: 400,
+					Duration:   time.Since(start),
+					ClientIP:   host,
+					UserAgent:  r.UserAgent(),
+					Error:      err,
+				})
 			}
+			stdhttp.Error(w, "Bad Request", stdhttp.StatusBadRequest)
+			return
 		}
+	}
 
 	status := 200
 	if s.handler != nil {
@@ -286,14 +286,14 @@ func (s *Server) handleWithSession(w stdhttp.ResponseWriter, r *stdhttp.Request)
 	if s.opts.AccessLogger != nil {
 		host, _, _ := splitHostPort(r.RemoteAddr)
 		s.opts.AccessLogger.Log(logger.AccessLogEntry{
-			Protocol:    "http",
-			Method:      r.Method,
-			Path:        r.URL.Path,
-			StatusCode:  status,
-			Duration:    time.Since(start),
-			ClientIP:    host,
-			UserAgent:   r.UserAgent(),
-			BytesIn:     int64(len(body)),
+			Protocol:   "http",
+			Method:     r.Method,
+			Path:       r.URL.Path,
+			StatusCode: status,
+			Duration:   time.Since(start),
+			ClientIP:   host,
+			UserAgent:  r.UserAgent(),
+			BytesIn:    int64(len(body)),
 		})
 	}
 }
