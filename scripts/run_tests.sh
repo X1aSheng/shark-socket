@@ -48,6 +48,7 @@ run_test() {
 
     cd "$PROJECT_DIR"
     go test "$@" -json -v -count=1 -timeout 300s > "$jsonfile" 2>&1 || true
+    sed -i 's|github.com/X1aSheng/shark-socket/||g' "$jsonfile" 2>/dev/null || true
     go run scripts/parse_test_log.go "$jsonfile" > "$logfile" 2>/dev/null || true
 
     if [ -s "$logfile" ]; then
@@ -73,6 +74,7 @@ run_cover() {
 
     cd "$PROJECT_DIR"
     go test ./... -count=1 -cover -timeout 300s > "$logfile" 2>&1 || true
+    sed -i 's|github.com/X1aSheng/shark-socket/||g' "$logfile" 2>/dev/null || true
     cat "$logfile"
 
     echo ""

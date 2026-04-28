@@ -102,6 +102,7 @@ echo.
 pushd "%PROJECT_DIR%"
 shift /1 & shift /1
 go test %* -json -v -count=1 -timeout 300s > "%RT_JSON%" 2>&1
+powershell -NoProfile -Command "(Get-Content '%RT_JSON%' -Raw) -replace 'github\.com/X1aSheng/shark-socket/', '' | Set-Content '%RT_JSON%' -NoNewline" 2>nul
 go run scripts/parse_test_log.go "%RT_JSON%" > "%RT_LOG%" 2>nul
 popd
 

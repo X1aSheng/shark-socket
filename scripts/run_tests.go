@@ -177,13 +177,19 @@ func goCapture(dir string, args []string, outFile string) {
 	cmd := exec.Command("go", args...)
 	cmd.Dir = dir
 	out, _ := cmd.CombinedOutput()
+	out = stripModulePrefix(out)
 	os.WriteFile(outFile, out, 0o644)
+}
+
+func stripModulePrefix(data []byte) []byte {
+	return []byte(strings.ReplaceAll(string(data), "github.com/X1aSheng/shark-socket/", ""))
 }
 
 func goOutput(dir string, args []string) ([]byte, error) {
 	cmd := exec.Command("go", args...)
 	cmd.Dir = dir
-	return cmd.CombinedOutput()
+	out, err := cmd.CombinedOutput()
+	return stripModulePrefix(out), err
 }
 
 func listLogs(dir, ts string) {

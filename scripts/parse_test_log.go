@@ -35,6 +35,8 @@ type benchResult struct {
 	extra    string
 }
 
+const modulePrefix = "github.com/X1aSheng/shark-socket/"
+
 var (
 	reBenchHeader = regexp.MustCompile(`^(Benchmark\S+?)-\d+\s*$`)
 	reBenchData   = regexp.MustCompile(`^\s*(\d+)\s+([\d.]+)\s+ns/op`)
@@ -86,7 +88,7 @@ func parseFile(path string) error {
 			startTime = ev.Time
 		}
 
-		key := ev.Package + "/" + ev.Test
+		key := stripModule(ev.Package) + "/" + ev.Test
 
 		switch ev.Action {
 		case "run":
@@ -95,7 +97,7 @@ func parseFile(path string) error {
 			}
 			if !pkgSet[ev.Package] && ev.Package != "" {
 				pkgSet[ev.Package] = true
-				pkgOrder = append(pkgOrder, ev.Package)
+					pkgOrder = append(pkgOrder, stripModule(ev.Package))
 			}
 		case "pass", "fail", "skip":
 			if ev.Test != "" {
@@ -107,7 +109,7 @@ func parseFile(path string) error {
 				}
 			}
 			if ev.Test == "" && ev.Package != "" {
-				pkgElapsed[ev.Package] = ev.Elapsed
+				pkgElapsed[stripModule(ev.Package)] = ev.Elapsed
 			}
 		case "output":
 			if ev.Test != "" {
@@ -117,15 +119,16 @@ func parseFile(path string) error {
 			}
 			// Collect all output for benchmark parsing
 			if ev.Package != "" {
-				pkgOutputs[ev.Package] = append(pkgOutputs[ev.Package], ev.Output)
-				if !benchPkgSet[ev.Package] {
-					benchPkgSet[ev.Package] = true
-					benchPkgOrder = append(benchPkgOrder, ev.Package)
+				pkg := stripModule(ev.Package)
+				pkgOutputs[pkg] = append(pkgOutputs[pkg], ev.Output)
+				if !benchPkgSet[pkg] {
+					benchPkgSet[pkg] = true
+					benchPkgOrder = append(benchPkgOrder, pkg)
 				}
 			}
 			// Capture coverage lines
 			if strings.Contains(ev.Output, "coverage:") {
-				pkg := ev.Package
+				pkg := stripModule(ev.Package)
 				coverage := strings.TrimSpace(strings.TrimPrefix(ev.Output, "coverage:"))
 				if pkg != "" && coverage != "" {
 					coverages[pkg] = coverage
@@ -439,17 +442,13 @@ func formatFloat(v float64) string {
 }
 
 func shortPkg(pkg string) string {
-	parts := strings.Split(pkg, "/")
-	if len(parts) >= 2 {
-		return strings.Join(parts[len(parts)-2:], "/")
-	}
-	return pkg
+	return strings.TrimPrefix(pkg, modulePrefix)
+}
+
+func stripModule(pkg string) string {
+	return strings.TrimPrefix(pkg, modulePrefix)
 }
 
 func evTest(key string) string {
-	idx := strings.Index(key, "/")
-	if idx >= 0 {
-		return key[idx+1:]
-	}
-	return key
+	return strings.TrimPrefix(key, modulePrefix)
 }
