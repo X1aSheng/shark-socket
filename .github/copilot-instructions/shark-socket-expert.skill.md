@@ -14,7 +14,7 @@ api/                         → Unified public facade (Gateway + Options)
 internal/
   gateway/                   → Multi-protocol server orchestration, lifecycle
   session/                   → Sharded session manager (32 shards), LRU eviction
-  plugin/                    → Plugin chain: Blacklist, AutoBan, RateLimit,
+  plugin/                    → Plugin chain: Blacklist, RateLimit, AutoBan,
                                Heartbeat, Cluster, Persistence, SlowQuery
   protocol/                  → Protocol implementations:
     tcp/                     → TCP + TLS with worker pool

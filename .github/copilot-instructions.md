@@ -11,7 +11,7 @@ The project follows strict separation of concerns:
 | **API** | `api/` | Unified public interface — all exports in one package |
 | **Gateway** | `internal/gateway/` | Multi-protocol server orchestration, lifecycle management |
 | **Session** | `internal/session/` | Sharded session manager (32 shards), LRU eviction, session lifecycle |
-| **Plugin** | `internal/plugin/` | Plugin chain with priority ordering (Blacklist→AutoBan→RateLimit→Heartbeat→Cluster→Persistence) |
+| **Plugin** | `internal/plugin/` | Plugin chain with priority ordering (Blacklist→RateLimit→AutoBan→Heartbeat→Cluster→Persistence) |
 | **Protocol** | `internal/protocol/` | Protocol implementations: TCP, TLS, UDP, HTTP, WebSocket, CoAP, QUIC, gRPC-Web |
 | **Config** | `internal/infra/config/` | YAML/ENV-based configuration loading |
 | **Infra** | `internal/infra/` | Cross-cutting: Cache, Store, PubSub, CircuitBreaker, BufferPool, Tracing, Logger, Metrics |
@@ -23,7 +23,7 @@ The project follows strict separation of concerns:
 ## Key Design Principles
 
 ### P1 — Plugin Chain Architecture
-- Plugins execute in priority order: Blacklist(0) → AutoBan(20) → RateLimit(10) → Heartbeat(30) → Cluster(40) → Persistence(50)
+- Plugins execute in priority order: Blacklist(0) → RateLimit(10) → AutoBan(20) → Heartbeat(30) → Cluster(40) → Persistence(50)
 - Each plugin implements `OnAccept`, `OnMessage`, `OnClose` hooks
 - `OnAccept` can reject connections via sentinel errors (`ErrBlock`)
 - `OnMessage` can transform or drop messages via returned data/error

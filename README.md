@@ -892,7 +892,7 @@ make all         # vet + build + test
 | 测试文件 | 75 |
 | 示例 | 8 |
 | 外部依赖 | 4 个核心模块 (prometheus, quic-go, gorilla/websocket, opentelemetry) |
-| 代码审查 | 25/25 全部完成 (3 轮专家审查) |
+| 代码审查 | 55 个问题追踪，4 轮专家审查 + CI 增强，剩余 12 个优化项 |
 
 ---
 

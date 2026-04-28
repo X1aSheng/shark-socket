@@ -14,6 +14,7 @@
 
 **Batch 4 Complete (2026-04-28):** R1, R2, R3, R6, C4 fixed and verified.
 **GitHub Actions CI Enhanced (2026-04-28):** 7-job CI matrix with multi-OS, Codecov, Docker smoke test.
+**Batch 5a CI Fixes (2026-04-28):** go fmt (83 files), WorkerPool data race, golangci-lint errcheck, test data race — all CI jobs passing.
 
 ## Test Results (2026-04-28)
 
@@ -187,6 +188,15 @@ Enhanced `.github/workflows/ci.yml` from 3 jobs to 7 jobs referencing shark-MQTT
 - **deploy-check**: Docker Compose + Helm lint + template validation
 
 Also created `.github/copilot-instructions.md`, `.github/copilot-instructions/shark-socket-expert.skill.md`, `.github/skills/test-design/SKILL.md`.
+
+### Batch 5a — CI Failure Fixes ✅ COMPLETED (2026-04-28)
+
+Code fixes required to make all 7 CI jobs pass:
+
+1. **go fmt formatting**: Go 1.26 introduced stricter alignment rules — 83 files reformatted with `go fmt ./...`
+2. **WorkerPool data race** (`internal/protocol/tcp/worker_pool.go`): Race between `Stop()` closing `taskQueue` and `Submit()` sending to it. Added `closeMu sync.RWMutex` — `Submit` takes RLock + checks `closed`, `Stop` takes Lock before `close(channel)`.
+3. **golangci-lint errcheck** (`cmd/shark-socket/main.go:61,67`): Unchecked `json.NewEncoder(w).Encode()` errors — added `_ =` before both calls.
+4. **TestGateway_SharedManager data race** (`tests/integration/multi_protocol_test.go`): Handler goroutines writing to `tcpIDs`/`wsIDs` slices while test goroutine reads them — protected with `sync.Mutex`.
 
 ### Batch 6 — Performance & cleanup (remaining)
 
