@@ -7,6 +7,7 @@ import (
 
 func TestShouldLog_FirstTime(t *testing.T) {
 	s := NewLogSampler(100 * time.Millisecond)
+	defer s.Close()
 	ok, summary := s.ShouldLog("key1")
 	if !ok {
 		t.Fatal("expected first call to return true")
@@ -18,6 +19,7 @@ func TestShouldLog_FirstTime(t *testing.T) {
 
 func TestShouldLog_SameKeyWithinWindow(t *testing.T) {
 	s := NewLogSampler(500 * time.Millisecond)
+	defer s.Close()
 	s.ShouldLog("key1")
 
 	ok, _ := s.ShouldLog("key1")
@@ -28,6 +30,7 @@ func TestShouldLog_SameKeyWithinWindow(t *testing.T) {
 
 func TestShouldLog_AfterWindow_ReturnsTrueWithSummary(t *testing.T) {
 	s := NewLogSampler(50 * time.Millisecond)
+	defer s.Close()
 	s.ShouldLog("key1")
 
 	// Suppress a few calls.
@@ -47,6 +50,7 @@ func TestShouldLog_AfterWindow_ReturnsTrueWithSummary(t *testing.T) {
 
 func TestShouldLog_DifferentKeys(t *testing.T) {
 	s := NewLogSampler(500 * time.Millisecond)
+	defer s.Close()
 	if ok, _ := s.ShouldLog("a"); !ok {
 		t.Fatal("key a should be allowed")
 	}
@@ -57,6 +61,7 @@ func TestShouldLog_DifferentKeys(t *testing.T) {
 
 func TestClean_RemovesStaleEntries(t *testing.T) {
 	s := NewLogSampler(50 * time.Millisecond)
+	defer s.Close()
 	s.ShouldLog("stale")
 
 	time.Sleep(120 * time.Millisecond)

@@ -13,33 +13,34 @@ type ipCounters struct {
 	rateLimitHits  atomic.Int64
 	protocolErrors atomic.Int64
 	totalConns     atomic.Int64
+	lastUpdate     atomic.Int64 // UnixNano
 }
 
 // AutoBanThresholds configures when an IP gets auto-banned.
 type AutoBanThresholds struct {
-	RateLimitThreshold  int64
+	RateLimitThreshold     int64
 	ProtocolErrorThreshold int64
-	EmptyConnThreshold  int64
-	BanTTL              time.Duration
+	EmptyConnThreshold     int64
+	BanTTL                 time.Duration
 }
 
 // DefaultAutoBanThresholds returns sensible defaults.
 func DefaultAutoBanThresholds() AutoBanThresholds {
 	return AutoBanThresholds{
-		RateLimitThreshold:  10,
+		RateLimitThreshold:     10,
 		ProtocolErrorThreshold: 5,
-		EmptyConnThreshold:  20,
-		BanTTL:              30 * time.Minute,
+		EmptyConnThreshold:     20,
+		BanTTL:                 30 * time.Minute,
 	}
 }
 
 // AutoBanPlugin automatically bans IPs that exceed violation thresholds.
 type AutoBanPlugin struct {
-	blacklist *BlacklistPlugin
+	blacklist  *BlacklistPlugin
 	thresholds AutoBanThresholds
-	counters  sync.Map // string -> *ipCounters
-	stopCh    chan struct{}
-	wg        sync.WaitGroup
+	counters   sync.Map // string -> *ipCounters
+	stopCh     chan struct{}
+	wg         sync.WaitGroup
 }
 
 // NewAutoBanPlugin creates a new auto-ban plugin.
@@ -53,7 +54,7 @@ func NewAutoBanPlugin(blacklist *BlacklistPlugin, opts ...AutoBanOption) *AutoBa
 		opt(p)
 	}
 	p.wg.Add(1)
-	go p.resetLoop()
+	go p.cleanupLoop()
 	return p
 }
 
@@ -73,6 +74,7 @@ func (p *AutoBanPlugin) OnAccept(sess types.RawSession) error {
 	key := utils.IPToKey(ip)
 	c := p.getCounters(key)
 	c.totalConns.Add(1)
+	c.lastUpdate.Store(time.Now().UnixNano())
 	p.checkAndBan(key, c)
 	return nil
 }
@@ -81,6 +83,7 @@ func (p *AutoBanPlugin) OnMessage(sess types.RawSession, data []byte) ([]byte, e
 	ip := utils.ExtractIPFromAddr(sess.RemoteAddr())
 	key := utils.IPToKey(ip)
 	c := p.getCounters(key)
+	c.lastUpdate.Store(time.Now().UnixNano())
 	p.checkAndBan(key, c)
 	return data, nil
 }
@@ -104,23 +107,30 @@ func (p *AutoBanPlugin) checkAndBan(key string, c *ipCounters) {
 func (p *AutoBanPlugin) RecordRateLimit(ip string) {
 	c := p.getCounters(ip)
 	c.rateLimitHits.Add(1)
+	c.lastUpdate.Store(time.Now().UnixNano())
 }
 
 // RecordProtocolError records a protocol error for an IP.
 func (p *AutoBanPlugin) RecordProtocolError(ip string) {
 	c := p.getCounters(ip)
 	c.protocolErrors.Add(1)
+	c.lastUpdate.Store(time.Now().UnixNano())
 }
 
-func (p *AutoBanPlugin) resetLoop() {
+// cleanupLoop periodically removes stale counter entries to prevent unbounded map growth.
+func (p *AutoBanPlugin) cleanupLoop() {
 	defer p.wg.Done()
-	ticker := time.NewTicker(time.Minute)
+	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
+			cutoff := time.Now().Add(-10 * time.Minute).UnixNano()
 			p.counters.Range(func(key, val any) bool {
-				p.counters.Delete(key)
+				c := val.(*ipCounters)
+				if c.lastUpdate.Load() < cutoff {
+					p.counters.Delete(key)
+				}
 				return true
 			})
 		case <-p.stopCh:
@@ -129,7 +139,7 @@ func (p *AutoBanPlugin) resetLoop() {
 	}
 }
 
-// Close stops the reset goroutine.
+// Close stops the cleanup goroutine.
 func (p *AutoBanPlugin) Close() {
 	close(p.stopCh)
 	p.wg.Wait()

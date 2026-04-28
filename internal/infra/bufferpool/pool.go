@@ -157,10 +157,12 @@ func (bp *BufferPool) Put(buf *Buffer) {
 	// Check total memory cap
 	memCap := bp.cap.Load()
 	if memCap > 0 && bp.totalMem.Load() > memCap {
+		bp.totalMem.Add(-int64(levelSize(level)))
 		return
 	}
 
 	bp.pools[level].Put(buf)
+	bp.totalMem.Add(-int64(levelSize(level)))
 }
 
 // Stats returns a snapshot of pool statistics.

@@ -7,8 +7,8 @@ import (
 )
 
 type samplerEntry struct {
-	count    int
-	lastLog  time.Time
+	count   int
+	lastLog time.Time
 }
 
 // LogSampler reduces high-frequency log output by aggregating repeated messages.
@@ -16,14 +16,20 @@ type LogSampler struct {
 	mu      sync.Mutex
 	entries map[string]*samplerEntry
 	window  time.Duration
+	stopCh  chan struct{}
+	wg      sync.WaitGroup
 }
 
 // NewLogSampler creates a log sampler with the given aggregation window.
 func NewLogSampler(window time.Duration) *LogSampler {
-	return &LogSampler{
+	s := &LogSampler{
 		entries: make(map[string]*samplerEntry),
 		window:  window,
+		stopCh:  make(chan struct{}),
 	}
+	s.wg.Add(1)
+	go s.cleanupLoop()
+	return s
 }
 
 // ShouldLog returns true if this message should be logged.
@@ -54,6 +60,20 @@ func (s *LogSampler) ShouldLog(key string) (shouldLog bool, summary string) {
 	return false, ""
 }
 
+func (s *LogSampler) cleanupLoop() {
+	defer s.wg.Done()
+	ticker := time.NewTicker(s.window * 2)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			s.Clean()
+		case <-s.stopCh:
+			return
+		}
+	}
+}
+
 // Clean removes stale entries older than 2x the window.
 func (s *LogSampler) Clean() {
 	s.mu.Lock()
@@ -65,4 +85,10 @@ func (s *LogSampler) Clean() {
 			delete(s.entries, k)
 		}
 	}
+}
+
+// Close stops the background cleanup goroutine.
+func (s *LogSampler) Close() {
+	close(s.stopCh)
+	s.wg.Wait()
 }
