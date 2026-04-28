@@ -13,13 +13,14 @@ import (
 // CoAPSession implements a CoAP session with CON retransmission and message dedup.
 type CoAPSession struct {
 	*session.BaseSession
-	conn       *net.UDPConn
-	addr       *net.UDPAddr
-	mu         sync.Mutex
+	conn        *net.UDPConn
+	addr        *net.UDPAddr
+	mu          sync.Mutex
 	pendingACKs map[uint16]*pendingMsg
-	msgCache   map[uint16]time.Time
-	msgCacheMu sync.RWMutex
-	closeOnce  sync.Once
+	msgCache    map[uint16]time.Time
+	msgCacheMu  sync.RWMutex
+	cacheSize   int
+	closeOnce   sync.Once
 }
 
 type pendingMsg struct {
@@ -32,13 +33,14 @@ type pendingMsg struct {
 var _ types.RawSession = (*CoAPSession)(nil)
 
 // NewCoAPSession creates a new CoAP session.
-func NewCoAPSession(id uint64, conn *net.UDPConn, addr *net.UDPAddr) *CoAPSession {
+func NewCoAPSession(id uint64, conn *net.UDPConn, addr *net.UDPAddr, cacheSize int) *CoAPSession {
 	s := &CoAPSession{
 		BaseSession: session.NewBase(id, types.CoAP, addr, conn.LocalAddr()),
 		conn:        conn,
 		addr:        addr,
 		pendingACKs: make(map[uint16]*pendingMsg),
 		msgCache:    make(map[uint16]time.Time),
+		cacheSize:   cacheSize,
 	}
 	s.SetState(types.Active)
 	return s
@@ -106,8 +108,7 @@ func (s *CoAPSession) RecordMessageID(msgID uint16) {
 	s.msgCacheMu.Lock()
 	s.msgCache[msgID] = time.Now()
 	// Evict oldest entries when over capacity
-	const maxCacheSize = 500
-	if len(s.msgCache) > maxCacheSize {
+	if len(s.msgCache) > s.cacheSize {
 		var oldestID uint16
 		var oldestTime time.Time
 		first := true

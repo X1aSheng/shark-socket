@@ -10,10 +10,6 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/types"
 )
 
-// SlowQueryThreshold is the duration after which a message is considered "slow".
-// Messages taking longer than this are logged as slow queries.
-var SlowQueryThreshold = 100 * time.Millisecond
-
 // Chain executes plugins in priority order with ErrSkip/ErrDrop/ErrBlock semantics.
 type Chain struct {
 	plugins     []types.Plugin
@@ -89,15 +85,6 @@ func (c *Chain) OnAccept(sess types.RawSession) error {
 
 // OnMessage executes plugins in order, threading data through the chain.
 func (c *Chain) OnMessage(sess types.RawSession, data []byte) ([]byte, error) {
-	start := time.Now()
-	defer func() {
-		elapsed := time.Since(start)
-		if elapsed > SlowQueryThreshold {
-			log.Printf("[slow-query] session=%d protocol=%v duration=%v size=%d",
-				sess.ID(), sess.Protocol(), elapsed, len(data))
-		}
-	}()
-
 	for _, p := range c.plugins {
 		var out []byte
 		var err error

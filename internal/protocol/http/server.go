@@ -270,13 +270,13 @@ func (s *Server) handleWithSession(w stdhttp.ResponseWriter, r *stdhttp.Request)
 	if s.handler != nil {
 		msg := types.NewRawMessage(sess.ID(), types.HTTP, body)
 		_ = s.handler(sess, msg)
-		// Handler may have set a custom status via session metadata
 		if v, ok := sess.GetMeta("http_status"); ok {
-			if s, ok := v.(int); ok {
-				status = s
+			if code, ok := v.(int); ok {
+				status = code
 			}
 		}
 	}
+	w.WriteHeader(status)
 
 	if s.chain != nil {
 		s.chain.OnClose(sess)

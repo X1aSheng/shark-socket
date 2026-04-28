@@ -106,11 +106,11 @@ func TestWSServer_OriginCheck(t *testing.T) {
 }
 
 func TestWSServer_OriginCheck_Empty(t *testing.T) {
-	s := NewServer(nil) // no origins = deny all
+	s := NewServer(nil) // no origins = allow all (developer-friendly default)
 	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	req.Header.Set("Origin", "http://anything.com")
-	if s.upgrader.CheckOrigin(req) {
-		t.Error("CheckOrigin should deny all when no origins configured")
+	if !s.upgrader.CheckOrigin(req) {
+		t.Error("CheckOrigin should allow all when no origins configured")
 	}
 }
 

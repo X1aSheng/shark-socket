@@ -30,7 +30,6 @@ func NewSlowQueryPlugin(cfg SlowQueryConfig) *SlowQueryPlugin {
 	if cfg.Threshold == 0 {
 		cfg.Threshold = 100 * time.Millisecond
 	}
-	SlowQueryThreshold = cfg.Threshold
 	return &SlowQueryPlugin{
 		cfg: cfg,
 	}
@@ -82,7 +81,6 @@ func (p *SlowQueryPlugin) OnClose(sess types.RawSession) {
 // SetThreshold updates the slow query threshold for both the plugin and the chain.
 func (p *SlowQueryPlugin) SetThreshold(d time.Duration) {
 	p.cfg.Threshold = d
-	SlowQueryThreshold = d
 }
 
 // IsSlowQuery returns true if the given duration exceeds the threshold.

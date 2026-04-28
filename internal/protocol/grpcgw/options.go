@@ -139,6 +139,7 @@ func (o Options) validate() error {
 type GRPCWebSession struct {
 	*session.BaseSession
 	conn      *websocket.Conn
+	writeMu   sync.Mutex
 	closeOnce sync.Once
 }
 
@@ -156,6 +157,8 @@ func (s *GRPCWebSession) Send(data []byte) error {
 	if !s.IsAlive() {
 		return errs.ErrSessionClosed
 	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	return s.conn.WriteMessage(websocket.BinaryMessage, data)
 }
 
@@ -169,8 +172,10 @@ func (s *GRPCWebSession) Close() error {
 	var err error
 	s.closeOnce.Do(func() {
 		s.SetState(types.Closing)
+		s.writeMu.Lock()
 		err = s.conn.WriteMessage(websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+		s.writeMu.Unlock()
 		s.SetState(types.Closed)
 		s.DoClose()
 		_ = s.conn.Close()

@@ -53,8 +53,10 @@ func NewServer(handler types.RawHandler, opts ...Option) *Server {
 			ReadBufferSize:  4096,
 			WriteBufferSize: 4096,
 			CheckOrigin: func(r *stdhttp.Request) bool {
+				// When no origins are configured, allow all (developer-friendly default).
+				// In production, explicitly configure AllowedOrigins to restrict access.
 				if len(allowedOrigins) == 0 {
-					return false
+					return true
 				}
 				if allowedOrigins["*"] {
 					return true

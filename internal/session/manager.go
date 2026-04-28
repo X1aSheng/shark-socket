@@ -2,6 +2,7 @@ package session
 
 import (
 	"iter"
+	"log"
 	"sync"
 	"sync/atomic"
 
@@ -119,6 +120,8 @@ func (m *Manager) evictGlobal(localShard *shard, localIdx int) {
 		}
 		other.mu.Unlock()
 	}
+	log.Printf("[shark-socket] session manager: eviction failed for session %d, all shards contended", localIdx)
+	metrics.IncCounter("shark_session_eviction_failures_total")
 }
 
 // Unregister removes a session.
@@ -185,7 +188,9 @@ func (m *Manager) Range(fn func(types.RawSession) bool) {
 func (m *Manager) Broadcast(data []byte) {
 	m.Range(func(sess types.RawSession) bool {
 		if sess.IsAlive() {
-			_ = sess.Send(data)
+			if err := sess.Send(data); err != nil {
+				metrics.IncCounter("shark_session_broadcast_errors_total", sess.Protocol().String())
+			}
 		}
 		return true
 	})

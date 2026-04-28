@@ -275,10 +275,10 @@ func (g *Gateway) stageSessionClose() error {
 
 // stageManagerClose closes the session manager.
 func (g *Gateway) stageManagerClose() error {
-	ctx, cancel := context.WithTimeout(context.Background(), g.opts.StageTimeouts.ManagerClose)
-	defer cancel()
-
-	<-ctx.Done()
+	// Sessions already closed in stageSessionClose; manager cleanup is idempotent.
+	if g.sharedManager != nil {
+		_ = g.sharedManager.Close()
+	}
 	return nil
 }
 
@@ -295,16 +295,10 @@ func (g *Gateway) stageMetricsClose() error {
 
 // stageFinalize performs final cleanup.
 func (g *Gateway) stageFinalize() {
-	ctx, cancel := context.WithTimeout(context.Background(), g.opts.StageTimeouts.Finalize)
-	defer cancel()
-
-	<-ctx.Done()
-	log.Println("Shutdown complete")
-
-	// Stop config reloader if running
 	if g.configReloader != nil {
 		_ = g.configReloader.Stop()
 	}
+	log.Println("Shutdown complete")
 }
 
 // startConfigReload initializes the configuration file reloader.

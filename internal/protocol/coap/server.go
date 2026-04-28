@@ -117,13 +117,6 @@ func (s *Server) readLoop() {
 		}
 		sess.RecordMessageID(msg.MessageID)
 
-		// Handle CON with ACK
-		if msg.Type == CON {
-			ack := NewACK(msg, CodeChanged, nil)
-			ackData, _ := ack.Serialize()
-			_ = sess.Send(ackData)
-		}
-
 		// Handle RST
 		if msg.Type == RST {
 			sess.ResetCON(msg.MessageID)
@@ -144,6 +137,13 @@ func (s *Server) readLoop() {
 			handlerMsg := types.NewRawMessage(sess.ID(), types.CoAP, payload)
 			_ = s.handler(sess, handlerMsg)
 		}
+
+		// ACK after successful processing
+		if msg.Type == CON {
+			ack := NewACK(msg, CodeChanged, nil)
+			ackData, _ := ack.Serialize()
+			_ = sess.Send(ackData)
+		}
 	}
 }
 
@@ -158,6 +158,8 @@ func (s *Server) retransmitLoop() {
 		case <-ticker.C:
 			s.sessions.Range(func(key, val any) bool {
 				sess := val.(*CoAPSession)
+				// Collect messages to resend under lock, then send outside lock.
+				var pending [][]byte
 				sess.mu.Lock()
 				for msgID, pm := range sess.pendingACKs {
 					if time.Since(pm.sendAt) > s.opts.AckTimeout*time.Duration(1<<pm.attempts) {
@@ -167,10 +169,13 @@ func (s *Server) retransmitLoop() {
 						}
 						pm.attempts++
 						pm.sendAt = time.Now()
-						_ = sess.Send(pm.msg)
+						pending = append(pending, pm.msg)
 					}
 				}
 				sess.mu.Unlock()
+				for _, msg := range pending {
+					_ = sess.Send(msg)
+				}
 				return true
 			})
 		case <-s.ctx.Done():
@@ -186,7 +191,7 @@ func (s *Server) getOrCreateSession(addr *net.UDPAddr) *CoAPSession {
 	}
 
 	id := s.idGen.Add(1)
-	sess := NewCoAPSession(id, s.conn, addr)
+	sess := NewCoAPSession(id, s.conn, addr, s.opts.MessageIDCacheSize)
 
 	actual, loaded := s.sessions.LoadOrStore(key, sess)
 	if loaded {

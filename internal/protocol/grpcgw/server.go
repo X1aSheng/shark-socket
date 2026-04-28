@@ -53,11 +53,24 @@ func NewServer(opts ...Option) *Server {
 	for _, opt := range opts {
 		opt(&o)
 	}
+	allowedOrigins := make(map[string]bool)
+	for _, origin := range o.AllowedOrigins {
+		allowedOrigins[origin] = true
+	}
 	return &Server{
-		opts:   o,
+		opts: o,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  4096,
 			WriteBufferSize: 4096,
+			CheckOrigin: func(r *stdhttp.Request) bool {
+				if len(allowedOrigins) == 0 {
+					return true
+				}
+				if allowedOrigins["*"] {
+					return true
+				}
+				return allowedOrigins[r.Header.Get("Origin")]
+			},
 		},
 	}
 }

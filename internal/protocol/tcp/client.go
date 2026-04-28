@@ -93,10 +93,10 @@ func (c *Client) sendWithReconnect(conn net.Conn, data []byte) error {
 	if reconnErr := c.Connect(); reconnErr != nil {
 		return reconnErr
 	}
-	c.mu.Lock()
-	conn = c.conn
-	c.mu.Unlock()
-	return c.framer.WriteFrame(conn, data)
+	if c.closed.Load() {
+		return errNotConnected
+	}
+	return c.Send(data)
 }
 
 // Receive reads a framed message.
@@ -104,7 +104,7 @@ func (c *Client) Receive() ([]byte, error) {
 	c.mu.Lock()
 	conn := c.conn
 	c.mu.Unlock()
-	if conn == nil {
+	if conn == nil || c.closed.Load() {
 		return nil, errNotConnected
 	}
 	return c.framer.ReadFrame(conn)

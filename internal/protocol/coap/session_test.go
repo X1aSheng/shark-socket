@@ -15,7 +15,7 @@ func TestNewCoAPSession(t *testing.T) {
 	defer conn.Close()
 
 	addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345}
-	sess := NewCoAPSession(1, conn, addr)
+	sess := NewCoAPSession(1, conn, addr, 500)
 
 	if sess.ID() != 1 {
 		t.Fatalf("ID() = %d, want 1", sess.ID())
@@ -161,7 +161,7 @@ func TestCoAPSession_Addr(t *testing.T) {
 	defer conn.Close()
 
 	addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 9999}
-	sess := NewCoAPSession(1, conn, addr)
+	sess := NewCoAPSession(1, conn, addr, 500)
 	if sess.Addr().Port != 9999 {
 		t.Fatalf("Addr().Port = %d, want 9999", sess.Addr().Port)
 	}
@@ -169,5 +169,5 @@ func TestCoAPSession_Addr(t *testing.T) {
 
 func newTestSession(conn *net.UDPConn) *CoAPSession {
 	addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345}
-	return NewCoAPSession(1, conn, addr)
+	return NewCoAPSession(1, conn, addr, 500)
 }
