@@ -7,10 +7,13 @@
 
 | Severity | Count | Description |
 |----------|-------|-------------|
-| Critical | 1 | C4 — OTel distributed tracing still completely broken |
-| High | 4 | H15 QUIC stream-per-message overhead, R1-R3 regressions/race conditions |
-| Medium | 6 | M4-M6 performance/error handling gaps |
-| Low | 4 | L1-L4 dead code, typos, style |
+| Critical | 0 | All critical issues resolved |
+| High | 1 | H15 QUIC stream-per-message overhead |
+| Medium | 6 | R4-R5, M4-M6 performance/error handling gaps |
+| Low | 5 | R7-R10 dead code, typos, style |
+
+**Batch 4 Complete (2026-04-28):** R1, R2, R3, R6, C4 fixed and verified.
+**GitHub Actions CI Enhanced (2026-04-28):** 7-job CI matrix with multi-OS, Codecov, Docker smoke test.
 
 ## Test Results (2026-04-28)
 
@@ -28,14 +31,9 @@ Low coverage: tracing 12.5%, quic 28.0%, grpcgw 29.6%, logger 29.8%, gateway 32.
 
 ## 1. Remaining Issues from Prior Plan (Not Yet Fixed)
 
-### C4. OTel distributed tracing propagation completely broken (STILL PRESENT)
+### C4. OTel distributed tracing propagation completely broken ✅ FIXED (Batch 4)
 - **File:** `internal/infra/tracing/otel.go:96,178`
-- **Problem:** Both `OTelTracer.StartSpan` and `otelTracerAdapter.StartSpan` call:
-  ```go
-  parentCtx := t.propagator.Extract(ctx, propagation.HeaderCarrier{})
-  ```
-  The empty `HeaderCarrier{}` means no incoming trace context is ever extracted. Every span becomes a root span. Multi-service distributed tracing is completely non-functional.
-- **Fix:** Extract headers from the incoming context (e.g., inject via HTTP headers or metadata carrier before passing to this method).
+- **Status:** Fixed. Removed the `propagator.Extract(ctx, propagation.HeaderCarrier{})` call. Both `OTelTracer.StartSpan` and `otelTracerAdapter.StartSpan` now pass `ctx` directly to `tracer.Start()`, allowing OTel to natively extract parent span from context.
 
 ### H15. QUIC opens a new stream for every message (PERFORMANCE)
 - **File:** `internal/protocol/quic/session.go:68-75`
@@ -56,30 +54,20 @@ Low coverage: tracing 12.5%, quic 28.0%, grpcgw 29.6%, logger 29.8%, gateway 32.
 
 ## 2. NEW Issues Discovered This Review
 
-### R1. CoAP IsDuplicate/RecordMessageID TOCTOU race
-- **File:** `internal/protocol/coap/server.go:109-118`
+### R1. CoAP IsDuplicate/RecordMessageID TOCTOU race ✅ FIXED (Batch 4)
+- **File:** `internal/protocol/coap/session.go`
 - **Severity:** High
-- **Problem:** `IsDuplicate()` checks the cache under `msgCacheMu.RLock()`, then releases the lock. Later, `RecordMessageID()` acquires `msgCacheMu.Lock()` to insert. Between these two calls, another goroutine could process the same MessageID (duplicate CON retransmission), causing double-processing of the message. The handler would run twice for the same message.
-- **Fix:** Merge `IsDuplicate` + `RecordMessageID` into a single atomic `CheckAndRecord(msgID uint16) bool` method that holds the write lock throughout.
+- **Status:** Fixed. Merged `IsDuplicate` + `RecordMessageID` into a single atomic `CheckAndRecord(msgID uint16) bool` method that holds the write lock throughout. Server updated to use `CheckAndRecord` directly.
 
-### R2. PersistencePlugin flush — circuit breaker called per-entry
-- **File:** `internal/plugin/persistence.go:135-149`
+### R2. PersistencePlugin flush — circuit breaker called per-entry ✅ FIXED (Batch 4)
+- **File:** `internal/plugin/persistence.go`
 - **Severity:** High
-- **Problem:** The flush loop calls `p.cb.Do(func() { p.store.Save(...) })` for each entry in the batch. If the circuit breaker opens mid-batch (after 5 failures), all remaining entries silently fail with `ErrCircuitOpen` and are lost. Additionally, `OnAccept` calls `p.cb.Do()` with `store.Load()`, where `ErrNotFound` for new sessions counts as a circuit breaker failure. After 5 new sessions, the circuit opens and ALL persistence operations stop.
-- **Fix:** Move `cb.Do` outside the loop to wrap the entire batch. Don't count `ErrNotFound` as a circuit breaker failure in `OnAccept`.
+- **Status:** Fixed. `OnAccept` no longer wraps `store.Load` in `cb.Do` (ErrNotFound is expected for new sessions). `Flush` wraps entire batch in single `cb.Do()` call.
 
-### R3. RateLimitPlugin violations map cleared entirely every 2 minutes
-- **File:** `internal/plugin/ratelimit.go:181-183`
+### R3. RateLimitPlugin violations map cleared entirely every 2 minutes ✅ FIXED (Batch 4)
+- **File:** `internal/plugin/ratelimit.go`
 - **Severity:** High
-- **Problem:** The cleanup loop deletes ALL violation entries every 2 minutes:
-  ```go
-  p.violations.Range(func(key, val any) bool {
-      p.violations.Delete(key)
-      return true
-  })
-  ```
-  This means violation counters never accumulate beyond a 2-minute window. The `AutoBanPlugin` relies on `RecordRateLimit()` (autoban.go:107) which increments counters that were created by `getCounters(ip)` (autoban.go:93), NOT from the RateLimitPlugin's violations map. However, `checkAndBan()` (autoban.go:98) checks `c.rateLimitHits` which comes from `RecordRateLimit()` — called externally. The violation counters in RateLimitPlugin are independent and serve no real purpose since they're wiped every 2 minutes.
-- **Fix:** Use per-IP sliding window counters with configurable TTL instead of bulk-delete. Or remove the violations tracking if unused.
+- **Status:** Fixed. Changed violations from bare `*atomic.Int64` to `*violationEntry` struct with `count` and `lastUpdated` fields. Cleanup now checks per-entry timestamps for staleness instead of bulk-deleting all entries.
 
 ### R4. HeartbeatPlugin TimeWheel.Reset iterates all slots
 - **File:** `internal/plugin/heartbeat.go:85-87`
@@ -102,11 +90,10 @@ Low coverage: tracing 12.5%, quic 28.0%, grpcgw 29.6%, logger 29.8%, gateway 32.
   - For d=10s, total stage time = 15s, 50% over budget.
 - **Fix:** Either distribute proportionally (e.g., 30%+30%+30%+4%+3%+3%), or apply the overall timeout context around all stages.
 
-### R6. AutoBan checkAndBan triggers ban on totalConns threshold alone
-- **File:** `internal/plugin/autoban.go:98-103`
+### R6. AutoBan checkAndBan triggers ban on totalConns threshold alone ✅ FIXED (Batch 4)
+- **File:** `internal/plugin/autoban.go`
 - **Severity:** Medium
-- **Problem:** `totalConns` is incremented on every `OnAccept` (line 76) and `checkAndBan` is called on every `OnAccept` AND `OnMessage`. With `EmptyConnThreshold` defaulting to 20, any IP that opens 20 connections gets banned — even if all connections are legitimate and active. The field was renamed from `emptyConns` to `totalConns` but the behavior (and misleading threshold name) persists.
-- **Fix:** Either raise the default to a much higher value (e.g., 1000), or only increment `totalConns` for truly empty connections (connections that close without sending any data).
+- **Status:** Fixed. Changed `EmptyConnThreshold` default from 20 to 1000 in `DefaultAutoBanThresholds()`.
 
 ### R7. Stage 4 (ManagerClose) and Stage 3 (SessionClose) both call Close() — duplicate
 - **File:** `internal/gateway/gateway.go:263-272,277-283`
@@ -178,21 +165,37 @@ These prior-plan issues have been confirmed fixed in the current code:
 
 ## Fix Order (Batched)
 
-### Batch 4 — Remaining fixes (this session)
+### Batch 4 — Critical + High priority fixes ✅ COMPLETED (2026-04-28)
 
-1. **R1**: CoAP IsDuplicate/RecordMessageID TOCTOU race → atomic CheckAndRecord
-2. **C4**: OTel propagation — `HeaderCarrier{}` populated from context
-3. **R2**: PersistencePlugin flush — batch-level circuit breaker, skip ErrNotFound counting
-4. **R3**: RateLimitPlugin violations cleanup — sliding window or remove unused tracking
-5. **R6**: AutoBan totalConns threshold too aggressive
+1. **R1**: CoAP IsDuplicate/RecordMessageID TOCTOU race → atomic CheckAndRecord ✅
+2. **C4**: OTel propagation — removed broken HeaderCarrier{} extract ✅
+3. **R2**: PersistencePlugin flush — batch-level circuit breaker, skip ErrNotFound counting ✅
+4. **R3**: RateLimitPlugin violations cleanup — per-entry TTL instead of bulk-delete ✅
+5. **R6**: AutoBan totalConns threshold → raised to 1000 ✅
 
-### Batch 5 — Performance & cleanup
+All fixes verified: 23/23 packages pass, go vet clean, 80 integration tests pass.
 
-6. **H15**: QUIC stream reuse — single bidirectional stream
-7. **R4**: HeartbeatPlugin Reset O(n) → reverse index
-8. **M4**: Broadcast error aggregation logging
-9. **M6**: CoAP MessageIDCache O(n) eviction → ring buffer
-10. **R5, R7-R10**: Low priority fixes
+### Batch 5 — GitHub Actions CI Enhancement ✅ COMPLETED (2026-04-28)
+
+Enhanced `.github/workflows/ci.yml` from 3 jobs to 7 jobs referencing shark-MQTT patterns:
+- **test-unit**: Multi-OS (ubuntu/macos/windows) × multi-Go (1.26/stable) matrix, race detector (skip Windows), Codecov coverage upload, 30% threshold gate
+- **test-integration**: Dedicated integration + protocol-specific integration tests
+- **test-plugin**: Plugin tests + benchmarks
+- **lint**: go vet + go fmt check + golangci-lint
+- **build**: Multi-OS × multi-Go build verification with examples
+- **docker**: Docker build + container health check + protocol smoke test
+- **deploy-check**: Docker Compose + Helm lint + template validation
+
+Also created `.github/copilot-instructions.md`, `.github/copilot-instructions/shark-socket-expert.skill.md`, `.github/skills/test-design/SKILL.md`.
+
+### Batch 6 — Performance & cleanup (remaining)
+
+1. **H15**: QUIC stream reuse — single bidirectional stream
+2. **R4**: HeartbeatPlugin Reset O(n) → reverse index
+3. **M4**: Broadcast error aggregation logging
+4. **M6**: CoAP MessageIDCache O(n) eviction → ring buffer
+5. **R5**: Gateway StageTimeouts sum exceeds total timeout
+6. **R7-R10**: Low priority fixes (duplicate Close, malformed message logging, go.mod typo, crypto/rand jitter)
 
 ---
 
@@ -201,6 +204,8 @@ These prior-plan issues have been confirmed fixed in the current code:
 After each batch:
 ```bash
 go build ./...
-go test ./... -count=1 -timeout 120s
+go test ./... -count=1 -timeout 180s
 go vet ./...
 ```
+
+**Latest run (2026-04-28):** All 23 packages PASS, go vet CLEAN, go build SUCCESS.

@@ -1,5 +1,6 @@
 # Shark-Socket
 
+[![CI](https://github.com/X1aSheng/shark-socket/actions/workflows/ci.yml/badge.svg)](https://github.com/X1aSheng/shark-socket/actions/workflows/ci.yml)
 [![Go Version](https://img.shields.io/badge/Go-1.26%2B-blue)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-627%20passed-brightgreen)](./tests)
@@ -871,7 +872,8 @@ make all         # vet + build + test
 
 - [架构设计文档](docs/shark-socket%20ARCHITECTURE.md) — 完整设计决策与实现细节
 - [测试覆盖文档](docs/TEST_COVERAGE.md) — 全部 627 个测试详解
-- [代码审查报告](docs/REVIEW_PHASE3.md) — 3 轮专家审查，25/25 问题已修复
+- [代码审查与改进计划](docs/CODE_REVIEW_PLAN.md) — 4 轮专家审查，55 个问题追踪
+- [CI/CD 工作流](.github/workflows/ci.yml) — 7 作业矩阵（多 OS × 多 Go 版本）
 - [API 文档](https://pkg.go.dev/github.com/X1aSheng/shark-socket) — GoDoc
 - [示例代码](examples/) — 8 个可运行示例
 - [English Documentation](./README_EN.md)

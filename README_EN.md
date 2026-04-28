@@ -1,5 +1,6 @@
 # Shark-Socket
 
+[![CI](https://github.com/X1aSheng/shark-socket/actions/workflows/ci.yml/badge.svg)](https://github.com/X1aSheng/shark-socket/actions/workflows/ci.yml)
 [![Go Version](https://img.shields.io/badge/Go-1.26%2B-blue)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-627%20passed-brightgreen)](./tests)
@@ -573,7 +574,8 @@ curl http://localhost:9091/metrics
 
 - [Architecture Design Document](docs/shark-socket%20ARCHITECTURE.md) — Full design decisions and implementation details
 - [Test Coverage Document](docs/TEST_COVERAGE.md) — All 627 tests detailed
-- [Code Review Report](docs/REVIEW_PHASE3.md) — 3-round expert review, 25/25 issues resolved
+- [Code Review & Improvement Plan](docs/CODE_REVIEW_PLAN.md) — 4-round expert review, 55 issues tracked
+- [CI/CD Workflow](.github/workflows/ci.yml) — 7-job matrix (multi-OS × multi-Go)
 - [API Documentation](https://pkg.go.dev/github.com/X1aSheng/shark-socket)
 - [Example Code](examples/) — 8 runnable examples
 - [中文文档](./README.md)
