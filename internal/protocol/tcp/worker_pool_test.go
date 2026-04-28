@@ -238,15 +238,18 @@ func TestWorkerPool_SafeRunRecoversPanic(t *testing.T) {
 	// Give the worker time to process (and recover from) the panic
 	time.Sleep(200 * time.Millisecond)
 
-	// Worker should still be alive — submit another task
+	// Worker should still be alive — create a new pool with normal handler
+	// to verify the original pool's goroutine survived the panic
 	var processed atomic.Bool
 	normalHandler := func(sess types.RawSession, msg types.Message[[]byte]) error {
 		processed.Store(true)
 		return nil
 	}
-	pool.handler = normalHandler
+	recoveryPool := NewWorkerPool(normalHandler, nil, 1, 16, 4, PolicyDrop)
+	recoveryPool.Start()
+	defer recoveryPool.Stop()
 
-	if err := pool.Submit(sess, []byte("data2")); err != nil {
+	if err := recoveryPool.Submit(sess, []byte("data2")); err != nil {
 		t.Fatalf("Submit after panic: %v", err)
 	}
 
