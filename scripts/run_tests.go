@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -177,19 +178,23 @@ func goCapture(dir string, args []string, outFile string) {
 	cmd := exec.Command("go", args...)
 	cmd.Dir = dir
 	out, _ := cmd.CombinedOutput()
-	out = stripModulePrefix(out)
+	out = cleanOutput(out)
 	os.WriteFile(outFile, out, 0o644)
 }
 
-func stripModulePrefix(data []byte) []byte {
-	return []byte(strings.ReplaceAll(string(data), "github.com/X1aSheng/shark-socket/", ""))
+var reTimestamp = regexp.MustCompile(`(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3})\d*(?:Z|[+-]\d{2}:\d{2})`)
+
+func cleanOutput(data []byte) []byte {
+	s := strings.ReplaceAll(string(data), "github.com/X1aSheng/shark-socket/", "")
+	s = reTimestamp.ReplaceAllString(s, "$1")
+	return []byte(s)
 }
 
 func goOutput(dir string, args []string) ([]byte, error) {
 	cmd := exec.Command("go", args...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
-	return stripModulePrefix(out), err
+	return cleanOutput(out), err
 }
 
 func listLogs(dir, ts string) {

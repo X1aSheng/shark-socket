@@ -153,8 +153,12 @@ func parseFile(path string) error {
 	// Format start time
 	ts := "unknown"
 	if startTime != "" {
-		if t, err := time.Parse(time.RFC3339Nano, startTime); err == nil {
-			ts = t.Format("2006-01-02 15:04:05")
+		formats := []string{time.RFC3339Nano, "2006-01-02T15:04:05.000"}
+		for _, f := range formats {
+			if t, err := time.Parse(f, startTime); err == nil {
+				ts = t.Format("2006-01-02 15:04:05")
+				break
+			}
 		}
 	}
 

@@ -49,6 +49,7 @@ run_test() {
     cd "$PROJECT_DIR"
     go test "$@" -json -v -count=1 -timeout 300s > "$jsonfile" 2>&1 || true
     sed -i 's|github.com/X1aSheng/shark-socket/||g' "$jsonfile" 2>/dev/null || true
+    sed -i -E 's/([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3})[0-9]*(Z|[+-][0-9]{2}:[0-9]{2})/\1/g' "$jsonfile" 2>/dev/null || true
     go run scripts/parse_test_log.go "$jsonfile" > "$logfile" 2>/dev/null || true
 
     if [ -s "$logfile" ]; then
@@ -75,6 +76,7 @@ run_cover() {
     cd "$PROJECT_DIR"
     go test ./... -count=1 -cover -timeout 300s > "$logfile" 2>&1 || true
     sed -i 's|github.com/X1aSheng/shark-socket/||g' "$logfile" 2>/dev/null || true
+    sed -i -E 's/([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3})[0-9]*(Z|[+-][0-9]{2}:[0-9]{2})/\1/g' "$logfile" 2>/dev/null || true
     cat "$logfile"
 
     echo ""
