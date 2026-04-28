@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -293,13 +294,18 @@ func TestGateway_GracefulShutdown(t *testing.T) {
 func TestGateway_SharedManager(t *testing.T) {
 	var tcpIDs []uint64
 	var wsIDs []uint64
+	var idsMu sync.Mutex
 
 	tcpHandler := func(sess types.RawSession, msg types.RawMessage) error {
+		idsMu.Lock()
 		tcpIDs = append(tcpIDs, sess.ID())
+		idsMu.Unlock()
 		return nil
 	}
 	wsHandler := func(sess types.RawSession, msg types.RawMessage) error {
+		idsMu.Lock()
 		wsIDs = append(wsIDs, sess.ID())
+		idsMu.Unlock()
 		return nil
 	}
 
@@ -353,14 +359,27 @@ func TestGateway_SharedManager(t *testing.T) {
 	wsConn.ReadMessage()
 
 	// Both should have session IDs and they should be different
-	if len(tcpIDs) == 0 || len(wsIDs) == 0 {
+	idsMu.Lock()
+	tcpLen := len(tcpIDs)
+	wsLen := len(wsIDs)
+	tcpID := uint64(0)
+	wsID := uint64(0)
+	if tcpLen > 0 {
+		tcpID = tcpIDs[0]
+	}
+	if wsLen > 0 {
+		wsID = wsIDs[0]
+	}
+	idsMu.Unlock()
+
+	if tcpLen == 0 || wsLen == 0 {
 		t.Fatal("expected session IDs for both protocols")
 	}
-	if tcpIDs[0] == wsIDs[0] {
+	if tcpID == wsID {
 		t.Errorf("shared manager should produce unique IDs across protocols, got TCP=%d WS=%d",
-			tcpIDs[0], wsIDs[0])
+			tcpID, wsID)
 	}
-	t.Logf("TCP session ID=%d, WS session ID=%d", tcpIDs[0], wsIDs[0])
+	t.Logf("TCP session ID=%d, WS session ID=%d", tcpID, wsID)
 }
 
 // TestGateway_GracefulShutdownWithActiveConnections verifies that graceful

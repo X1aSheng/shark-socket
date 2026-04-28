@@ -58,13 +58,13 @@ func main() {
 		)
 		srv.HandleFunc("/hello", func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"message": "Hello from shark-socket gateway!",
 			})
 		})
 		srv.HandleFunc("/health", func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 		})
 		mustRegister(gw, srv, "HTTP")
 		registered++
