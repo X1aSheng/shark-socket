@@ -3,6 +3,7 @@ package defense
 import (
 	"errors"
 	"log"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -15,6 +16,7 @@ type OverloadProtector struct {
 	checkInterval time.Duration
 	stopCh       chan struct{}
 	sessions     func() int64
+	wg           sync.WaitGroup
 }
 
 // NewOverloadProtector creates a new overload protector.
@@ -30,10 +32,12 @@ func NewOverloadProtector(highWater, lowWater int64, sessions func() int64) *Ove
 
 // Start begins periodic resource monitoring.
 func (o *OverloadProtector) Start() {
+	o.wg.Add(1)
 	go o.checkLoop()
 }
 
 func (o *OverloadProtector) checkLoop() {
+	defer o.wg.Done()
 	ticker := time.NewTicker(o.checkInterval)
 	defer ticker.Stop()
 	for {
@@ -71,4 +75,7 @@ func (o *OverloadProtector) Guard() error {
 }
 
 // Stop stops the monitor.
-func (o *OverloadProtector) Stop() { close(o.stopCh) }
+func (o *OverloadProtector) Stop() {
+	close(o.stopCh)
+	o.wg.Wait()
+}

@@ -77,21 +77,26 @@ func (c *Client) connectWithRetry(attempt int) error {
 // Send writes a framed message. Auto-reconnects if enabled.
 func (c *Client) Send(data []byte) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.conn == nil {
+	conn := c.conn
+	c.mu.Unlock()
+	if conn == nil {
 		return errNotConnected
 	}
-	err := c.framer.WriteFrame(c.conn, data)
-	if err != nil && c.reconnect {
-		c.mu.Unlock()
-		reconnErr := c.Connect()
-		c.mu.Lock()
-		if reconnErr != nil {
-			return reconnErr
-		}
-		return c.framer.WriteFrame(c.conn, data)
+	return c.sendWithReconnect(conn, data)
+}
+
+func (c *Client) sendWithReconnect(conn net.Conn, data []byte) error {
+	err := c.framer.WriteFrame(conn, data)
+	if err == nil || !c.reconnect {
+		return err
 	}
-	return err
+	if reconnErr := c.Connect(); reconnErr != nil {
+		return reconnErr
+	}
+	c.mu.Lock()
+	conn = c.conn
+	c.mu.Unlock()
+	return c.framer.WriteFrame(conn, data)
 }
 
 // Receive reads a framed message.

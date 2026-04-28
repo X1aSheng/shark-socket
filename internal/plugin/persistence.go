@@ -1,9 +1,11 @@
 package plugin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/infra/circuitbreaker"
@@ -25,6 +27,7 @@ type PersistencePlugin struct {
 	batchSize    int
 	flushInterval time.Duration
 	stopCh       chan struct{}
+	wg           sync.WaitGroup
 }
 
 // PersistenceOption configures PersistencePlugin.
@@ -53,6 +56,7 @@ func NewPersistencePlugin(s store.Store, opts ...PersistenceOption) *Persistence
 	for _, opt := range opts {
 		opt(p)
 	}
+	p.wg.Add(1)
 	go p.batchWriter()
 	return p
 }
@@ -96,6 +100,7 @@ func (p *PersistencePlugin) OnClose(sess types.RawSession) {
 }
 
 func (p *PersistencePlugin) batchWriter() {
+	defer p.wg.Done()
 	batch := make([]*persistEntry, 0, 100)
 	ticker := time.NewTicker(p.flushInterval)
 	defer ticker.Stop()
@@ -128,8 +133,16 @@ func (p *PersistencePlugin) batchWriter() {
 }
 
 func (p *PersistencePlugin) flush(batch []*persistEntry) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
 	for _, entry := range batch {
-		data, _ := json.Marshal(entry)
+		buf.Reset()
+		if err := enc.Encode(entry); err != nil {
+			continue
+		}
+		// Copy before handing off to the goroutine.
+		data := make([]byte, buf.Len())
+		copy(data, buf.Bytes())
 		_ = p.cb.Do(func() error {
 			return p.store.Save(context.TODO(), sessionKey(entry.SessionID), data)
 		})
@@ -143,6 +156,7 @@ func sessionKey(id uint64) string {
 // Close stops the batch writer.
 func (p *PersistencePlugin) Close() {
 	close(p.stopCh)
+	p.wg.Wait()
 }
 
 // IsCircuitOpen checks if the persistence circuit breaker is open.

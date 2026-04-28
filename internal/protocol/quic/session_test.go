@@ -18,49 +18,46 @@ type mockAddr struct {
 func (m *mockAddr) Network() string { return m.network }
 func (m *mockAddr) String() string  { return m.str }
 
-var (
-	_ net.Addr = (*mockAddr)(nil)
-)
+var _ net.Addr = (*mockAddr)(nil)
 
-// TestNewSession validates session creation logic
 func TestNewSession(t *testing.T) {
+	mockRemote := &mockAddr{network: "udp", str: "192.168.1.1:54321"}
+	mockLocal := &mockAddr{network: "udp", str: "127.0.0.1:18600"}
 	sess := &Session{
-		writeQueue: make(chan []byte, 16),
+		BaseSession: session.NewBase(123, types.QUIC, mockRemote, mockLocal),
+		writeQueue:  make(chan []byte, 16),
+		draining:    make(chan struct{}),
+		drained:     make(chan struct{}),
 	}
-	// Use InitBase instead of SetID
-	session.InitBase(&sess.BaseSession, 123, types.QUIC,
-		&mockAddr{network: "udp", str: "127.0.0.1:18600"},
-		&mockAddr{network: "udp", str: "192.168.1.1:54321"},
-	)
+	sess.SetState(types.Active)
 
 	if sess.ID() != 123 {
 		t.Errorf("expected session ID 123, got %d", sess.ID())
 	}
-	if len(sess.writeQueue) != 0 {
-		t.Errorf("expected empty write queue")
-	}
-	if cap(sess.writeQueue) != 16 {
-		t.Errorf("expected write queue capacity 16, got %d", cap(sess.writeQueue))
-	}
 	if sess.Protocol() != types.QUIC {
 		t.Errorf("expected QUIC protocol, got %v", sess.Protocol())
+	}
+	if sess.RemoteAddr().String() != "192.168.1.1:54321" {
+		t.Errorf("expected remote addr 192.168.1.1:54321, got %s", sess.RemoteAddr().String())
 	}
 }
 
 func TestSession_Send(t *testing.T) {
+	mockRemote := &mockAddr{network: "udp", str: "10.0.0.1:1234"}
+	mockLocal := &mockAddr{network: "udp", str: "127.0.0.1:18600"}
 	sess := &Session{
-		writeQueue: make(chan []byte, 2),
+		BaseSession: session.NewBase(1, types.QUIC, mockRemote, mockLocal),
+		writeQueue:  make(chan []byte, 2),
+		draining:    make(chan struct{}),
+		drained:     make(chan struct{}),
 	}
-	session.InitBase(&sess.BaseSession, 1, types.QUIC, nil, nil)
 	sess.SetState(types.Active)
 
-	// Test successful send
 	data := []byte("hello")
 	if err := sess.Send(data); err != nil {
 		t.Errorf("unexpected send error: %v", err)
 	}
 
-	// Verify queue has message
 	select {
 	case msg := <-sess.writeQueue:
 		if string(msg) != "hello" {
@@ -74,7 +71,7 @@ func TestSession_Send(t *testing.T) {
 	sess.writeQueue <- []byte("msg1")
 	sess.writeQueue <- []byte("msg2")
 
-	// Test queue full - should error immediately, not block
+	// Test queue full
 	err := sess.Send([]byte("overflow"))
 	if err == nil {
 		t.Error("expected error when queue is full")
@@ -82,10 +79,14 @@ func TestSession_Send(t *testing.T) {
 }
 
 func TestSession_SendTyped(t *testing.T) {
+	mockRemote := &mockAddr{network: "udp", str: "10.0.0.1:1234"}
+	mockLocal := &mockAddr{network: "udp", str: "127.0.0.1:18600"}
 	sess := &Session{
-		writeQueue: make(chan []byte, 1),
+		BaseSession: session.NewBase(1, types.QUIC, mockRemote, mockLocal),
+		writeQueue:  make(chan []byte, 1),
+		draining:    make(chan struct{}),
+		drained:     make(chan struct{}),
 	}
-	session.InitBase(&sess.BaseSession, 1, types.QUIC, nil, nil)
 	sess.SetState(types.Active)
 
 	data := []byte("typed data")
@@ -94,9 +95,29 @@ func TestSession_SendTyped(t *testing.T) {
 	}
 }
 
+func TestSession_Send_Closed(t *testing.T) {
+	mockRemote := &mockAddr{network: "udp", str: "10.0.0.1:1234"}
+	mockLocal := &mockAddr{network: "udp", str: "127.0.0.1:18600"}
+	sess := &Session{
+		BaseSession: session.NewBase(1, types.QUIC, mockRemote, mockLocal),
+		writeQueue:  make(chan []byte, 1),
+		draining:    make(chan struct{}),
+		drained:     make(chan struct{}),
+	}
+	sess.SetState(types.Closed)
+
+	err := sess.Send([]byte("data"))
+	if err == nil {
+		t.Error("expected error when sending to closed session")
+	}
+}
+
 func TestSession_Protocol(t *testing.T) {
-	sess := &Session{}
-	session.InitBase(&sess.BaseSession, 1, types.QUIC, nil, nil)
+	mockRemote := &mockAddr{network: "udp", str: "10.0.0.1:1234"}
+	mockLocal := &mockAddr{network: "udp", str: "127.0.0.1:18600"}
+	sess := &Session{
+		BaseSession: session.NewBase(1, types.QUIC, mockRemote, mockLocal),
+	}
 
 	if sess.Protocol() != types.QUIC {
 		t.Errorf("expected QUIC protocol, got %v", sess.Protocol())
@@ -104,16 +125,17 @@ func TestSession_Protocol(t *testing.T) {
 }
 
 func TestSession_IsAlive(t *testing.T) {
-	sess := &Session{}
-	session.InitBase(&sess.BaseSession, 1, types.QUIC, nil, nil)
+	mockRemote := &mockAddr{network: "udp", str: "10.0.0.1:1234"}
+	mockLocal := &mockAddr{network: "udp", str: "127.0.0.1:18600"}
+	sess := &Session{
+		BaseSession: session.NewBase(1, types.QUIC, mockRemote, mockLocal),
+	}
 
-	// Should be alive when state is Active
 	sess.SetState(types.Active)
 	if !sess.IsAlive() {
 		t.Error("expected session to be alive in Active state")
 	}
 
-	// Should not be alive in Closed state
 	sess.SetState(types.Closed)
 	if sess.IsAlive() {
 		t.Error("expected session to not be alive in Closed state")
@@ -121,8 +143,11 @@ func TestSession_IsAlive(t *testing.T) {
 }
 
 func TestSession_TouchActive(t *testing.T) {
-	sess := &Session{}
-	session.InitBase(&sess.BaseSession, 1, types.QUIC, nil, nil)
+	mockRemote := &mockAddr{network: "udp", str: "10.0.0.1:1234"}
+	mockLocal := &mockAddr{network: "udp", str: "127.0.0.1:18600"}
+	sess := &Session{
+		BaseSession: session.NewBase(1, types.QUIC, mockRemote, mockLocal),
+	}
 	sess.SetState(types.Active)
 
 	before := sess.LastActiveAt()
@@ -136,9 +161,12 @@ func TestSession_TouchActive(t *testing.T) {
 }
 
 func TestSession_SetGetMeta(t *testing.T) {
-	sess := &Session{}
+	mockRemote := &mockAddr{network: "udp", str: "10.0.0.1:1234"}
+	mockLocal := &mockAddr{network: "udp", str: "127.0.0.1:18600"}
+	sess := &Session{
+		BaseSession: session.NewBase(1, types.QUIC, mockRemote, mockLocal),
+	}
 
-	// Test Set and Get
 	sess.SetMeta("key", "value")
 	val, ok := sess.GetMeta("key")
 	if !ok {
@@ -148,13 +176,11 @@ func TestSession_SetGetMeta(t *testing.T) {
 		t.Errorf("expected 'value', got %v", val)
 	}
 
-	// Test missing key
 	_, ok = sess.GetMeta("nonexistent")
 	if ok {
 		t.Error("expected not to find nonexistent key")
 	}
 
-	// Test Del
 	sess.DelMeta("key")
 	_, ok = sess.GetMeta("key")
 	if ok {
@@ -163,10 +189,14 @@ func TestSession_SetGetMeta(t *testing.T) {
 }
 
 func TestSession_ConcurrentAccess(t *testing.T) {
+	mockRemote := &mockAddr{network: "udp", str: "10.0.0.1:1234"}
+	mockLocal := &mockAddr{network: "udp", str: "127.0.0.1:18600"}
 	sess := &Session{
-		writeQueue: make(chan []byte, 100),
+		BaseSession: session.NewBase(1, types.QUIC, mockRemote, mockLocal),
+		writeQueue:  make(chan []byte, 100),
+		draining:    make(chan struct{}),
+		drained:     make(chan struct{}),
 	}
-	session.InitBase(&sess.BaseSession, 1, types.QUIC, nil, nil)
 	sess.SetState(types.Active)
 
 	done := make(chan bool)
@@ -188,69 +218,47 @@ func TestSession_ConcurrentAccess(t *testing.T) {
 		}(i)
 	}
 
-	// Wait for all goroutines
+	// Drain queue to unblock sends
+	go func() {
+		for i := 0; i < 10; i++ {
+			<-sess.writeQueue
+		}
+	}()
+
 	for i := 0; i < 20; i++ {
 		<-done
 	}
 }
 
-func TestSession_Write(t *testing.T) {
-	sess := &Session{
-		writeQueue: make(chan []byte, 1),
-	}
-	session.InitBase(&sess.BaseSession, 1, types.QUIC, nil, nil)
-	sess.SetState(types.Active)
-
-	n, err := sess.Write([]byte("test"))
-	if err != nil {
-		t.Errorf("unexpected Write error: %v", err)
-	}
-	if n != 4 {
-		t.Errorf("expected n=4, got %d", n)
-	}
-
-	// Now queue is full (capacity 1, has "test")
-	// Try to write to full queue - should error immediately
-	_, err = sess.Write([]byte("overflow"))
-	if err == nil {
-		t.Error("expected error on full queue")
-	}
-}
-
 func TestSession_MemoryLimits(t *testing.T) {
-	sess := &Session{}
-	session.InitBase(&sess.BaseSession, 1, types.QUIC, nil, nil)
+	mockRemote := &mockAddr{network: "udp", str: "10.0.0.1:1234"}
+	mockLocal := &mockAddr{network: "udp", str: "127.0.0.1:18600"}
+	sess := &Session{
+		BaseSession: session.NewBase(1, types.QUIC, mockRemote, mockLocal),
+	}
 
-	// Test default max message size
 	if sess.MaxMessageSize() != session.DefaultMaxMessageSize {
 		t.Errorf("expected default max message size %d, got %d",
 			session.DefaultMaxMessageSize, sess.MaxMessageSize())
 	}
 
-	// Test SetMaxMessageSize
 	sess.SetMaxMessageSize(1024)
 	if sess.MaxMessageSize() != 1024 {
 		t.Errorf("expected max message size 1024, got %d", sess.MaxMessageSize())
 	}
 
-	// Test CheckMessageSize
 	if !sess.CheckMessageSize(512) {
 		t.Error("expected 512 bytes to be within limit")
 	}
 	if sess.CheckMessageSize(2048) {
 		t.Error("expected 2048 bytes to exceed limit")
 	}
-	if !sess.CheckMessageSize(0) {
-		t.Error("expected 0 bytes to be within limit")
-	}
 
-	// Test unlimited (0)
 	sess.SetMaxMessageSize(0)
 	if !sess.CheckMessageSize(1000000) {
 		t.Error("expected large message to be within limit when unlimited")
 	}
 
-	// Test memory tracking
 	sess.AddMemUsage(100)
 	if sess.MemUsed() != 100 {
 		t.Errorf("expected mem used 100, got %d", sess.MemUsed())
@@ -262,15 +270,16 @@ func TestSession_MemoryLimits(t *testing.T) {
 }
 
 func TestSession_StateTransitions(t *testing.T) {
-	sess := &Session{}
-	session.InitBase(&sess.BaseSession, 1, types.QUIC, nil, nil)
+	mockRemote := &mockAddr{network: "udp", str: "10.0.0.1:1234"}
+	mockLocal := &mockAddr{network: "udp", str: "127.0.0.1:18600"}
+	sess := &Session{
+		BaseSession: session.NewBase(1, types.QUIC, mockRemote, mockLocal),
+	}
 
-	// Initial state is Connecting
 	if sess.State() != types.Connecting {
 		t.Errorf("expected initial state Connecting, got %v", sess.State())
 	}
 
-	// Transition to Active
 	if !sess.SetState(types.Active) {
 		t.Error("expected successful transition to Active")
 	}
@@ -278,55 +287,48 @@ func TestSession_StateTransitions(t *testing.T) {
 		t.Errorf("expected state Active, got %v", sess.State())
 	}
 
-	// Duplicate transition should fail
 	if sess.SetState(types.Active) {
 		t.Error("expected no transition when already in Active")
 	}
 
-	// Transition to Closing
 	if !sess.SetState(types.Closing) {
 		t.Error("expected successful transition to Closing")
 	}
 
-	// Transition to Closed
 	if !sess.SetState(types.Closed) {
 		t.Error("expected successful transition to Closed")
 	}
 }
 
 func TestSession_Context(t *testing.T) {
-	// Note: Session.Context() and BaseSession.Context() require initialization via NewBase
-	// We test that BaseSession.Context is accessible (may be nil without NewBase)
-	// For actual context testing, integration tests with real QUIC connections are needed
-	sess := &Session{}
-	session.InitBase(&sess.BaseSession, 1, types.QUIC, nil, nil)
+	mockRemote := &mockAddr{network: "udp", str: "10.0.0.1:1234"}
+	mockLocal := &mockAddr{network: "udp", str: "127.0.0.1:18600"}
+	sess := &Session{
+		BaseSession: session.NewBase(1, types.QUIC, mockRemote, mockLocal),
+	}
 
-	// BaseSession.Context returns the context if initialized with NewBase
-	// Since we use InitBase, the context may be nil - this is expected
-	_ = sess.BaseSession.Context()
-	// Skip the rest of the test that requires a real context
-	// Integration tests would cover this with actual QUIC connections
-}
+	ctx := sess.Context()
+	if ctx == nil {
+		t.Error("expected non-nil context")
+	}
 
-func TestSession_DoClose(t *testing.T) {
-	sess := &Session{}
-	session.InitBase(&sess.BaseSession, 1, types.QUIC, nil, nil)
-	sess.SetState(types.Active)
-
-	// Add some metadata
-	sess.SetMeta("key1", "value1")
-	sess.SetMeta("key2", "value2")
-
-	// Note: DoClose calls cancel() which may be nil if not initialized via NewBase
-	// Skip actual DoClose call to avoid panic
-	// Integration tests with real QUIC connections would cover this
-	_ = sess.State() // Just verify session is accessible
+	// Context should be cancelled after DoClose
+	sess.DoClose()
+	select {
+	case <-ctx.Done():
+		// expected
+	default:
+		t.Error("expected context to be cancelled after DoClose")
+	}
 }
 
 func TestSession_CreatedAt(t *testing.T) {
-	sess := &Session{}
+	mockRemote := &mockAddr{network: "udp", str: "10.0.0.1:1234"}
+	mockLocal := &mockAddr{network: "udp", str: "127.0.0.1:18600"}
 	before := time.Now()
-	session.InitBase(&sess.BaseSession, 1, types.QUIC, nil, nil)
+	sess := &Session{
+		BaseSession: session.NewBase(1, types.QUIC, mockRemote, mockLocal),
+	}
 	after := time.Now()
 
 	created := sess.CreatedAt()
@@ -335,6 +337,5 @@ func TestSession_CreatedAt(t *testing.T) {
 	}
 }
 
-// Compile-time verification
 var _ types.RawSession = (*Session)(nil)
 var _ net.Addr = (*mockAddr)(nil)

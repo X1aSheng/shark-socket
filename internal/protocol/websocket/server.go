@@ -31,7 +31,6 @@ type Server struct {
 	handler  types.RawHandler
 	wg       sync.WaitGroup
 	closed   atomic.Bool
-	idGen    atomic.Uint64
 }
 
 // Compile-time verification.
@@ -55,6 +54,9 @@ func NewServer(handler types.RawHandler, opts ...Option) *Server {
 			WriteBufferSize: 4096,
 			CheckOrigin: func(r *stdhttp.Request) bool {
 				if len(allowedOrigins) == 0 {
+					return false
+				}
+				if allowedOrigins["*"] {
 					return true
 				}
 				return allowedOrigins[r.Header.Get("Origin")]
@@ -69,7 +71,9 @@ func (s *Server) Start() error {
 		return err
 	}
 
-	s.manager = session.NewManager(session.WithMaxSessions(s.opts.MaxSessions))
+	if s.manager == nil {
+		s.manager = session.NewManager(session.WithMaxSessions(s.opts.MaxSessions))
+	}
 
 	if len(s.opts.Plugins) > 0 {
 		s.chain = plugin.NewChain(s.opts.Plugins...)
@@ -128,7 +132,7 @@ func (s *Server) handleUpgrade(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		return
 	}
 
-	id := s.idGen.Add(1)
+	id := s.manager.NextID()
 	sess := NewWSSession(id, conn)
 
 	if err := s.manager.Register(sess); err != nil {
@@ -287,6 +291,11 @@ func (s *Server) Addr() net.Addr {
 		return nil
 	}
 	return s.listener.Addr()
+}
+
+// SetManager sets the session manager from outside (e.g., from Gateway).
+func (s *Server) SetManager(m *session.Manager) {
+	s.manager = m
 }
 
 // Manager returns the session manager.

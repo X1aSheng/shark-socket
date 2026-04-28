@@ -76,6 +76,7 @@ func TestMultiProtocol_AllProtocols(t *testing.T) {
 		wsproto.WithAddr("127.0.0.1", 0),
 		wsproto.WithPath("/ws"),
 		wsproto.WithPingPong(60*time.Second, 30*time.Second),
+		wsproto.WithAllowedOrigins("*"),
 	)
 
 	gw := gateway.New(gateway.WithMetricsEnabled(false))

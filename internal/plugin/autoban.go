@@ -39,6 +39,7 @@ type AutoBanPlugin struct {
 	thresholds AutoBanThresholds
 	counters  sync.Map // string -> *ipCounters
 	stopCh    chan struct{}
+	wg        sync.WaitGroup
 }
 
 // NewAutoBanPlugin creates a new auto-ban plugin.
@@ -51,6 +52,7 @@ func NewAutoBanPlugin(blacklist *BlacklistPlugin, opts ...AutoBanOption) *AutoBa
 	for _, opt := range opts {
 		opt(p)
 	}
+	p.wg.Add(1)
 	go p.resetLoop()
 	return p
 }
@@ -111,6 +113,7 @@ func (p *AutoBanPlugin) RecordProtocolError(ip string) {
 }
 
 func (p *AutoBanPlugin) resetLoop() {
+	defer p.wg.Done()
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for {
@@ -127,4 +130,7 @@ func (p *AutoBanPlugin) resetLoop() {
 }
 
 // Close stops the reset goroutine.
-func (p *AutoBanPlugin) Close() { close(p.stopCh) }
+func (p *AutoBanPlugin) Close() {
+	close(p.stopCh)
+	p.wg.Wait()
+}

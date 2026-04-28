@@ -16,6 +16,7 @@ type TimeWheel struct {
 	size    int
 	done    chan struct{}
 	onTimeout func(uint64)
+	wg      sync.WaitGroup
 }
 
 // NewTimeWheel creates a time wheel with the given tick interval and number of slots.
@@ -30,11 +31,13 @@ func NewTimeWheel(tickInterval time.Duration, slots int, onTimeout func(uint64))
 	for i := range tw.slots {
 		tw.slots[i] = make(map[uint64]time.Time)
 	}
+	tw.wg.Add(1)
 	go tw.tickLoop()
 	return tw
 }
 
 func (tw *TimeWheel) tickLoop() {
+	defer tw.wg.Done()
 	ticker := time.NewTicker(tw.tickInterval)
 	defer ticker.Stop()
 	for {
@@ -106,7 +109,10 @@ func (tw *TimeWheel) slotFor(timeout time.Duration) int {
 }
 
 // Stop stops the time wheel goroutine.
-func (tw *TimeWheel) Stop() { close(tw.done) }
+func (tw *TimeWheel) Stop() {
+	close(tw.done)
+	tw.wg.Wait()
+}
 
 // HeartbeatPlugin detects idle sessions using a time wheel.
 type HeartbeatPlugin struct {

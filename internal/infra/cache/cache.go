@@ -77,19 +77,26 @@ func (c *MemoryCache) cleanExpired() {
 }
 
 func (c *MemoryCache) Get(_ context.Context, key string) ([]byte, error) {
-	c.mu.Lock()
+	c.mu.RLock()
 	e, ok := c.entries[key]
 	if !ok {
-		c.mu.Unlock()
+		c.mu.RUnlock()
 		return nil, ErrCacheMiss
 	}
-	if e.isExpired() {
+	if !e.isExpired() {
+		data := e.data
+		c.mu.RUnlock()
+		return data, nil
+	}
+	c.mu.RUnlock()
+
+	// Expired — acquire write lock for deletion.
+	c.mu.Lock()
+	if e, ok := c.entries[key]; ok && e.isExpired() {
 		delete(c.entries, key)
-		c.mu.Unlock()
-		return nil, ErrCacheMiss
 	}
 	c.mu.Unlock()
-	return e.data, nil
+	return nil, ErrCacheMiss
 }
 
 func (c *MemoryCache) Set(_ context.Context, key string, val []byte, ttl time.Duration) error {

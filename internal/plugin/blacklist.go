@@ -26,6 +26,7 @@ type BlacklistPlugin struct {
 	cidrList []net.IPNet
 	extCache cache.Cache
 	stopCh   chan struct{}
+	wg       sync.WaitGroup
 }
 
 // NewBlacklistPlugin creates a new BlacklistPlugin with optional initial IPs.
@@ -37,6 +38,7 @@ func NewBlacklistPlugin(ips ...string) *BlacklistPlugin {
 	for _, ip := range ips {
 		p.Add(ip, 0)
 	}
+	p.wg.Add(1)
 	go p.cleanupLoop()
 	return p
 }
@@ -132,6 +134,7 @@ func (p *BlacklistPlugin) isBlocked(key string) bool {
 }
 
 func (p *BlacklistPlugin) cleanupLoop() {
+	defer p.wg.Done()
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for {
@@ -151,7 +154,8 @@ func (p *BlacklistPlugin) cleanupLoop() {
 	}
 }
 
-// Close stops the background cleanup goroutine.
+// Close stops the background cleanup goroutine and waits for it to exit.
 func (p *BlacklistPlugin) Close() {
 	close(p.stopCh)
+	p.wg.Wait()
 }

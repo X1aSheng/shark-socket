@@ -30,6 +30,7 @@ func NewSlowQueryPlugin(cfg SlowQueryConfig) *SlowQueryPlugin {
 	if cfg.Threshold == 0 {
 		cfg.Threshold = 100 * time.Millisecond
 	}
+	SlowQueryThreshold = cfg.Threshold
 	return &SlowQueryPlugin{
 		cfg: cfg,
 	}
@@ -41,24 +42,47 @@ func (p *SlowQueryPlugin) Name() string { return "slow-query" }
 // Priority returns -10 so it runs early in the chain.
 func (p *SlowQueryPlugin) Priority() int { return -10 }
 
-// OnAccept logs slow accept events.
+const slowQueryStartKey = "slow_query_start"
+
+// OnAccept records the session start time for slow query detection.
 func (p *SlowQueryPlugin) OnAccept(sess types.RawSession) error {
+	if p.cfg.Enabled {
+		sess.SetMeta(slowQueryStartKey, time.Now())
+	}
 	return nil
 }
 
-// OnMessage logs slow message processing.
+// OnMessage records a per-message timestamp for idle detection.
 func (p *SlowQueryPlugin) OnMessage(sess types.RawSession, data []byte) ([]byte, error) {
-	if !p.cfg.Enabled {
-		return data, nil
+	if p.cfg.Enabled {
+		sess.SetMeta(slowQueryStartKey, time.Now())
 	}
-	// This plugin measures total message processing time in the chain
-	// Use SlowQueryThreshold from chain.go for consistency
 	return data, nil
 }
 
-// SetThreshold updates the slow query threshold.
+// OnClose calculates total session duration and logs if it exceeds the threshold.
+func (p *SlowQueryPlugin) OnClose(sess types.RawSession) {
+	if !p.cfg.Enabled {
+		return
+	}
+	start, ok := sess.GetMeta(slowQueryStartKey)
+	if !ok {
+		return
+	}
+	startTime, ok := start.(time.Time)
+	if !ok {
+		return
+	}
+	elapsed := time.Since(startTime)
+	if elapsed > p.cfg.Threshold {
+		p.LogSlow(sess, elapsed, 0)
+	}
+}
+
+// SetThreshold updates the slow query threshold for both the plugin and the chain.
 func (p *SlowQueryPlugin) SetThreshold(d time.Duration) {
 	p.cfg.Threshold = d
+	SlowQueryThreshold = d
 }
 
 // IsSlowQuery returns true if the given duration exceeds the threshold.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"reflect"
 	"sync"
 	"time"
 )
@@ -78,8 +79,9 @@ func loadJSONFile(path string, target any) (any, error) {
 		return nil, err
 	}
 
-	// Handle both pointer and non-pointer targets
-	dst := target
+	// Create a fresh instance of the same type so each reload is independent.
+	v := reflect.New(reflect.TypeOf(target).Elem())
+	dst := v.Interface()
 	if err := json.Unmarshal(data, dst); err != nil {
 		return nil, err
 	}
@@ -126,10 +128,12 @@ func (r *FileReloader) Reload() error {
 	}
 
 	r.mu.Lock()
+	oldConfig := r.config
+	changed := !reflect.DeepEqual(oldConfig, newConfig)
 	r.config = newConfig
 	r.mu.Unlock()
 
-	if r.onReload != nil {
+	if changed && r.onReload != nil {
 		r.onReload(newConfig)
 	}
 	return nil

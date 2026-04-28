@@ -121,16 +121,15 @@ func (ps *ChannelPubSub) Subscribe(_ context.Context, topic string, handler func
 
 func (ps *ChannelPubSub) unsubscribe(topic string, key subKey) {
 	ps.mu.Lock()
-	defer ps.mu.Unlock()
 	subs := ps.subscribers[topic]
 	if key.idx >= len(subs) {
+		ps.mu.Unlock()
 		return
 	}
 	sub := subs[key.idx]
 	ps.subscribers[topic] = append(subs[:key.idx], subs[key.idx+1:]...)
 	ps.mu.Unlock()
 	sub.stop()
-	ps.mu.Lock()
 }
 
 // Close shuts down the PubSub, rejecting further operations.

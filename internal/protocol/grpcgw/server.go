@@ -40,7 +40,6 @@ type Server struct {
 	upgrader  websocket.Upgrader
 	wg        sync.WaitGroup
 	closed    atomic.Bool
-	idGen     atomic.Uint64
 	// serveHTTP is reserved for enabling plain HTTP health checks
 	_         bool
 }
@@ -69,7 +68,9 @@ func (s *Server) Start() error {
 		return err
 	}
 
-	s.manager = session.NewManager(session.WithMaxSessions(s.opts.MaxSessions))
+	if s.manager == nil {
+		s.manager = session.NewManager(session.WithMaxSessions(s.opts.MaxSessions))
+	}
 
 	if len(s.opts.Plugins) > 0 {
 		s.chain = plugin.NewChain(s.opts.Plugins...)
@@ -155,6 +156,11 @@ func (s *Server) Addr() net.Addr {
 	return s.listener.Addr()
 }
 
+// SetManager sets the session manager from outside (e.g., from Gateway).
+func (s *Server) SetManager(m *session.Manager) {
+	s.manager = m
+}
+
 // Manager returns the session manager.
 func (s *Server) Manager() *session.Manager { return s.manager }
 
@@ -180,7 +186,7 @@ func (s *Server) handleWebSocketMode(w stdhttp.ResponseWriter, r *stdhttp.Reques
 	}
 	defer conn.Close()
 
-	id := s.idGen.Add(1)
+	id := s.manager.NextID()
 	sess := newGRPCWebSession(id, conn)
 
 	if err := s.manager.Register(sess); err != nil {
@@ -212,7 +218,7 @@ func (s *Server) handleDirectMode(w stdhttp.ResponseWriter, r *stdhttp.Request, 
 		return
 	}
 
-	id := s.idGen.Add(1)
+	id := s.manager.NextID()
 	sess := newGRPCWebSessionDirect(id, r)
 
 	if s.chain != nil {

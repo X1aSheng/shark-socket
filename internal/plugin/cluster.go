@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/errs"
@@ -21,6 +22,7 @@ type ClusterPlugin struct {
 	heartbeatTTL time.Duration
 	manager      func() types.SessionManager
 	stopCh       chan struct{}
+	wg           sync.WaitGroup
 }
 
 // ClusterOption configures ClusterPlugin.
@@ -50,6 +52,7 @@ func NewClusterPlugin(nodeID string, ps pubsub.PubSub, c cache.Cache, mgr func()
 	for _, opt := range opts {
 		opt(p)
 	}
+	p.wg.Add(2)
 	go p.heartbeatLoop()
 	go p.routeSubscribe()
 	return p
@@ -111,6 +114,7 @@ func (p *ClusterPlugin) Route(targetID uint64, data []byte) error {
 }
 
 func (p *ClusterPlugin) heartbeatLoop() {
+	defer p.wg.Done()
 	ticker := time.NewTicker(p.heartbeatTTL / 2)
 	defer ticker.Stop()
 	for {
@@ -129,6 +133,7 @@ func (p *ClusterPlugin) heartbeatLoop() {
 }
 
 func (p *ClusterPlugin) routeSubscribe() {
+	defer p.wg.Done()
 	_, _ = p.pubsub.Subscribe(context.Background(), "node."+p.nodeID+".route", func(msg []byte) {
 		var routeMsg struct {
 			TargetID uint64 `json:"target_id"`
@@ -147,4 +152,7 @@ func (p *ClusterPlugin) routeSubscribe() {
 }
 
 // Close stops the cluster plugin goroutines.
-func (p *ClusterPlugin) Close() { close(p.stopCh) }
+func (p *ClusterPlugin) Close() {
+	close(p.stopCh)
+	p.wg.Wait()
+}

@@ -45,6 +45,7 @@ func TestIntegration_WS_Echo(t *testing.T) {
 		WithAddr("127.0.0.1", port),
 		WithPath("/ws"),
 		WithPingPong(60*time.Second, 30*time.Second),
+		WithAllowedOrigins("*"),
 	)
 
 	if err := srv.Start(); err != nil {
@@ -120,6 +121,7 @@ func TestIntegration_WS_TextEcho(t *testing.T) {
 		WithAddr("127.0.0.1", port),
 		WithPath("/echo"),
 		WithPingPong(60*time.Second, 30*time.Second),
+		WithAllowedOrigins("*"),
 	)
 
 	if err := srv.Start(); err != nil {
@@ -176,6 +178,7 @@ func TestIntegration_WS_MultipleMessages(t *testing.T) {
 		WithAddr("127.0.0.1", port),
 		WithPath("/ws"),
 		WithPingPong(60*time.Second, 30*time.Second),
+		WithAllowedOrigins("*"),
 	)
 
 	if err := srv.Start(); err != nil {

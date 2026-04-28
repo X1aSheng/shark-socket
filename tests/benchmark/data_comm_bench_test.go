@@ -514,6 +514,7 @@ func BenchmarkWSEcho(b *testing.B) {
 		wsproto.WithAddr("127.0.0.1", 0),
 		wsproto.WithPath("/ws"),
 		wsproto.WithMaxMessageSize(65536),
+		wsproto.WithAllowedOrigins("*"),
 	)
 	if err := srv.Start(); err != nil {
 		b.Fatalf("Start: %v", err)
@@ -584,6 +585,7 @@ func BenchmarkWSEcho_MultiSize(b *testing.B) {
 				wsproto.WithAddr("127.0.0.1", 0),
 				wsproto.WithPath("/ws"),
 				wsproto.WithMaxMessageSize(sz.size+1024),
+				wsproto.WithAllowedOrigins("*"),
 			)
 			if err := srv.Start(); err != nil {
 				b.Fatalf("Start: %v", err)
@@ -643,6 +645,7 @@ func BenchmarkWSEcho_Parallel(b *testing.B) {
 		wsproto.WithPath("/ws"),
 		wsproto.WithMaxMessageSize(4096),
 		wsproto.WithMaxSessions(1000),
+		wsproto.WithAllowedOrigins("*"),
 	)
 	if err := srv.Start(); err != nil {
 		b.Fatalf("Start: %v", err)
@@ -831,6 +834,7 @@ func BenchmarkGateway_MultiProtocol(b *testing.B) {
 		wsproto.WithAddr("127.0.0.1", 0),
 		wsproto.WithPath("/ws"),
 		wsproto.WithMaxMessageSize(8192),
+		wsproto.WithAllowedOrigins("*"),
 	)
 
 	httpSrv := httpproto.NewServer(httpproto.WithAddr("127.0.0.1", 0))

@@ -11,42 +11,47 @@ import (
 )
 
 type tokenBucket struct {
-	tokens    atomic.Int64
-	lastFill  atomic.Int64
-	rate      float64
-	maxBurst  int64
-	lastUsed  atomic.Int64
+	mu       sync.Mutex
+	tokens   atomic.Int64
+	lastFill time.Time // protected by mu
+	rate     float64
+	maxBurst int64
+	lastUsed atomic.Int64
 }
 
 func newTokenBucket(rate float64, burst int64) *tokenBucket {
-	now := time.Now().UnixNano()
+	now := time.Now()
 	tb := &tokenBucket{
 		rate:     rate,
 		maxBurst: burst,
+		lastFill: now,
 	}
 	tb.tokens.Store(burst)
-	tb.lastFill.Store(now)
-	tb.lastUsed.Store(now)
+	tb.lastUsed.Store(now.UnixNano())
 	return tb
 }
 
 func (tb *tokenBucket) allow() bool {
-	now := time.Now().UnixNano()
-	last := tb.lastFill.Load()
-	elapsed := float64(now-last) / float64(time.Second)
+	now := time.Now()
+
+	// Refill under mutex to prevent concurrent replenishment from exceeding maxBurst.
+	tb.mu.Lock()
+	elapsed := now.Sub(tb.lastFill).Seconds()
 	if elapsed > 0 {
 		newTokens := int64(elapsed * tb.rate)
 		if newTokens > 0 {
-			current := tb.tokens.Load()
-			refilled := current + newTokens
+			refilled := tb.tokens.Load() + newTokens
 			if refilled > tb.maxBurst {
 				refilled = tb.maxBurst
 			}
 			tb.tokens.Store(refilled)
-			tb.lastFill.Store(now)
+			tb.lastFill = now
 		}
 	}
-	tb.lastUsed.Store(now)
+	tb.mu.Unlock()
+
+	tb.lastUsed.Store(now.UnixNano())
+
 	for {
 		current := tb.tokens.Load()
 		if current <= 0 {
@@ -67,6 +72,7 @@ type RateLimitPlugin struct {
 	msgRate      float64
 	msgBurst     float64
 	stopCh       chan struct{}
+	wg           sync.WaitGroup
 
 	violations sync.Map // string -> *atomic.Int64
 }
@@ -92,6 +98,7 @@ func NewRateLimitPlugin(rate, burst float64, opts ...RateLimitOption) *RateLimit
 	for _, opt := range opts {
 		opt(p)
 	}
+	p.wg.Add(1)
 	go p.cleanupLoop()
 	return p
 }
@@ -128,13 +135,15 @@ func (p *RateLimitPlugin) OnMessage(sess types.RawSession, data []byte) ([]byte,
 func (p *RateLimitPlugin) OnClose(types.RawSession) {}
 
 func (p *RateLimitPlugin) getPerIPBucket(key string) *tokenBucket {
-	val, ok := p.perIPBuckets.Load(key)
-	if ok {
+	if val, ok := p.perIPBuckets.Load(key); ok {
 		return val.(*tokenBucket)
 	}
 	tb := newTokenBucket(p.msgRate, int64(p.msgBurst))
-	actual, _ := p.perIPBuckets.LoadOrStore(key, tb)
-	return actual.(*tokenBucket)
+	actual, loaded := p.perIPBuckets.LoadOrStore(key, tb)
+	if loaded {
+		return actual.(*tokenBucket)
+	}
+	return tb
 }
 
 func (p *RateLimitPlugin) recordViolation(sess types.RawSession) {
@@ -154,6 +163,7 @@ func (p *RateLimitPlugin) GetViolations(ip string) int64 {
 }
 
 func (p *RateLimitPlugin) cleanupLoop() {
+	defer p.wg.Done()
 	ticker := time.NewTicker(2 * time.Minute)
 	defer ticker.Stop()
 	for {
@@ -178,5 +188,8 @@ func (p *RateLimitPlugin) cleanupLoop() {
 	}
 }
 
-// Close stops the cleanup goroutine.
-func (p *RateLimitPlugin) Close() { close(p.stopCh) }
+// Close stops the cleanup goroutine and waits for it to exit.
+func (p *RateLimitPlugin) Close() {
+	close(p.stopCh)
+	p.wg.Wait()
+}

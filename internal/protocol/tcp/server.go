@@ -71,7 +71,9 @@ func (s *Server) Start() error {
 	}
 	s.listener = ln
 
-	s.manager = session.NewManager(session.WithMaxSessions(s.opts.MaxSessions))
+	if s.manager == nil {
+		s.manager = session.NewManager(session.WithMaxSessions(s.opts.MaxSessions))
+	}
 
 	if len(s.opts.Plugins) > 0 {
 		s.chain = plugin.NewChain(s.opts.Plugins...)
@@ -241,6 +243,11 @@ func (s *Server) Addr() net.Addr {
 		return nil
 	}
 	return s.listener.Addr()
+}
+
+// SetManager sets the session manager from outside (e.g., from Gateway).
+func (s *Server) SetManager(m *session.Manager) {
+	s.manager = m
 }
 
 // Manager returns the session manager.

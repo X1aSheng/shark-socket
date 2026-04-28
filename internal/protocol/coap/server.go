@@ -188,15 +188,21 @@ func (s *Server) getOrCreateSession(addr *net.UDPAddr) *CoAPSession {
 	id := s.idGen.Add(1)
 	sess := NewCoAPSession(id, s.conn, addr)
 
+	actual, loaded := s.sessions.LoadOrStore(key, sess)
+	if loaded {
+		sess.Close()
+		return actual.(*CoAPSession)
+	}
+
 	if s.chain != nil {
 		if err := s.chain.OnAccept(sess); err != nil {
+			s.sessions.Delete(key)
 			sess.Close()
 			return nil
 		}
 	}
 
-	actual, _ := s.sessions.LoadOrStore(key, sess)
-	return actual.(*CoAPSession)
+	return sess
 }
 
 // Stop shuts down the CoAP server.

@@ -148,15 +148,21 @@ func (s *Server) getOrCreateSession(addr *net.UDPAddr) *UDPSession {
 	id := s.idGen.Add(1)
 	sess := NewUDPSession(id, s.conn, addr)
 
+	actual, loaded := s.sessions.LoadOrStore(key, sess)
+	if loaded {
+		sess.Close()
+		return actual.(*UDPSession)
+	}
+
 	if s.chain != nil {
 		if err := s.chain.OnAccept(sess); err != nil {
+			s.sessions.Delete(key)
 			sess.Close()
 			return nil
 		}
 	}
 
-	actual, _ := s.sessions.LoadOrStore(key, sess)
-	return actual.(*UDPSession)
+	return sess
 }
 
 // Stop shuts down the UDP server.

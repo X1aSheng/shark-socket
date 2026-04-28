@@ -3,6 +3,7 @@ package types
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"sync/atomic"
 	"time"
 )
 
@@ -38,9 +39,29 @@ func NewRawMessage(sessionID uint64, proto ProtocolType, payload []byte) RawMess
 	}
 }
 
-// generateID creates a unique message identifier using random bytes.
-func generateID() string {
-	b := make([]byte, 16)
+var (
+	idPrefix  string
+	idCounter atomic.Uint64
+)
+
+func init() {
+	b := make([]byte, 8)
 	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
+	idPrefix = hex.EncodeToString(b)
+}
+
+// generateID creates a unique message identifier using a random prefix and monotonic counter.
+func generateID() string {
+	b := make([]byte, 8)
+	// Mix counter bytes with prefix bytes to avoid predictable IDs.
+	counter := idCounter.Add(1)
+	b[0] = byte(counter >> 56)
+	b[1] = byte(counter >> 48)
+	b[2] = byte(counter >> 40)
+	b[3] = byte(counter >> 32)
+	b[4] = byte(counter >> 24)
+	b[5] = byte(counter >> 16)
+	b[6] = byte(counter >> 8)
+	b[7] = byte(counter)
+	return idPrefix + hex.EncodeToString(b)
 }

@@ -216,45 +216,32 @@ func (s *Server) handleWithSession(w stdhttp.ResponseWriter, r *stdhttp.Request)
 
 	var body []byte
 	if r.Body != nil {
-		var reader io.Reader = r.Body
 		if s.opts.MaxBodySize > 0 {
-			reader = io.LimitReader(r.Body, s.opts.MaxBodySize+1)
+			r.Body = stdhttp.MaxBytesReader(w, r.Body, s.opts.MaxBodySize)
 		}
-		var readErr error
-		body, readErr = io.ReadAll(reader)
+		readBody, readErr := io.ReadAll(r.Body)
 		if readErr != nil {
+			status := stdhttp.StatusBadRequest
+			if _, ok := readErr.(*stdhttp.MaxBytesError); ok {
+				status = stdhttp.StatusRequestEntityTooLarge
+			}
 			if s.opts.AccessLogger != nil {
 				host, _, _ := splitHostPort(r.RemoteAddr)
 				s.opts.AccessLogger.Log(logger.AccessLogEntry{
 					Protocol:   "http",
 					Method:     r.Method,
 					Path:       r.URL.Path,
-					StatusCode: 400,
+					StatusCode: status,
 					Duration:   time.Since(start),
 					ClientIP:   host,
 					UserAgent:  r.UserAgent(),
 					Error:      readErr,
 				})
 			}
-			stdhttp.Error(w, "Bad Request", stdhttp.StatusBadRequest)
+			stdhttp.Error(w, stdhttp.StatusText(status), status)
 			return
 		}
-		if s.opts.MaxBodySize > 0 && int64(len(body)) > s.opts.MaxBodySize {
-			if s.opts.AccessLogger != nil {
-				host, _, _ := splitHostPort(r.RemoteAddr)
-				s.opts.AccessLogger.Log(logger.AccessLogEntry{
-					Protocol:   "http",
-					Method:     r.Method,
-					Path:       r.URL.Path,
-					StatusCode: 413,
-					Duration:   time.Since(start),
-					ClientIP:   host,
-					UserAgent:  r.UserAgent(),
-				})
-			}
-			stdhttp.Error(w, "Request body too large", stdhttp.StatusRequestEntityTooLarge)
-			return
-		}
+		body = readBody
 	}
 
 		if s.chain != nil && len(body) > 0 {

@@ -459,6 +459,7 @@ func TestWebSocket_EchoIntegrity(t *testing.T) {
 		wsproto.WithAddr("127.0.0.1", 0),
 		wsproto.WithPath("/ws"),
 		wsproto.WithMaxMessageSize(65536),
+		wsproto.WithAllowedOrigins("*"),
 	)
 
 	gw := gateway.New(gateway.WithMetricsEnabled(false))
@@ -527,6 +528,7 @@ func TestWebSocket_MultiClientConcurrent(t *testing.T) {
 		wsproto.WithPath("/ws"),
 		wsproto.WithMaxMessageSize(4096),
 		wsproto.WithMaxSessions(100),
+		wsproto.WithAllowedOrigins("*"),
 	)
 
 	gw := gateway.New(gateway.WithMetricsEnabled(false))
@@ -834,6 +836,7 @@ func TestGateway_CrossProtocolCommunication(t *testing.T) {
 		wsproto.WithAddr("127.0.0.1", 0),
 		wsproto.WithPath("/ws"),
 		wsproto.WithMaxMessageSize(8192),
+		wsproto.WithAllowedOrigins("*"),
 	)
 
 	httpSrv := httpproto.NewServer(httpproto.WithAddr("127.0.0.1", 0))
@@ -981,6 +984,7 @@ func TestGateway_CrossProtocolStress(t *testing.T) {
 		wsproto.WithPath("/ws"),
 		wsproto.WithMaxMessageSize(4096),
 		wsproto.WithMaxSessions(50),
+		wsproto.WithAllowedOrigins("*"),
 	)
 
 	httpSrv := httpproto.NewServer(httpproto.WithAddr("127.0.0.1", 0))

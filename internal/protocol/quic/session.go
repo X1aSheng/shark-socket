@@ -2,7 +2,7 @@ package quic
 
 import (
 	"context"
-	"net"
+	"sync"
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/errs"
@@ -13,23 +13,68 @@ import (
 
 // Session wraps a QUIC connection as a RawSession.
 type Session struct {
-	session.BaseSession
-	writeQueue chan []byte
+	*session.BaseSession
 	conn       *quic.Conn
+	writeQueue chan []byte
+	draining   chan struct{}
+	drained    chan struct{}
+	closeOnce  sync.Once
 }
 
 // newSession creates a new QUIC session.
 func newSession(id uint64, conn *quic.Conn, writeQueueSize int) *Session {
 	sess := &Session{
-		conn:       conn,
-		writeQueue: make(chan []byte, writeQueueSize),
+		BaseSession: session.NewBase(id, types.QUIC, conn.RemoteAddr(), conn.LocalAddr()),
+		conn:        conn,
+		writeQueue:  make(chan []byte, writeQueueSize),
+		draining:    make(chan struct{}),
+		drained:     make(chan struct{}),
 	}
-	session.InitBase(&sess.BaseSession, id, types.QUIC, conn.LocalAddr(), conn.RemoteAddr())
 	sess.SetState(types.Active)
 	return sess
 }
 
-// Send sends a message.
+// startWriteLoop drains the writeQueue and opens a unidirectional stream for each message.
+func (s *Session) startWriteLoop() {
+	go func() {
+		defer close(s.drained)
+		for {
+			select {
+			case data, ok := <-s.writeQueue:
+				if !ok {
+					return
+				}
+				s.writeToStream(data)
+			case <-s.draining:
+				// Drain remaining items
+				for {
+					select {
+					case data, ok := <-s.writeQueue:
+						if !ok {
+							return
+						}
+						s.writeToStream(data)
+					default:
+						return
+					}
+				}
+			case <-s.BaseSession.Context().Done():
+				return
+			}
+		}
+	}()
+}
+
+func (s *Session) writeToStream(data []byte) {
+	str, err := s.conn.OpenStreamSync(s.BaseSession.Context())
+	if err != nil {
+		return
+	}
+	defer str.Close()
+	_, _ = str.Write(data)
+}
+
+// Send enqueues data for writing on a new QUIC stream.
 func (s *Session) Send(data []byte) error {
 	if !s.IsAlive() {
 		return errs.ErrSessionClosed
@@ -42,40 +87,31 @@ func (s *Session) Send(data []byte) error {
 	}
 }
 
-// SendTyped sends a typed message.
-func (s *Session) SendTyped(data []byte) error {
-	return s.Send(data)
+// SendTyped encodes and sends a typed message.
+func (s *Session) SendTyped(msg []byte) error {
+	return s.Send(msg)
 }
 
 // Close closes the session.
 func (s *Session) Close() error {
-	s.DoClose()
-	return s.conn.CloseWithError(0, "closed")
+	var closeErr error
+	s.closeOnce.Do(func() {
+		s.SetState(types.Closing)
+		close(s.draining)
+		select {
+		case <-s.drained:
+		case <-time.After(5 * time.Second):
+		}
+		s.SetState(types.Closed)
+		s.DoClose()
+		closeErr = s.conn.CloseWithError(0, "closed")
+	})
+	return closeErr
 }
 
-// RemoteAddr returns the peer's address.
-func (s *Session) RemoteAddr() net.Addr {
-	return s.conn.RemoteAddr()
-}
-
-// LocalAddr returns the local address.
-func (s *Session) LocalAddr() net.Addr {
-	return s.conn.LocalAddr()
-}
-
-// Context returns the connection's context.
+// Context returns the BaseSession's context.
 func (s *Session) Context() context.Context {
-	return s.conn.Context()
-}
-
-// Write writes to the stream.
-func (s *Session) Write(data []byte) (int, error) {
-	select {
-	case s.writeQueue <- data:
-		return len(data), nil
-	default:
-		return 0, errs.ErrWriteQueueFull
-	}
+	return s.BaseSession.Context()
 }
 
 // Conn returns the underlying QUIC connection.
@@ -83,20 +119,5 @@ func (s *Session) Conn() any {
 	return s.conn
 }
 
-// SetDeadline sets read/write deadlines.
-func (s *Session) SetDeadline(t time.Time) error {
-	return s.conn.CloseWithError(0, "")
-}
-
-// SetReadDeadline sets the read deadline.
-func (s *Session) SetReadDeadline(t time.Time) error {
-	return s.conn.CloseWithError(0, "")
-}
-
-// SetWriteDeadline sets the write deadline.
-func (s *Session) SetWriteDeadline(t time.Time) error {
-	return s.conn.CloseWithError(0, "")
-}
-
-// Compile-time verification that Session implements types.RawSession.
+// Compile-time verification.
 var _ types.RawSession = (*Session)(nil)

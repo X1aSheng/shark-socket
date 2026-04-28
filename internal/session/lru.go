@@ -9,12 +9,12 @@ type lruNode struct {
 }
 
 // LRUList is a doubly-linked list with O(1) Touch/Remove and O(n) Evict.
+// All methods are NOT thread-safe; callers must hold the shard lock.
 type LRUList struct {
 	head     *lruNode
 	tail     *lruNode
 	index    map[uint64]*lruNode
 	nodePool sync.Pool
-	mu       sync.Mutex
 }
 
 // NewLRUList creates a new LRU list.
@@ -83,11 +83,9 @@ func (l *LRUList) Len() int {
 
 // Stop clears the list.
 func (l *LRUList) Stop() {
-	l.mu.Lock()
 	l.head = nil
 	l.tail = nil
 	l.index = make(map[uint64]*lruNode)
-	l.mu.Unlock()
 }
 
 func (l *LRUList) detach(node *lruNode) {

@@ -78,6 +78,13 @@ func (g *Gateway) Start() error {
 	g.sharedManager = session.NewManager(session.WithMaxSessions(1000000))
 	g.startTime.Store(time.Now())
 
+	// Inject sharedManager into protocol servers that support it
+	for _, srv := range snapshot {
+		if ms, ok := any(srv).(interface{ SetManager(*session.Manager) }); ok {
+			ms.SetManager(g.sharedManager)
+		}
+	}
+
 	// Start config hot reload if configured
 	if g.opts.ConfigPath != "" {
 		if err := g.startConfigReload(); err != nil {

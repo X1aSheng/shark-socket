@@ -151,9 +151,7 @@ func (bp *BufferPool) Put(buf *Buffer) {
 	}
 
 	// Zero sensitive data
-	for i := range buf.data {
-		buf.data[i] = 0
-	}
+	clear(buf.data)
 	buf.data = buf.data[:buf.cap_]
 
 	// Check total memory cap

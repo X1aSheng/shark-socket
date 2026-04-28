@@ -13,6 +13,8 @@ type ConnectionLimiter struct {
 	rate     int           // max connections per window
 	window   time.Duration // time window
 	cleanupInterval time.Duration
+	stopCh   chan struct{}
+	wg       sync.WaitGroup
 }
 
 // ipCount tracks connection count for an IP.
@@ -29,7 +31,9 @@ func NewConnectionLimiter(rate int, window time.Duration) *ConnectionLimiter {
 		rate:   rate,
 		window: window,
 		cleanupInterval: window * 2,
+		stopCh: make(chan struct{}),
 	}
+	cl.wg.Add(1)
 	go cl.cleanupLoop()
 	return cl
 }
@@ -140,11 +144,17 @@ func (c *ConnectionLimiter) Reset() {
 }
 
 func (c *ConnectionLimiter) cleanupLoop() {
+	defer c.wg.Done()
 	ticker := time.NewTicker(c.cleanupInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		c.cleanup()
+	for {
+		select {
+		case <-ticker.C:
+			c.cleanup()
+		case <-c.stopCh:
+			return
+		}
 	}
 }
 
@@ -158,4 +168,10 @@ func (c *ConnectionLimiter) cleanup() {
 			delete(c.counts, ip)
 		}
 	}
+}
+
+// Close stops the cleanup goroutine and waits for it to exit.
+func (c *ConnectionLimiter) Close() {
+	close(c.stopCh)
+	c.wg.Wait()
 }

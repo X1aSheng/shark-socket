@@ -23,7 +23,6 @@ type Server struct {
 	manager *session.Manager
 	wg      sync.WaitGroup
 	closed  atomic.Bool
-	idGen   atomic.Uint64
 }
 
 // Compile-time verification.
@@ -35,18 +34,20 @@ func NewServer(handler types.RawHandler, opts ...Option) *Server {
 	for _, opt := range opts {
 		opt(&o)
 	}
-	srv := &Server{
+	return &Server{
 		opts:    o,
 		handler: handler,
 	}
-	srv.manager = session.NewManager()
-	return srv
 }
 
 // Start begins serving QUIC.
 func (s *Server) Start() error {
 	if err := s.opts.validate(); err != nil {
 		return err
+	}
+
+	if s.manager == nil {
+		s.manager = session.NewManager()
 	}
 
 	if len(s.opts.Plugins) > 0 {
@@ -87,29 +88,32 @@ func (s *Server) acceptLoop() {
 func (s *Server) handleConn(conn any) {
 	defer s.wg.Done()
 
-	id := s.idGen.Add(1)
-	sess := newSession(id, conn.(*quic.Conn), s.opts.WriteQueueSize)
+	id := s.manager.NextID()
+	qconn := conn.(*quic.Conn)
+	sess := newSession(id, qconn, s.opts.WriteQueueSize)
 
 	if err := s.manager.Register(sess); err != nil {
-		_ = conn.(*quic.Conn).CloseWithError(0, "session limit exceeded")
+		_ = qconn.CloseWithError(0, "session limit exceeded")
 		return
 	}
 
 	if s.chain != nil {
 		if err := s.chain.OnAccept(sess); err != nil {
 			s.manager.Unregister(id)
-			_ = conn.(*quic.Conn).CloseWithError(0, "rejected")
+			_ = qconn.CloseWithError(0, "rejected")
 			return
 		}
 	}
 
+	sess.startWriteLoop()
+
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		s.handleStreams(conn.(*quic.Conn), sess)
+		s.handleStreams(qconn, sess)
 	}()
 
-	<-conn.(*quic.Conn).Context().Done()
+	<-sess.Context().Done()
 
 	s.manager.Unregister(id)
 	if s.chain != nil {
@@ -197,6 +201,16 @@ func (s *Server) Addr() net.Addr {
 		return nil
 	}
 	return s.listener.Addr()
+}
+
+// SetManager sets the session manager from outside (e.g., from Gateway).
+func (s *Server) SetManager(m *session.Manager) {
+	s.manager = m
+}
+
+// Manager returns the session manager.
+func (s *Server) Manager() *session.Manager {
+	return s.manager
 }
 
 // SetHandler sets the raw handler.

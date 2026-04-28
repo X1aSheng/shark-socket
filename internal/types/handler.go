@@ -14,10 +14,3 @@ type Server interface {
 	Stop(ctx context.Context) error
 	Protocol() ProtocolType
 }
-
-// TypedServer is a generic server interface preserving compile-time type information.
-type TypedServer[M MessageConstraint] interface {
-	Start() error
-	Stop(ctx context.Context) error
-	Handler() MessageHandler[M]
-}
