@@ -95,10 +95,8 @@ func (cb *CircuitBreaker) onFailure() {
 			cb.openAt.Store(time.Now().UnixNano())
 		}
 	}
-	if State(cb.state.Load()) == HalfOpen {
-		cb.state.Store(int32(Open))
-		cb.openAt.Store(time.Now().UnixNano())
-	}
+	// HalfOpen → Open must use CAS to avoid overwriting a concurrent Closed transition.
+	cb.state.CompareAndSwap(int32(HalfOpen), int32(Open))
 }
 
 // Failures returns the current consecutive failure count.

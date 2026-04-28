@@ -3,7 +3,7 @@ package types
 import "context"
 
 // MessageHandler is a function type that processes messages.
-type MessageHandler[T any] func(sess Session[T], msg Message[T]) error
+type MessageHandler[T MessageConstraint] func(sess Session[T], msg Message[T]) error
 
 // RawHandler is the most common handler type alias.
 type RawHandler = MessageHandler[[]byte]

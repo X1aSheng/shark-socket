@@ -21,9 +21,9 @@ type TLSReloader struct {
 
 	cert atomic.Pointer[tls.Certificate]
 
-	mu     sync.Mutex
-	reload chan struct{}
-	done   chan struct{}
+	reload    chan struct{}
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 // NewTLSReloader loads the initial certificate pair and prepares the reloader.
@@ -75,15 +75,9 @@ func (r *TLSReloader) ReloadChan() chan<- struct{} {
 }
 
 // Close stops the reload watcher goroutine.
+// Safe to call multiple times.
 func (r *TLSReloader) Close() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	select {
-	case <-r.done:
-		// already closed
-	default:
-		close(r.done)
-	}
+	r.closeOnce.Do(func() { close(r.done) })
 }
 
 // TLSConfig returns a *tls.Config suitable for tls.Listen that uses this

@@ -23,6 +23,7 @@ type ClusterPlugin struct {
 	manager      func() types.SessionManager
 	stopCh       chan struct{}
 	wg           sync.WaitGroup
+	routeSub     pubsub.Subscription
 }
 
 // ClusterOption configures ClusterPlugin.
@@ -134,7 +135,7 @@ func (p *ClusterPlugin) heartbeatLoop() {
 
 func (p *ClusterPlugin) routeSubscribe() {
 	defer p.wg.Done()
-	_, _ = p.pubsub.Subscribe(context.Background(), "node."+p.nodeID+".route", func(msg []byte) {
+	sub, err := p.pubsub.Subscribe(context.Background(), "node."+p.nodeID+".route", func(msg []byte) {
 		var routeMsg struct {
 			TargetID uint64 `json:"target_id"`
 			Payload  []byte `json:"payload"`
@@ -148,11 +149,18 @@ func (p *ClusterPlugin) routeSubscribe() {
 			}
 		}
 	})
+	if err != nil {
+		return
+	}
+	p.routeSub = sub
 	<-p.stopCh
 }
 
-// Close stops the cluster plugin goroutines.
+// Close stops the cluster plugin goroutines and unsubscribes.
 func (p *ClusterPlugin) Close() {
 	close(p.stopCh)
 	p.wg.Wait()
+	if p.routeSub != nil {
+		_ = p.routeSub.Unsubscribe()
+	}
 }

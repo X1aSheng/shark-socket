@@ -32,7 +32,8 @@ type BaseSession struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	meta sync.Map
+	meta     sync.Map
+	closeOnce sync.Once
 }
 
 // NewBase creates a new BaseSession in the Connecting state.
@@ -135,14 +136,16 @@ func (b *BaseSession) GetMeta(key string) (any, bool) { return b.meta.Load(key) 
 func (b *BaseSession) DelMeta(key string) { b.meta.Delete(key) }
 
 // DoClose performs the base close logic: set state to Closed, clear metadata, cancel context.
-// Should be called via sync.Once in the protocol-specific Close method.
+// Safe to call multiple times; idempotent.
 func (b *BaseSession) DoClose() {
-	b.SetState(types.Closed)
-	b.meta.Range(func(key, _ any) bool {
-		b.meta.Delete(key)
-		return true
+	b.closeOnce.Do(func() {
+		b.SetState(types.Closed)
+		b.meta.Range(func(key, _ any) bool {
+			b.meta.Delete(key)
+			return true
+		})
+		b.cancel()
 	})
-	b.cancel()
 }
 
 // SetMaxMessageSize sets the maximum message size for this session.

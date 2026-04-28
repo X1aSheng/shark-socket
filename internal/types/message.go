@@ -8,9 +8,9 @@ import (
 )
 
 // MessageConstraint is the generic type constraint for session type parameters.
-// Any type can be used as a message payload, including []byte (RawSession).
+// Covers common wire formats: raw bytes, UTF-8 text, numeric, and structured payloads.
 type MessageConstraint interface {
-	~[]byte | ~string | ~int | ~float64 | ~struct{} | any
+	~[]byte | ~string | ~int | ~float64
 }
 
 // Message is a generic message envelope.

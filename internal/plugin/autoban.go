@@ -12,7 +12,7 @@ import (
 type ipCounters struct {
 	rateLimitHits  atomic.Int64
 	protocolErrors atomic.Int64
-	emptyConns     atomic.Int64
+	totalConns     atomic.Int64
 }
 
 // AutoBanThresholds configures when an IP gets auto-banned.
@@ -72,7 +72,7 @@ func (p *AutoBanPlugin) OnAccept(sess types.RawSession) error {
 	ip := utils.ExtractIPFromAddr(sess.RemoteAddr())
 	key := utils.IPToKey(ip)
 	c := p.getCounters(key)
-	c.emptyConns.Add(1)
+	c.totalConns.Add(1)
 	p.checkAndBan(key, c)
 	return nil
 }
@@ -95,7 +95,7 @@ func (p *AutoBanPlugin) getCounters(key string) *ipCounters {
 func (p *AutoBanPlugin) checkAndBan(key string, c *ipCounters) {
 	if c.rateLimitHits.Load() >= p.thresholds.RateLimitThreshold ||
 		c.protocolErrors.Load() >= p.thresholds.ProtocolErrorThreshold ||
-		c.emptyConns.Load() >= p.thresholds.EmptyConnThreshold {
+		c.totalConns.Load() >= p.thresholds.EmptyConnThreshold {
 		p.blacklist.Add(key, p.thresholds.BanTTL)
 	}
 }

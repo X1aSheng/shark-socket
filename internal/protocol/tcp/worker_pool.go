@@ -100,6 +100,7 @@ func (wp *WorkerPool) Submit(sess types.RawSession, data []byte) error {
 		case wp.taskQueue <- t:
 			return nil
 		default:
+			_ = t.sess.Close()
 			return errs.ErrWriteQueueFull
 		}
 	default:

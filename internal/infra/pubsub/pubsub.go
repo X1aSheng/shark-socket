@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"sync"
+	"sync/atomic"
 )
 
 var ErrPubSubClosed = errors.New("pubsub: closed")
@@ -24,6 +25,7 @@ type PubSub interface {
 const subscriberBufSize = 256
 
 type subscriber struct {
+	id      uint64
 	handler func([]byte)
 	ch      chan []byte
 	done    chan struct{}
@@ -54,16 +56,11 @@ func (s *subscriber) stop() {
 type channelSubscription struct {
 	topic string
 	ps    *ChannelPubSub
-	key   subKey
-}
-
-type subKey struct {
-	topic string
-	idx   int
+	id    uint64
 }
 
 func (s *channelSubscription) Unsubscribe() error {
-	s.ps.unsubscribe(s.topic, s.key)
+	s.ps.unsubscribe(s.topic, s.id)
 	return nil
 }
 
@@ -72,14 +69,15 @@ func (s *channelSubscription) Topic() string { return s.topic }
 // ChannelPubSub implements PubSub using Go channels with fan-out goroutines.
 type ChannelPubSub struct {
 	mu          sync.RWMutex
-	subscribers map[string][]*subscriber
+	subscribers map[string]map[uint64]*subscriber
 	closed      bool
+	nextID      atomic.Uint64
 }
 
 // NewChannelPubSub creates a new channel-based PubSub.
 func NewChannelPubSub() *ChannelPubSub {
 	return &ChannelPubSub{
-		subscribers: make(map[string][]*subscriber),
+		subscribers: make(map[string]map[uint64]*subscriber),
 	}
 }
 
@@ -89,8 +87,10 @@ func (ps *ChannelPubSub) Publish(_ context.Context, topic string, data []byte) e
 		ps.mu.RUnlock()
 		return ErrPubSubClosed
 	}
-	subs := make([]*subscriber, len(ps.subscribers[topic]))
-	copy(subs, ps.subscribers[topic])
+	subs := make([]*subscriber, 0, len(ps.subscribers[topic]))
+	for _, sub := range ps.subscribers[topic] {
+		subs = append(subs, sub)
+	}
 	ps.mu.RUnlock()
 
 	for _, sub := range subs {
@@ -112,22 +112,29 @@ func (ps *ChannelPubSub) Subscribe(_ context.Context, topic string, handler func
 		return nil, ErrPubSubClosed
 	}
 
-	idx := len(ps.subscribers[topic])
 	sub := newSubscriber(handler)
-	ps.subscribers[topic] = append(ps.subscribers[topic], sub)
+	id := ps.nextID.Add(1)
+	sub.id = id
+	if ps.subscribers[topic] == nil {
+		ps.subscribers[topic] = make(map[uint64]*subscriber)
+	}
+	ps.subscribers[topic][id] = sub
 
-	return &channelSubscription{topic: topic, ps: ps, key: subKey{topic: topic, idx: idx}}, nil
+	return &channelSubscription{topic: topic, ps: ps, id: id}, nil
 }
 
-func (ps *ChannelPubSub) unsubscribe(topic string, key subKey) {
+func (ps *ChannelPubSub) unsubscribe(topic string, id uint64) {
 	ps.mu.Lock()
 	subs := ps.subscribers[topic]
-	if key.idx >= len(subs) {
+	sub, ok := subs[id]
+	if !ok {
 		ps.mu.Unlock()
 		return
 	}
-	sub := subs[key.idx]
-	ps.subscribers[topic] = append(subs[:key.idx], subs[key.idx+1:]...)
+	delete(subs, id)
+	if len(subs) == 0 {
+		delete(ps.subscribers, topic)
+	}
 	ps.mu.Unlock()
 	sub.stop()
 }
@@ -136,7 +143,7 @@ func (ps *ChannelPubSub) unsubscribe(topic string, key subKey) {
 func (ps *ChannelPubSub) Close() {
 	ps.mu.Lock()
 	allSubs := ps.subscribers
-	ps.subscribers = make(map[string][]*subscriber)
+	ps.subscribers = make(map[string]map[uint64]*subscriber)
 	ps.closed = true
 	ps.mu.Unlock()
 

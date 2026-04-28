@@ -26,8 +26,10 @@ func NewMemoryStore() *MemoryStore {
 }
 
 func (s *MemoryStore) Save(_ context.Context, key string, val []byte) error {
+	cp := make([]byte, len(val))
+	copy(cp, val)
 	s.mu.Lock()
-	s.data[key] = val
+	s.data[key] = cp
 	s.mu.Unlock()
 	return nil
 }
@@ -39,7 +41,9 @@ func (s *MemoryStore) Load(_ context.Context, key string) ([]byte, error) {
 	if !ok {
 		return nil, ErrNotFound
 	}
-	return val, nil
+	cp := make([]byte, len(val))
+	copy(cp, val)
+	return cp, nil
 }
 
 func (s *MemoryStore) Delete(_ context.Context, key string) error {

@@ -34,7 +34,7 @@ type (
 	Message[T any]                   = types.Message[T]
 	RawMessage                       = types.RawMessage
 	MessageConstraint                = types.MessageConstraint
-	MessageHandler[T any]            = types.MessageHandler[T]
+	MessageHandler[T types.MessageConstraint] = types.MessageHandler[T]
 	RawHandler                       = types.RawHandler
 	Server                           = types.Server
 	Plugin                           = types.Plugin

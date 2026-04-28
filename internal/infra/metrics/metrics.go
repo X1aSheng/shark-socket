@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -42,6 +43,7 @@ type Metrics interface {
 // PrometheusMetrics implements Metrics using Prometheus.
 type PrometheusMetrics struct {
 	reg        prometheus.Registerer
+	mu         sync.RWMutex
 	counters   map[string]*promCounterVec
 	gauges     map[string]*promGaugeVec
 	histograms map[string]*promHistogramVec
@@ -61,6 +63,14 @@ func NewPrometheusMetrics(reg prometheus.Registerer) *PrometheusMetrics {
 }
 
 func (m *PrometheusMetrics) Counter(name string, labels ...string) CounterVec {
+	m.mu.RLock()
+	if c, ok := m.counters[name]; ok {
+		m.mu.RUnlock()
+		return c
+	}
+	m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if c, ok := m.counters[name]; ok {
 		return c
 	}
@@ -71,6 +81,14 @@ func (m *PrometheusMetrics) Counter(name string, labels ...string) CounterVec {
 }
 
 func (m *PrometheusMetrics) Gauge(name string, labels ...string) GaugeVec {
+	m.mu.RLock()
+	if g, ok := m.gauges[name]; ok {
+		m.mu.RUnlock()
+		return g
+	}
+	m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if g, ok := m.gauges[name]; ok {
 		return g
 	}
@@ -81,6 +99,14 @@ func (m *PrometheusMetrics) Gauge(name string, labels ...string) GaugeVec {
 }
 
 func (m *PrometheusMetrics) Histogram(name string, labels ...string) HistogramVec {
+	m.mu.RLock()
+	if h, ok := m.histograms[name]; ok {
+		m.mu.RUnlock()
+		return h
+	}
+	m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if h, ok := m.histograms[name]; ok {
 		return h
 	}
@@ -91,7 +117,20 @@ func (m *PrometheusMetrics) Histogram(name string, labels ...string) HistogramVe
 }
 
 func (m *PrometheusMetrics) Timer(name string, labels ...string) TimerVec {
+	m.mu.RLock()
+	if h, ok := m.histograms[name]; ok {
+		m.mu.RUnlock()
+		return &promTimerVec{inner: h.inner}
+	}
+	m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if h, ok := m.histograms[name]; ok {
+		return &promTimerVec{inner: h.inner}
+	}
 	hv := promauto.With(m.reg).NewHistogramVec(prometheus.HistogramOpts{Name: name}, labels)
+	h := &promHistogramVec{inner: hv}
+	m.histograms[name] = h
 	return &promTimerVec{inner: hv}
 }
 

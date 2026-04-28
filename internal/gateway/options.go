@@ -88,5 +88,7 @@ func WithMetricsEnabled(enabled bool) Option {
 
 // WithGlobalPlugins sets plugins applied to all protocols.
 func WithGlobalPlugins(p ...types.Plugin) Option {
-	return func(o *Options) { o.GlobalPlugins = append(o.GlobalPlugins, p...) }
+	return func(o *Options) {
+		o.GlobalPlugins = append(append([]types.Plugin{}, o.GlobalPlugins...), p...)
+	}
 }

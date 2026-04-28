@@ -56,15 +56,13 @@ func (tw *TimeWheel) advance() {
 
 	now := time.Now()
 
-	// Check all slots for expired entries (handles edge cases with Reset)
-	for i := range tw.slots {
-		slot := tw.slots[i]
-		for id, expiry := range slot {
-			if now.After(expiry) {
-				delete(slot, id)
-				if tw.onTimeout != nil {
-					go tw.onTimeout(id)
-				}
+	// Only check the current slot — entries land in exactly one slot.
+	slot := tw.slots[tw.current]
+	for id, expiry := range slot {
+		if now.After(expiry) {
+			delete(slot, id)
+			if tw.onTimeout != nil {
+				tw.onTimeout(id)
 			}
 		}
 	}

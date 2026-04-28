@@ -30,7 +30,7 @@ func TestTypeAliases_CompileCheck(t *testing.T) {
 	var _ SessionState = types.SessionState(0)
 	var _ Message[[]byte] = types.Message[[]byte]{}
 	var _ RawMessage = types.RawMessage{}
-	var _ MessageConstraint = types.MessageConstraint(nil)
+	// MessageConstraint is validated at compile time via Session[[]byte] and MessageHandler[[]byte] aliases above.
 	var _ MessageHandler[[]byte] = (types.MessageHandler[[]byte])(nil)
 	var _ RawHandler = (types.RawHandler)(nil)
 	var _ Server = (types.Server)(nil)

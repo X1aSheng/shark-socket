@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -275,10 +276,16 @@ func (l nopLogger) WithContext(context.Context) Logger { return l }
 // NopLogger returns a no-op logger for benchmarks and testing.
 func NopLogger() Logger { return nopLogger{} }
 
-var defaultLogger Logger = NewSlogLogger()
+var defaultLogger atomic.Pointer[loggerHolder]
+
+type loggerHolder struct{ l Logger }
+
+func init() {
+	defaultLogger.Store(&loggerHolder{l: NewSlogLogger()})
+}
 
 // SetDefault replaces the global default logger.
-func SetDefault(l Logger) { defaultLogger = l }
+func SetDefault(l Logger) { defaultLogger.Store(&loggerHolder{l: l}) }
 
 // GetDefault returns the global default logger.
-func GetDefault() Logger { return defaultLogger }
+func GetDefault() Logger { return defaultLogger.Load().l }

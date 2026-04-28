@@ -256,16 +256,16 @@ func (s *Server) Manager() *session.Manager {
 }
 
 func acceptBackoff(errors int) time.Duration {
-	d := time.Duration(5<<min(errors-1, 10)) * time.Millisecond
+	shift := errors - 1
+	if shift < 0 {
+		shift = 0
+	}
+	if shift > 10 {
+		shift = 10
+	}
+	d := time.Duration(5<<shift) * time.Millisecond
 	if d > 10*time.Second {
 		d = 10 * time.Second
 	}
 	return d
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

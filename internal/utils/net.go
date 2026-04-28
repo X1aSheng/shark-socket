@@ -31,16 +31,26 @@ func IPToKey(ip net.IP) string {
 	return ip.To16().String()
 }
 
-// IsPrivateIP checks if an IP address is in a private range.
-func IsPrivateIP(ip net.IP) bool {
-	privateRanges := []string{
+var privateNetworks []*net.IPNet
+
+func init() {
+	for _, cidr := range []string{
 		"10.0.0.0/8",
 		"172.16.0.0/12",
 		"192.168.0.0/16",
 		"127.0.0.0/8",
+	} {
+		_, network, err := net.ParseCIDR(cidr)
+		if err != nil {
+			panic("invalid built-in private CIDR: " + cidr)
+		}
+		privateNetworks = append(privateNetworks, network)
 	}
-	for _, cidr := range privateRanges {
-		_, network, _ := net.ParseCIDR(cidr)
+}
+
+// IsPrivateIP checks if an IP address is in a private range.
+func IsPrivateIP(ip net.IP) bool {
+	for _, network := range privateNetworks {
 		if network.Contains(ip) {
 			return true
 		}

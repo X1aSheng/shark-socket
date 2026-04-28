@@ -28,9 +28,10 @@ func (e cacheEntry) isExpired() bool {
 
 // MemoryCache implements Cache with an in-memory map and lazy TTL expiration.
 type MemoryCache struct {
-	mu      sync.RWMutex
-	entries map[string]cacheEntry
-	stopCh  chan struct{}
+	mu            sync.RWMutex
+	entries       map[string]cacheEntry
+	stopCh        chan struct{}
+	closeOnce     sync.Once
 	cleanInterval time.Duration
 }
 
@@ -84,9 +85,10 @@ func (c *MemoryCache) Get(_ context.Context, key string) ([]byte, error) {
 		return nil, ErrCacheMiss
 	}
 	if !e.isExpired() {
-		data := e.data
+		cp := make([]byte, len(e.data))
+		copy(cp, e.data)
 		c.mu.RUnlock()
-		return data, nil
+		return cp, nil
 	}
 	c.mu.RUnlock()
 
@@ -142,7 +144,9 @@ func (c *MemoryCache) MGet(_ context.Context, keys []string) (map[string][]byte,
 	c.mu.RLock()
 	for _, k := range keys {
 		if e, ok := c.entries[k]; ok && !e.isExpired() {
-			result[k] = e.data
+			cp := make([]byte, len(e.data))
+			copy(cp, e.data)
+			result[k] = cp
 		}
 	}
 	c.mu.RUnlock()
@@ -150,7 +154,8 @@ func (c *MemoryCache) MGet(_ context.Context, keys []string) (map[string][]byte,
 }
 
 // Close stops the background cleanup goroutine.
+// Safe to call multiple times.
 func (c *MemoryCache) Close() error {
-	close(c.stopCh)
+	c.closeOnce.Do(func() { close(c.stopCh) })
 	return nil
 }

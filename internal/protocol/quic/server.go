@@ -85,11 +85,11 @@ func (s *Server) acceptLoop() {
 	}
 }
 
-func (s *Server) handleConn(conn any) {
+func (s *Server) handleConn(conn *quic.Conn) {
 	defer s.wg.Done()
 
 	id := s.manager.NextID()
-	qconn := conn.(*quic.Conn)
+	qconn := conn
 	sess := newSession(id, qconn, s.opts.WriteQueueSize)
 
 	if err := s.manager.Register(sess); err != nil {
