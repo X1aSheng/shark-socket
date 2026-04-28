@@ -112,46 +112,45 @@ func TestCoAPSession_ResetCON(t *testing.T) {
 	}
 }
 
-func TestCoAPSession_IsDuplicate(t *testing.T) {
+func TestCoAPSession_CheckAndRecord(t *testing.T) {
 	conn, _ := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
 	defer conn.Close()
 
 	sess := newTestSession(conn)
-	if sess.IsDuplicate(100) {
-		t.Fatal("IsDuplicate(100) should be false before recording")
+	if sess.CheckAndRecord(100) {
+		t.Fatal("CheckAndRecord(100) should return false (not duplicate)")
 	}
-	sess.RecordMessageID(100)
-	if !sess.IsDuplicate(100) {
-		t.Fatal("IsDuplicate(100) should be true after recording")
+	if !sess.CheckAndRecord(100) {
+		t.Fatal("CheckAndRecord(100) should return true (duplicate)")
 	}
 }
 
-func TestCoAPSession_IsDuplicate_DifferentIDs(t *testing.T) {
+func TestCoAPSession_CheckAndRecord_DifferentIDs(t *testing.T) {
 	conn, _ := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
 	defer conn.Close()
 
 	sess := newTestSession(conn)
-	sess.RecordMessageID(1)
-	sess.RecordMessageID(2)
-	if !sess.IsDuplicate(1) || !sess.IsDuplicate(2) {
-		t.Fatal("both IDs should be recorded")
+	sess.CheckAndRecord(1)
+	sess.CheckAndRecord(2)
+	if !sess.CheckAndRecord(1) || !sess.CheckAndRecord(2) {
+		t.Fatal("both IDs should be recorded as duplicates")
 	}
-	if sess.IsDuplicate(3) {
+	if sess.CheckAndRecord(3) {
 		t.Fatal("unrecorded ID should not be duplicate")
 	}
 }
 
-func TestCoAPSession_RecordMessageID_Eviction(t *testing.T) {
+func TestCoAPSession_CheckAndRecord_Eviction(t *testing.T) {
 	conn, _ := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
 	defer conn.Close()
 
 	sess := newTestSession(conn)
 	// Record 600 entries to trigger eviction (cache size > 500)
 	for i := 0; i < 600; i++ {
-		sess.RecordMessageID(uint16(i))
+		sess.CheckAndRecord(uint16(i))
 	}
 	// Old entries should be evicted
-	if sess.IsDuplicate(0) {
+	if sess.CheckAndRecord(0) {
 		t.Log("entry 0 still present after eviction (may be within 5min window)")
 	}
 }

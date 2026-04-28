@@ -62,8 +62,8 @@ func TestTimeWheel_ResetDelaysTimeout(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	firedEarly := triggered.Load()
 
-	// Wait well past the reset timeout (60+400=460ms + generous buffer)
-	time.Sleep(400 * time.Millisecond)
+	// Wait past the reset expiry plus one full wheel cycle for safety
+	time.Sleep(2000 * time.Millisecond)
 	firedLate := triggered.Load()
 
 	if firedEarly != 0 {

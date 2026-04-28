@@ -74,7 +74,12 @@ type RateLimitPlugin struct {
 	stopCh       chan struct{}
 	wg           sync.WaitGroup
 
-	violations sync.Map // string -> *atomic.Int64
+	violations      sync.Map // string -> *violationEntry
+}
+
+type violationEntry struct {
+	count       atomic.Int64
+	lastUpdated atomic.Int64 // UnixNano
 }
 
 // RateLimitOption configures the RateLimitPlugin.
@@ -149,8 +154,10 @@ func (p *RateLimitPlugin) getPerIPBucket(key string) *tokenBucket {
 func (p *RateLimitPlugin) recordViolation(sess types.RawSession) {
 	ip := utils.ExtractIPFromAddr(sess.RemoteAddr())
 	key := utils.IPToKey(ip)
-	val, _ := p.violations.LoadOrStore(key, &atomic.Int64{})
-	val.(*atomic.Int64).Add(1)
+	val, _ := p.violations.LoadOrStore(key, &violationEntry{})
+	entry := val.(*violationEntry)
+	entry.count.Add(1)
+	entry.lastUpdated.Store(time.Now().UnixNano())
 }
 
 // GetViolations returns the violation count for an IP.
@@ -159,7 +166,7 @@ func (p *RateLimitPlugin) GetViolations(ip string) int64 {
 	if !ok {
 		return 0
 	}
-	return val.(*atomic.Int64).Load()
+	return val.(*violationEntry).count.Load()
 }
 
 func (p *RateLimitPlugin) cleanupLoop() {
@@ -179,7 +186,10 @@ func (p *RateLimitPlugin) cleanupLoop() {
 				return true
 			})
 			p.violations.Range(func(key, val any) bool {
-				p.violations.Delete(key)
+				entry := val.(*violationEntry)
+				if now-entry.lastUpdated.Load() > idleThreshold {
+					p.violations.Delete(key)
+				}
 				return true
 			})
 		case <-p.stopCh:

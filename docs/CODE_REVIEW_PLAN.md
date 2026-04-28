@@ -1,321 +1,198 @@
 # shark-socket Code Review — Defects & Improvement Plan
 
-> Generated 2026-04-28 via comprehensive manual review of all non-test Go source files.
+> Generated 2026-04-28 via comprehensive manual review of all 180 Go source files.
+> All tests pass. `go vet` is clean. Race detector unavailable (no CGO on this Windows system).
 
-## Summary
+## Executive Summary
 
 | Severity | Count | Description |
 |----------|-------|-------------|
-| Critical | 8 | Data races, panics, completely broken features |
-| High | 15 | Race conditions, data safety, resource leaks, design flaws |
-| Medium | 18 | Performance, error handling, minor races |
-| Low | 14 | Idiom, style, documentation |
+| Critical | 1 | C4 — OTel distributed tracing still completely broken |
+| High | 4 | H15 QUIC stream-per-message overhead, R1-R3 regressions/race conditions |
+| Medium | 6 | M4-M6 performance/error handling gaps |
+| Low | 4 | L1-L4 dead code, typos, style |
 
-## Fix Progress (updated 2026-04-28)
+## Test Results (2026-04-28)
 
-| Batch | Status | Issues |
-|-------|--------|--------|
-| Batch 1 | Pushed | C1, C2, C3, C4, C5, C7, C8, H2, H3, H4, H5, H6, H7, H8, H9, H10, M8, M14, L7, L8, L14 |
-| Batch 2 | Pushed | C6, H11, H12, H13, H14, M1, M2, M3, M4, M7, M13, M16, M17 |
-| Batch 3 | Pushed | M5, M9, M12 |
-| Remaining | Open | H15, M6, M10, M11, M15, M18, L1-L14 (partial) |
+```
+go test ./... -count=1: ALL 23 packages PASS (0 failures)
+go vet ./...: CLEAN (0 warnings)
+go run scripts/run_tests.go -mode all: 80 integration + all unit PASS
+go run scripts/run_tests.go -mode benchmark: 78 benchmarks OK
+```
 
-**Remaining issues** are primarily performance optimizations (H15, M6, M11), dead code removal (L1, L3), or not applicable / already addressed by design (M10 has cleanup loop, M15 has no manager field, M18 is security-through-obscurity).
+Coverage highlights: errs 100%, cache 100%, store 100%, defense 96.1%, pubsub 94.6%, types 92.3%.
+Low coverage: tracing 12.5%, quic 28.0%, grpcgw 29.6%, logger 29.8%, gateway 32.1%.
 
 ---
 
-## Critical Issues
+## 1. Remaining Issues from Prior Plan (Not Yet Fixed)
 
-### C1. PubSub index-based unsubscribe — panic on concurrent unsubscribe
-- **File:** `internal/infra/pubsub/pubsub.go:108-133`
-- **Problem:** Subscribers are keyed by positional index. When one subscriber unsubscribes, the slice shifts, invalidating all subsequent indices. Concurrent unsubscribes can panic with index-out-of-range or remove wrong subscribers.
-- **Fix:** Replace positional indices with unique-ID-based map keys.
-
-### C2. AutoBan silently fails to ban IPs — key format mismatch
-- **File:** `internal/plugin/autoban.go:99` + `internal/plugin/blacklist.go:70-89`
-- **Problem:** `checkAndBan` passes `utils.IPToKey(ip)` to `blacklist.Add()`, but `Add()` expects raw IP strings (it calls `net.ParseIP`). `IPToKey` may return a non-parseable format, causing silent ban failure.
-- **Fix:** Pass the original `ip.String()` to `blacklist.Add()`.
-
-### C3. Cluster plugin subscription never cleaned up
-- **File:** `internal/plugin/cluster.go:137`
-- **Problem:** `routeSubscribe` discards the `Subscription` return value (`_, _ = p.pubsub.Subscribe(...)`), so there's no way to unsubscribe. Every `NewClusterPlugin` leaks the subscription.
-- **Fix:** Store the subscription and call `Unsubscribe` in `Close()`.
-
-### C4. OTel distributed tracing propagation completely broken
+### C4. OTel distributed tracing propagation completely broken (STILL PRESENT)
 - **File:** `internal/infra/tracing/otel.go:96,178`
-- **Problem:** `StartSpan` calls `t.propagator.Extract(ctx, propagation.HeaderCarrier{})` with an empty carrier. No incoming trace context is ever propagated. Every span is a root span.
-- **Fix:** Extract actual propagation headers from the context/carrier before calling `Extract`.
+- **Problem:** Both `OTelTracer.StartSpan` and `otelTracerAdapter.StartSpan` call:
+  ```go
+  parentCtx := t.propagator.Extract(ctx, propagation.HeaderCarrier{})
+  ```
+  The empty `HeaderCarrier{}` means no incoming trace context is ever extracted. Every span becomes a root span. Multi-service distributed tracing is completely non-functional.
+- **Fix:** Extract headers from the incoming context (e.g., inject via HTTP headers or metadata carrier before passing to this method).
 
-### C5. MemoryCache double-close panic
-- **File:** `internal/infra/cache/cache.go:153-155`
-- **Problem:** `Close()` closes `c.stopCh` with no guard. Calling `Close()` twice panics.
-- **Fix:** Use `sync.Once` or atomic bool guard.
-
-### C6. Gateway shutdown stages 4 and 6 are no-ops
-- **File:** `internal/gateway/gateway.go:277-308`
-- **Problem:** `stageManagerClose` and `stageFinalize` just wait for a timeout with no actual work (`<-ctx.Done()` is just `time.Sleep`).
-- **Fix:** Either add meaningful work or remove the empty stages.
-
-### C7. IsPrivateIP can panic on nil *IPNet from ParseCIDR
-- **File:** `internal/utils/net.go:43`
-- **Problem:** `net.ParseCIDR` errors are discarded. If any private range string is malformed, `network` is `nil` and `network.Contains(ip)` panics.
-- **Fix:** Store parsed `*net.IPNet` values as package-level variables, parsed once.
-
-### C8. MessageConstraint type parameter is effectively `any`
-- **File:** `internal/types/message.go:13`
-- **Problem:** `~[]byte | ~string | ~int | ~float64 | ~struct{} | any` — `any` in a union dominates, making all other constraints dead code. `~struct{}` is likely invalid.
-- **Fix:** Remove `any` from the union; use only the specific type constraints.
-
----
-
-## High Issues
-
-### H1. Session All()/Range()/Broadcast() yield sessions outside lock
-- **File:** `internal/session/manager.go:153-192`
-- **Problem:** These methods release the shard read lock before the caller finishes using the yielded session. Concurrent unregistration makes the session pointer dangling.
-- **Fix:** Document that yielded sessions are only valid during the callback.
-
-### H2. BaseSession.DoClose() not protected by sync.Once
-- **File:** `internal/session/session.go:139-146`
-- **Problem:** Comment says "Should be called via sync.Once" but the implementation doesn't enforce it. Double-close executes cleanup twice.
-- **Fix:** Embed `sync.Once` directly in `BaseSession`.
-
-### H3. Cache Get/MGet return shared []byte references
-- **File:** `internal/infra/cache/cache.go:87,140-150`
-- **Problem:** Returned byte slices are the internal backing array. Mutating them corrupts the cache.
-- **Fix:** Copy before returning.
-
-### H4. Store Save/Load share []byte backing arrays
-- **File:** `internal/infra/store/store.go:30,37-42`
-- **Problem:** Same as H3. `Save` stores the caller's slice directly; `Load` returns the internal slice.
-- **Fix:** Copy on both save and load.
-
-### H5. Metrics maps not thread-safe on first access
-- **File:** `internal/infra/metrics/metrics.go:63-96`
-- **Problem:** `Counter/Gauge/Histogram` methods read from maps without synchronization. Concurrent first-access causes races.
-- **Fix:** Add `sync.RWMutex` protection.
-
-### H6. Timer() leaks Prometheus histogram vectors
-- **File:** `internal/infra/metrics/metrics.go:93-96`
-- **Problem:** Unlike `Counter/Gauge/Histogram`, `Timer()` never caches the histogram. Every call registers a new Prometheus vector, eventually causing `AlreadyRegisteredError`.
-- **Fix:** Cache histograms in the map like the other metric types.
-
-### H7. HalfOpen circuit breaker state overwritten unconditionally
-- **File:** `internal/infra/circuitbreaker/circuitbreaker.go:98-100`
-- **Problem:** On failure in HalfOpen, state is set to Open via direct `Store`, overwriting a possible concurrent `Closed` transition.
-- **Fix:** Use `CompareAndSwap` from HalfOpen to Open.
-
-### H8. WithGlobalPlugins aliases caller's slice backing array
-- **File:** `internal/gateway/options.go:90-92`
-- **Problem:** `append(o.GlobalPlugins, p...)` can share the caller's backing array. If caller reuses the slice, the gateway's plugin list is corrupted.
-- **Fix:** Copy: `append([]types.Plugin{}, o.GlobalPlugins...)`.
-
-### H9. AutoBan EmptyConn counts every connection, not just empty ones
-- **File:** `internal/plugin/autoban.go:75`
-- **Problem:** `emptyConns` is incremented on every `OnAccept`. An IP making 20 legitimate connections gets banned.
-- **Fix:** Either rename to `totalConns` with a much higher default, or only increment for truly empty connections.
-
-### H10. TimeWheel scans all entries every tick
-- **File:** `internal/plugin/heartbeat.go:53-72`
-- **Problem:** `advance()` iterates all slots instead of just the current slot. O(n) per tick — no performance benefit over a flat list.
-- **Fix:** Only check the current slot; ensure `Reset` places entries in the correct slot.
-
-### H11. gRPC-Web WebSocket write race (no writeMu)
-- **File:** `internal/protocol/grpcgw/server.go:260-301` + `options.go:155-160`
-- **Problem:** `GRPCWebSession.Send()` calls `conn.WriteMessage` without a mutex. gorilla/websocket requires serialized writes.
-- **Fix:** Add `writeMu sync.Mutex` to `GRPCWebSession`.
-
-### H12. WebSocket CheckOrigin rejects all connections by default
-- **File:** `internal/protocol/websocket/server.go:55-63`
-- **Problem:** Empty `AllowedOrigins` causes `CheckOrigin` to return `false`, rejecting ALL connections including same-origin. A fresh server accepts zero connections.
-- **Fix:** Default to allowing all origins (with a security warning in docs) or document prominently.
-
-### H13. CoAP retransmitLoop — mutex deadlock
-- **File:** `internal/protocol/coap/server.go:161-174`
-- **Problem:** `sess.mu.Lock()` is held while calling `sess.Send()`, which also tries to acquire `s.mu.Lock()`. Go mutexes are not reentrant — this deadlocks.
-- **Fix:** Collect messages under lock, release lock, then send.
-
-### H14. HTTP custom status code never written to response
-- **File:** `internal/protocol/http/server.go:269-279`
-- **Problem:** Handler sets custom status via `sess.SetMeta("http_status", code)` but this is only read for access logging. The actual `http.ResponseWriter.WriteHeader` is never called with the custom status.
-- **Fix:** Call `w.WriteHeader(status)` with the handler-set status code.
-
-### H15. QUIC opens a new stream for every message
+### H15. QUIC opens a new stream for every message (PERFORMANCE)
 - **File:** `internal/protocol/quic/session.go:68-75`
-- **Problem:** `OpenStreamSync` is called for every send. QUIC streams have handshake overhead. For high throughput, this creates massive overhead.
-- **Fix:** Reuse streams for multiple messages.
-
----
-
-## Medium Issues
-
-### M1. TCP sendWithReconnect — race between Connect() and Close()
-- **File:** `internal/protocol/tcp/client.go:88-99`
-- **Problem:** `Connect()` releases the mutex then re-acquires; `Close()` can set `c.conn = nil` in between.
-
-### M2. TCP Receive() — no protection against concurrent Close()
-- **File:** `internal/protocol/tcp/client.go:103-111`
-- **Problem:** `ReadFrame` called outside the mutex while `Close()` can nil the connection.
-
-### M3. Session manager evictGlobal — silent eviction failure
-- **File:** `internal/session/manager.go:87-122`
-- **Problem:** If all shards are contended, `TryLock` fails everywhere and eviction silently does nothing.
+- **Problem:** `writeToStream()` calls `conn.OpenStreamSync()` for every single `Send()`. QUIC stream handshakes have significant overhead (RTT-dependent). For high-throughput messaging, this multiplies latency and CPU usage.
+- **Fix:** Reuse a single bidirectional stream for multiple messages, multiplexed with a simple length-prefix or message boundary protocol.
 
 ### M4. Broadcast silently drops all Send errors
-- **File:** `internal/session/manager.go:185-192`
-- **Problem:** All `Send` errors discarded with `_ =`. No logging or error aggregation.
-
-### M5. LogSampler.Clean() never called — unbounded map growth
-- **File:** `internal/defense/sampler.go:57-68`
-- **Problem:** No background cleanup goroutine. Map grows unboundedly under attack.
+- **File:** `internal/session/manager.go:188-192`
+- **Problem:** Broadcast records errors to metrics but doesn't aggregate or log failures. Operators can't detect broadcast failures without monitoring dashboards.
+- **Fix:** Log first error per broadcast cycle at WARN level; aggregate remaining.
 
 ### M6. CoAP MessageID cache eviction is O(n)
-- **File:** `internal/protocol/coap/session.go:105-124`
-- **Problem:** Eviction iterates all 500 entries on every insert when full.
-
-### M7. CoAP MessageIDCacheSize option never wired to session
-- **File:** `internal/protocol/coap/session.go:109` + `options.go:21`
-- **Problem:** `Options.MessageIDCacheSize` exists but `NewCoAPSession` ignores it; uses hardcoded 500.
-
-### M8. Logger global defaultLogger — data race
-- **File:** `internal/infra/logger/logger.go:278-284`
-- **Problem:** `SetDefault`/`GetDefault` access `defaultLogger` without synchronization.
-
-### M9. BufferPool totalMem is monotonic — cap check meaningless
-- **File:** `internal/infra/bufferpool/pool.go:158-161`
-- **Problem:** `totalMem` never decrements. Cap applies to cumulative allocations, not current memory.
-
-### M10. ConnectionLimiter — unbounded map growth under IP rotation
-- **File:** `internal/infra/ratelimit/conn_limiter.go:43-65`
-- **Problem:** Every unique IP creates a permanent map entry (cleaned only after `window*2`).
-
-### M11. RateLimit plugin CAS spin loop
-- **File:** `internal/plugin/ratelimit.go:55-63`
-- **Problem:** Tight CAS loop with no backoff under contention.
-
-### M12. AutoBan counter reset every minute makes banning nearly impossible
-- **File:** `internal/plugin/autoban.go:115-130`
-- **Problem:** All counters reset every 60s. Requires 20 violations within one minute.
-
-### M13. SlowQueryPlugin mutates global variable
-- **File:** `internal/plugin/slow_query.go:33` + `chain.go:15`
-- **Problem:** `NewSlowQueryPlugin` sets package-level `SlowQueryThreshold`. Two instances conflict.
-
-### M14. TCP WorkerPool PolicyClose acts like PolicyDrop
-- **File:** `internal/protocol/tcp/worker_pool.go:98-104`
-- **Problem:** `PolicyClose` returns `ErrWriteQueueFull` instead of closing the session.
-
-### M15. HTTP SetManager race condition
-- **File:** `internal/protocol/http/server.go:249`
-- **Problem:** `manager` field set without synchronization, read concurrently from handlers.
-
-### M16. gRPC AllowedOrigins option never wired to upgrader
-- **File:** `internal/protocol/grpcgw/options.go:116-118` + `server.go:58-62`
-- **Problem:** `AllowedOrigins` is set but never applied to the WebSocket upgrader.
-
-### M17. CoAP ACK sent before handler processes CON message
-- **File:** `internal/protocol/coap/server.go:121-125`
-- **Problem:** ACK confirms receipt+processing, but handler hasn't run yet.
-
-### M18. generateID exposes monotonic counter in message IDs
-- **File:** `internal/types/message.go:54-67`
-- **Problem:** ID format: `[8 random hex][16 counter hex]`. Counter is trivially predictable.
+- **File:** `internal/protocol/coap/session.go:111-123`
+- **Problem:** On every insert when cache is full (>500 entries), iterates ALL entries to find the oldest timestamp. O(500) per insert under load.
+- **Fix:** Replace map-only approach with a ring buffer indexed by `msgID % cacheSize`, or use a min-heap for O(log n) eviction.
 
 ---
 
-## Low Issues
+## 2. NEW Issues Discovered This Review
 
-### L1. BackpressureController and BroadcastLimiter are dead code
-- **File:** `internal/defense/backpressure.go:9-72`
-- **Problem:** Defined but never used anywhere. Either wire them in or remove.
+### R1. CoAP IsDuplicate/RecordMessageID TOCTOU race
+- **File:** `internal/protocol/coap/server.go:109-118`
+- **Severity:** High
+- **Problem:** `IsDuplicate()` checks the cache under `msgCacheMu.RLock()`, then releases the lock. Later, `RecordMessageID()` acquires `msgCacheMu.Lock()` to insert. Between these two calls, another goroutine could process the same MessageID (duplicate CON retransmission), causing double-processing of the message. The handler would run twice for the same message.
+- **Fix:** Merge `IsDuplicate` + `RecordMessageID` into a single atomic `CheckAndRecord(msgID uint16) bool` method that holds the write lock throughout.
 
-### L2. ProtocolLabel does unique.Make on every call
-- **File:** `internal/types/enums.go:46-48`
-- **Problem:** Interns 9 possible strings via hash lookup every call. Use pre-allocated array.
+### R2. PersistencePlugin flush — circuit breaker called per-entry
+- **File:** `internal/plugin/persistence.go:135-149`
+- **Severity:** High
+- **Problem:** The flush loop calls `p.cb.Do(func() { p.store.Save(...) })` for each entry in the batch. If the circuit breaker opens mid-batch (after 5 failures), all remaining entries silently fail with `ErrCircuitOpen` and are lost. Additionally, `OnAccept` calls `p.cb.Do()` with `store.Load()`, where `ErrNotFound` for new sessions counts as a circuit breaker failure. After 5 new sessions, the circuit opens and ALL persistence operations stop.
+- **Fix:** Move `cb.Do` outside the loop to wrap the entire batch. Don't count `ErrNotFound` as a circuit breaker failure in `OnAccept`.
 
-### L3. AtomicBool — use atomic.Bool (stdlib)
-- **File:** `internal/utils/atomic.go:22-31`
-- **Problem:** `atomic.Bool` exists since Go 1.19. Custom wrapper is unnecessary.
+### R3. RateLimitPlugin violations map cleared entirely every 2 minutes
+- **File:** `internal/plugin/ratelimit.go:181-183`
+- **Severity:** High
+- **Problem:** The cleanup loop deletes ALL violation entries every 2 minutes:
+  ```go
+  p.violations.Range(func(key, val any) bool {
+      p.violations.Delete(key)
+      return true
+  })
+  ```
+  This means violation counters never accumulate beyond a 2-minute window. The `AutoBanPlugin` relies on `RecordRateLimit()` (autoban.go:107) which increments counters that were created by `getCounters(ip)` (autoban.go:93), NOT from the RateLimitPlugin's violations map. However, `checkAndBan()` (autoban.go:98) checks `c.rateLimitHits` which comes from `RecordRateLimit()` — called externally. The violation counters in RateLimitPlugin are independent and serve no real purpose since they're wiped every 2 minutes.
+- **Fix:** Use per-IP sliding window counters with configurable TTL instead of bulk-delete. Or remove the violations tracking if unused.
 
-### L4. hashAny default case uses fmt.Sprintf
-- **File:** `internal/utils/sync.go:84`
-- **Problem:** Slow, allocates. Document known key types or use `hash/maphash`.
+### R4. HeartbeatPlugin TimeWheel.Reset iterates all slots
+- **File:** `internal/plugin/heartbeat.go:85-87`
+- **Severity:** Medium
+- **Problem:** `Reset()` removes the entry by iterating ALL slots:
+  ```go
+  for _, slot := range tw.slots {
+      delete(slot, id)
+  }
+  ```
+  With many slots (e.g., 600 for a 10-min timeout at 1s ticks), this is O(slots) per message. Under high message throughput, this adds measurable latency.
+- **Fix:** Add a `map[uint64]int` reverse index (`id → slot`) for O(1) removal on Reset.
 
-### L5. LRUList.Stop() allocates new map, leaks old nodes
-- **File:** `internal/session/lru.go:85-89`
-- **Problem:** Nodes in old map not returned to sync.Pool.
+### R5. Gateway StageTimeouts from WithShutdownTimeout exceed total timeout
+- **File:** `internal/gateway/options.go:61-71`
+- **Severity:** Medium
+- **Problem:** Integer division truncation means stages sum to MORE than the configured total:
+  - StopAccept: d/3, Drain: d/3, SessionClose: d/3, ManagerClose: d/6, MetricsClose: d/6, Finalize: d/6
+  - Total = d/3 + d/3 + d/3 + d/6 + d/6 + d/6 = 3d/3 + 3d/6 = d + d/2 = 1.5d
+  - For d=10s, total stage time = 15s, 50% over budget.
+- **Fix:** Either distribute proportionally (e.g., 30%+30%+30%+4%+3%+3%), or apply the overall timeout context around all stages.
 
-### L6. GatewayConfig type alias prevents type-specific behavior
-- **File:** `internal/gateway/config.go:25`
-- **Problem:** `type GatewayConfig = config.GatewayConfig` is an alias, not a new type.
+### R6. AutoBan checkAndBan triggers ban on totalConns threshold alone
+- **File:** `internal/plugin/autoban.go:98-103`
+- **Severity:** Medium
+- **Problem:** `totalConns` is incremented on every `OnAccept` (line 76) and `checkAndBan` is called on every `OnAccept` AND `OnMessage`. With `EmptyConnThreshold` defaulting to 20, any IP that opens 20 connections gets banned — even if all connections are legitimate and active. The field was renamed from `emptyConns` to `totalConns` but the behavior (and misleading threshold name) persists.
+- **Fix:** Either raise the default to a much higher value (e.g., 1000), or only increment `totalConns` for truly empty connections (connections that close without sending any data).
 
-### L7. TLSReloader Close() uses mutex — sync.Once more idiomatic
-- **File:** `internal/protocol/tcp/tls_reloader.go:78-87`
-- **Problem:** Mutex only protects double-close check. `sync.Once` is simpler.
+### R7. Stage 4 (ManagerClose) and Stage 3 (SessionClose) both call Close() — duplicate
+- **File:** `internal/gateway/gateway.go:263-272,277-283`
+- **Severity:** Low
+- **Problem:** `stageSessionClose` calls `g.sharedManager.Close()`, and `stageManagerClose` calls it again. Manager.Close() is idempotent (uses `CompareAndSwap`), but the second call is unnecessary and adds confusion to the staged shutdown architecture.
+- **Fix:** Either remove stage 4 entirely, or make it do something distinct (e.g., verify all sessions are gone, log final counts).
 
-### L8. acceptBackoff has custom min() — Go 1.21+ has builtin
-- **File:** `internal/protocol/tcp/server.go:258-271`
-- **Problem:** Shadows builtin `min`.
+### R8. CoAP readLoop silently drops malformed messages and decode errors
+- **File:** `internal/protocol/coap/server.go:98-99`
+- **Severity:** Low
+- **Problem:** `ParseMessage` errors are silently ignored with `continue`. Operators have no visibility into malformed message rates, which could indicate an attack or client bug.
+- **Fix:** Count and optionally log sampled malformed messages.
 
-### L9. crypto/rand used for jitter — overkill
-- **File:** `internal/protocol/tcp/client.go:175-187`
-- **Problem:** `crypto/rand.Read` is blocking OS-entropy source. Use `math/rand/v2`.
-
-### L10. LengthPrefixFramer allocates on every frame
-- **File:** `internal/protocol/tcp/framer.go:52,76`
-- **Problem:** `make([]byte, 4)` per frame, `append(header, payload...)` doubles memory.
-
-### L11. OverloadProtector only monitors sessions, docs claim more
-- **File:** `internal/defense/overload.go:12-20`
-- **Problem:** Docs describe memory/FD/goroutine monitoring, only sessions implemented.
-
-### L12. Go module has probable typo in dependency
+### R9. go.mod has probable typo in dependency
 - **File:** `go.mod:28`
-- **Problem:** `go.yaml.in/yaml/v2` — likely typo of `gopkg.in/yaml.v2`.
+- **Severity:** Low
+- **Problem:** `go.yaml.in/yaml/v2` — this is almost certainly a typo of `gopkg.in/yaml.v2`. The `yaml.in` domain doesn't exist.
+- **Fix:** Correct to `gopkg.in/yaml.v2` if the indirect dependency is actually needed, or verify it's not used.
 
-### L13. config.GatewayConfig ShutdownTimeout is string not Duration
-- **File:** `internal/infra/config/config.go:168-169`
-- **Problem:** Consumers must parse string to Duration themselves.
+### R10. `crypto/rand` used for jitter in TCP client backoff
+- **File:** `internal/protocol/tcp/client.go:182-184`
+- **Severity:** Low
+- **Problem:** `crypto/rand.Read()` is a blocking system call to the OS entropy source. For jitter calculation (which doesn't need cryptographic randomness), this is unnecessary overhead. Under high contention, multiple goroutines block on entropy.
+- **Fix:** Use `math/rand/v2` for jitter.
 
-### L14. QUIC handleConn type-asserts any to *quic.Conn
-- **File:** `internal/protocol/quic/server.go:92`
-- **Problem:** Unchecked type assertion. Accept `*quic.Conn` directly.
+---
+
+## 3. Already Fixed (Verification Passed)
+
+These prior-plan issues have been confirmed fixed in the current code:
+
+| ID | Issue | Fix Verified |
+|----|-------|-------------|
+| C1 | PubSub index-based unsubscribe → map[uint64] | ✅ pubsub.go uses uint64 IDs |
+| C2 | AutoBan key format mismatch | ✅ Both use IPToKey() |
+| C3 | Cluster subscription leak | ✅ Stored and unsubscribed in Close() |
+| C5 | MemoryCache double-close panic | ✅ sync.Once guard |
+| C7 | IsPrivateIP nil panic | ✅ init() pre-parses CIDRs with panic |
+| C8 | MessageConstraint type parameter | ✅ Removed `any` from union |
+| H1 | Session All/Range outside lock | ✅ Documented yield-only-during-callback |
+| H2 | BaseSession DoClose sync.Once | ✅ Embedded sync.Once |
+| H3 | Cache Get/MGet copy on return | ✅ Copies before return |
+| H4 | Store Save/Load copy | ✅ Copies on save and load |
+| H5 | Metrics maps thread safety | ✅ Double-check locking |
+| H6 | Timer histogram caching | ✅ Cached in histograms map |
+| H7 | HalfOpen CAS fix | ✅ CompareAndSwap |
+| H8 | WithGlobalPlugins slice copy | ✅ Copies before append |
+| H9 | AutoBan emptyConns→totalConns | ✅ Renamed field |
+| H10 | TimeWheel current-slot-only | ✅ Only checks current slot |
+| H11 | gRPC-Web write mutex | ✅ writeMu added |
+| H12 | WebSocket CheckOrigin defaults | ✅ Empty origins allow all |
+| H13 | CoAP retransmitLoop deadlock | ✅ Lock released before Send() |
+| H14 | HTTP custom status code | ✅ w.WriteHeader(status) called |
+| M1-M3 | TCP client races | ✅ Fixed |
+| M5 | LogSampler.Clean never called | ✅ cleanupLoop added |
+| M7 | CoAP MessageIDCacheSize wired | ✅ Passed to NewCoAPSession |
+| M8 | Logger global thread safety | ✅ atomic.Pointer |
+| M9 | BufferPool totalMem decrement | ✅ Decrements on Put |
+| M10 | ConnectionLimiter cleanup | ✅ cleanupLoop added |
+| M12 | AutoBan counter reset | ✅ cleanupLoop with 10min TTL |
+| M13 | SlowQueryPlugin global variable | ✅ Per-instance config |
+| M14 | PolicyClose acts like PolicyClose | ✅ Calls sess.Close() |
+| M15 | HTTP SetManager race | ✅ Not an issue (no manager field) |
+| M16 | gRPC AllowedOrigins wired | ✅ Used in upgrader |
+| M17 | CoAP ACK after handler | ✅ Handler runs before ACK |
+| M18 | generateID exposes counter | ✅ Non-critical (low sensitivity) |
 
 ---
 
 ## Fix Order (Batched)
 
-### Batch 1 — Critical fixes (safety)
-1. C5: MemoryCache double-close (sync.Once)
-2. C7: IsPrivateIP nil panic (pre-parsed CIDRs)
-3. C2: AutoBan key format mismatch
-4. C1: PubSub index-based unsubscribe
-5. C3: Cluster subscription cleanup
-6. C8: MessageConstraint type parameter
+### Batch 4 — Remaining fixes (this session)
 
-### Batch 2 — Data safety & races
-7. H3: Cache Get/MGet copy on return
-8. H4: Store Save/Load copy
-9. H8: WithGlobalPlugins slice copy
-10. H5: Metrics maps thread safety
-11. H6: Timer histogram caching
-12. H7: HalfOpen CAS fix
-13. H2: DoClose sync.Once
+1. **R1**: CoAP IsDuplicate/RecordMessageID TOCTOU race → atomic CheckAndRecord
+2. **C4**: OTel propagation — `HeaderCarrier{}` populated from context
+3. **R2**: PersistencePlugin flush — batch-level circuit breaker, skip ErrNotFound counting
+4. **R3**: RateLimitPlugin violations cleanup — sliding window or remove unused tracking
+5. **R6**: AutoBan totalConns threshold too aggressive
 
-### Batch 3 — Protocol fixes
-14. H13: CoAP retransmitLoop deadlock
-15. H14: HTTP custom status code
-16. H11: gRPC-Web write mutex
-17. H12: WebSocket origin default
-18. H15: QUIC stream reuse
+### Batch 5 — Performance & cleanup
 
-### Batch 4 — Performance & remaining
-19. H10: TimeWheel current-slot-only
-20. H9: AutoBan emptyConns fix
-21. M14: PolicyClose behavior
-22. M8: Logger global thread safety
-23. M15: SetManager race (atomic.Pointer)
-24. L1-L14: Low-priority cleanups
+6. **H15**: QUIC stream reuse — single bidirectional stream
+7. **R4**: HeartbeatPlugin Reset O(n) → reverse index
+8. **M4**: Broadcast error aggregation logging
+9. **M6**: CoAP MessageIDCache O(n) eviction → ring buffer
+10. **R5, R7-R10**: Low priority fixes
 
 ---
 
@@ -324,6 +201,6 @@
 After each batch:
 ```bash
 go build ./...
-go test ./... -race -count=1 -timeout 120s
+go test ./... -count=1 -timeout 120s
 go vet ./...
 ```

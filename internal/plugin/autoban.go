@@ -29,7 +29,7 @@ func DefaultAutoBanThresholds() AutoBanThresholds {
 	return AutoBanThresholds{
 		RateLimitThreshold:     10,
 		ProtocolErrorThreshold: 5,
-		EmptyConnThreshold:     20,
+		EmptyConnThreshold:     1000, // connections, not just empty ones
 		BanTTL:                 30 * time.Minute,
 	}
 }

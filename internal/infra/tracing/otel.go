@@ -92,9 +92,6 @@ func NewOTelTracer(opts ...OTelOption) (*OTelTracer, error) {
 
 // StartSpan implements Tracer.StartSpan.
 func (t *OTelTracer) StartSpan(ctx context.Context, name string, spanOpts ...SpanOption) (Span, context.Context) {
-	// Extract parent span context from ctx using propagator
-	parentCtx := t.propagator.Extract(ctx, propagation.HeaderCarrier{})
-
 	// Convert our SpanOption to OTel span options
 	var attrs []attribute.KeyValue
 	for _, opt := range spanOpts {
@@ -105,7 +102,7 @@ func (t *OTelTracer) StartSpan(ctx context.Context, name string, spanOpts ...Spa
 		}
 	}
 
-	_, span := t.tracer.Start(parentCtx, name,
+	_, span := t.tracer.Start(ctx, name,
 		oteltrace.WithAttributes(attrs...),
 		oteltrace.WithAttributes(
 			attribute.String("service.name", "shark-socket"),
@@ -175,8 +172,6 @@ type otelTracerAdapter struct {
 }
 
 func (a *otelTracerAdapter) StartSpan(ctx context.Context, name string, opts ...SpanOption) (Span, context.Context) {
-	parentCtx := a.propagator.Extract(ctx, propagation.HeaderCarrier{})
-
 	var attrs []attribute.KeyValue
 	for _, opt := range opts {
 		cfg := &SpanConfig{}
@@ -186,7 +181,7 @@ func (a *otelTracerAdapter) StartSpan(ctx context.Context, name string, opts ...
 		}
 	}
 
-	_, span := a.tracer.Start(parentCtx, name,
+	_, span := a.tracer.Start(ctx, name,
 		oteltrace.WithAttributes(attrs...),
 	)
 	return &otelSpan{inner: span}, oteltrace.ContextWithSpan(ctx, span)

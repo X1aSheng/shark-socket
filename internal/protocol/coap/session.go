@@ -94,20 +94,18 @@ func (s *CoAPSession) ResetCON(msgID uint16) {
 	s.Acknowledge(msgID)
 }
 
-// IsDuplicate checks if a MessageID was recently seen.
-func (s *CoAPSession) IsDuplicate(msgID uint16) bool {
-	s.msgCacheMu.RLock()
-	_, found := s.msgCache[msgID]
-	s.msgCacheMu.RUnlock()
-	return found
-}
-
-// RecordMessageID adds a MessageID to the dedup cache.
-// Evicts oldest entries when cache exceeds maxSize.
-func (s *CoAPSession) RecordMessageID(msgID uint16) {
+// CheckAndRecord atomically checks for duplicate MessageID and records it.
+// Returns true if the message was already seen (duplicate).
+func (s *CoAPSession) CheckAndRecord(msgID uint16) bool {
 	s.msgCacheMu.Lock()
+	defer s.msgCacheMu.Unlock()
+
+	if _, found := s.msgCache[msgID]; found {
+		return true
+	}
 	s.msgCache[msgID] = time.Now()
-	// Evict oldest entries when over capacity
+
+	// Evict oldest entry when over capacity
 	if len(s.msgCache) > s.cacheSize {
 		var oldestID uint16
 		var oldestTime time.Time
@@ -121,7 +119,7 @@ func (s *CoAPSession) RecordMessageID(msgID uint16) {
 		}
 		delete(s.msgCache, oldestID)
 	}
-	s.msgCacheMu.Unlock()
+	return false
 }
 
 // PendingCount returns the number of pending CON messages.

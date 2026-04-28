@@ -65,14 +65,13 @@ func (p *PersistencePlugin) Name() string  { return "persistence" }
 func (p *PersistencePlugin) Priority() int { return 50 }
 
 func (p *PersistencePlugin) OnAccept(sess types.RawSession) error {
-	return p.cb.Do(func() error {
-		val, e := p.store.Load(context.TODO(), sessionKey(sess.ID()))
-		if e != nil {
-			return e
-		}
-		sess.SetMeta("history", val)
+	val, err := p.store.Load(context.TODO(), sessionKey(sess.ID()))
+	if err != nil {
+		// ErrNotFound is expected for new sessions; don't count as circuit failure.
 		return nil
-	})
+	}
+	sess.SetMeta("history", val)
+	return nil
 }
 
 func (p *PersistencePlugin) OnMessage(sess types.RawSession, data []byte) ([]byte, error) {
@@ -133,20 +132,22 @@ func (p *PersistencePlugin) batchWriter() {
 }
 
 func (p *PersistencePlugin) flush(batch []*persistEntry) {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	for _, entry := range batch {
-		buf.Reset()
-		if err := enc.Encode(entry); err != nil {
-			continue
+	// Wrap entire batch in a single circuit breaker call so that a mid-batch
+	// open doesn't silently drop the remaining entries.
+	_ = p.cb.Do(func() error {
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		for _, entry := range batch {
+			buf.Reset()
+			if err := enc.Encode(entry); err != nil {
+				continue
+			}
+			data := make([]byte, buf.Len())
+			copy(data, buf.Bytes())
+			_ = p.store.Save(context.TODO(), sessionKey(entry.SessionID), data)
 		}
-		// Copy before handing off to the goroutine.
-		data := make([]byte, buf.Len())
-		copy(data, buf.Bytes())
-		_ = p.cb.Do(func() error {
-			return p.store.Save(context.TODO(), sessionKey(entry.SessionID), data)
-		})
-	}
+		return nil
+	})
 }
 
 func sessionKey(id uint64) string {

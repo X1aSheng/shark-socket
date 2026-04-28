@@ -105,8 +105,8 @@ func (s *Server) readLoop() {
 		}
 		sess.TouchActive()
 
-		// Message deduplication
-		if sess.IsDuplicate(msg.MessageID) {
+		// Message deduplication (atomic check-and-record)
+		if sess.CheckAndRecord(msg.MessageID) {
 			// Already processed, resend ACK if needed
 			if msg.Type == CON {
 				ack := NewACK(msg, CodeContent, nil)
@@ -115,7 +115,6 @@ func (s *Server) readLoop() {
 			}
 			continue
 		}
-		sess.RecordMessageID(msg.MessageID)
 
 		// Handle RST
 		if msg.Type == RST {
