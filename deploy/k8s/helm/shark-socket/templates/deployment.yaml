@@ -1,0 +1,125 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "shark-socket.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shark-socket.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "shark-socket.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "shark-socket.selectorLabels" . | nindent 8 }}
+      {{- if .Values.metrics.enabled }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.metrics.port | quote }}
+        prometheus.io/path: {{ .Values.serviceMonitor.path | quote }}
+      {{- end }}
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: {{ include "shark-socket.fullname" . }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            {{- if .Values.protocols.tcp.enabled }}
+            - name: tcp
+              containerPort: {{ .Values.protocols.tcp.port }}
+              protocol: TCP
+            {{- end }}
+            {{- if .Values.protocols.udp.enabled }}
+            - name: udp
+              containerPort: {{ .Values.protocols.udp.port }}
+              protocol: UDP
+            {{- end }}
+            {{- if .Values.protocols.http.enabled }}
+            - name: http
+              containerPort: {{ .Values.protocols.http.port }}
+              protocol: TCP
+            {{- end }}
+            {{- if .Values.protocols.websocket.enabled }}
+            - name: websocket
+              containerPort: {{ .Values.protocols.websocket.port }}
+              protocol: TCP
+            {{- end }}
+            {{- if .Values.protocols.coap.enabled }}
+            - name: coap
+              containerPort: {{ .Values.protocols.coap.port }}
+              protocol: UDP
+            {{- end }}
+            {{- if .Values.protocols.quic.enabled }}
+            - name: quic
+              containerPort: {{ .Values.protocols.quic.port }}
+              protocol: UDP
+            {{- end }}
+            {{- if .Values.protocols.grpcweb.enabled }}
+            - name: grpcweb
+              containerPort: {{ .Values.protocols.grpcweb.port }}
+              protocol: TCP
+            {{- end }}
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            {{- end }}
+          env:
+            {{- include "shark-socket.env" . | nindent 12 }}
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.metrics.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: metrics
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          {{- end }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "10"]
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

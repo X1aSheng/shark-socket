@@ -1,0 +1,17 @@
+.git/
+.gitignore
+.github/
+.claude/
+docs/
+logs/
+tests/
+examples/
+scripts/
+*.md
+k8s/
+deploy/k8s/
+.golangci.yml
+.env
+.env.local
+bin/
+dist/

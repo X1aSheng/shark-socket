@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shark-socket-config
+  namespace: shark-socket
+  labels:
+    app.kubernetes.io/name: shark-socket
+    app.kubernetes.io/component: gateway
+data:
+  config.json: |
+    {
+      "shutdown_timeout": "60s",
+      "metrics_addr": ":9091",
+      "enable_metrics": true,
+      "log_level": "info"
+    }

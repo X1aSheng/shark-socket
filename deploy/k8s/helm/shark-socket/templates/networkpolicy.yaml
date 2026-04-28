@@ -1,0 +1,101 @@
+{{- if .Values.networkPolicies.enabled }}
+# Allow all traffic within the namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-intra-namespace
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shark-socket.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+
+---
+# Allow ingress from ingress-nginx controller
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-traffic
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shark-socket.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "shark-socket.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        {{- if .Values.protocols.http.enabled }}
+        - port: {{ .Values.protocols.http.port }}
+          protocol: TCP
+        {{- end }}
+        {{- if .Values.protocols.websocket.enabled }}
+        - port: {{ .Values.protocols.websocket.port }}
+          protocol: TCP
+        {{- end }}
+        {{- if .Values.protocols.grpcweb.enabled }}
+        - port: {{ .Values.protocols.grpcweb.port }}
+          protocol: TCP
+        {{- end }}
+
+---
+# Allow Prometheus to scrape metrics
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-metrics-scrape
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shark-socket.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "shark-socket.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - port: {{ .Values.metrics.port }}
+          protocol: TCP
+
+---
+# Allow DNS egress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shark-socket.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to: []
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+{{- end }}

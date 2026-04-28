@@ -1,0 +1,43 @@
+# Production overrides for shark-socket.
+
+replicaCount: 3
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 256Mi
+  limits:
+    cpu: "2"
+    memory: 1Gi
+
+config:
+  logLevel: "info"
+  logFormat: "json"
+  shutdownTimeout: "60s"
+
+# Ingress with TLS for production
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: shark-socket.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          serviceName: shark-socket-http
+          servicePort: 18400
+        - path: /ws
+          pathType: Prefix
+          serviceName: shark-socket-ws
+          servicePort: 18600
+  tls:
+    - secretName: shark-socket-tls
+      hosts:
+        - shark-socket.example.com

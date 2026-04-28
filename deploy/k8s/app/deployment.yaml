@@ -27,7 +27,12 @@ spec:
         prometheus.io/port: "9091"
         prometheus.io/path: "/metrics"
     spec:
-      terminationGracePeriodSeconds: 30
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       containers:
         - name: shark-socket
           image: x1asheng/shark-socket:latest
@@ -48,12 +53,36 @@ spec:
             - name: coap
               containerPort: 18800
               protocol: UDP
+            - name: quic
+              containerPort: 18900
+              protocol: UDP
+            - name: grpcweb
+              containerPort: 18650
+              protocol: TCP
             - name: metrics
               containerPort: 9091
               protocol: TCP
           env:
             - name: SHARK_LOG_LEVEL
               value: "info"
+            - name: SHARK_LOG_FORMAT
+              value: "json"
+            - name: SHARK_METRICS_ADDR
+              value: ":9091"
+            - name: SHARK_METRICS_ENABLED
+              value: "true"
+            - name: SHARK_SHUTDOWN_TIMEOUT
+              value: "60s"
+            - name: SHARK_QUIC_ENABLED
+              value: "false"
+            - name: SHARK_GRPCWEB_ENABLED
+              value: "false"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           resources:
             requests:
               cpu: 250m
@@ -80,7 +109,7 @@ spec:
           lifecycle:
             preStop:
               exec:
-                command: ["sleep", "5"]
+                command: ["sleep", "10"]
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:

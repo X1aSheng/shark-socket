@@ -34,7 +34,7 @@ type Options struct {
 func defaultOptions() Options {
 	return Options{
 		Host:              "0.0.0.0",
-		Port:             18600,
+		Port:             18900,
 		WorkerCount:      4,
 		TaskQueueSize:    512,
 		WriteQueueSize:   16,

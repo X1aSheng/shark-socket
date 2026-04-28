@@ -17,7 +17,7 @@ spec:
               kubernetes.io/metadata.name: shark-socket
 
 ---
-# Allow ingress from ingress-nginx controller
+# Allow ingress from ingress-nginx controller (HTTP, WebSocket, gRPC-Web)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -41,6 +41,8 @@ spec:
         - port: 18400
           protocol: TCP
         - port: 18600
+          protocol: TCP
+        - port: 18650
           protocol: TCP
 
 ---

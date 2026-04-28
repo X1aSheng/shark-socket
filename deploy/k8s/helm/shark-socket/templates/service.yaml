@@ -1,0 +1,158 @@
+{{- if .Values.protocols.tcp.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: shark-socket-tcp
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shark-socket.labels" . | nindent 4 }}
+    protocol: tcp
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "shark-socket.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: tcp
+      port: {{ .Values.protocols.tcp.port }}
+      targetPort: tcp
+      protocol: TCP
+---
+{{- end }}
+{{- if .Values.protocols.udp.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: shark-socket-udp
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shark-socket.labels" . | nindent 4 }}
+    protocol: udp
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "shark-socket.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: udp
+      port: {{ .Values.protocols.udp.port }}
+      targetPort: udp
+      protocol: UDP
+---
+{{- end }}
+{{- if .Values.protocols.http.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: shark-socket-http
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shark-socket.labels" . | nindent 4 }}
+    protocol: http
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "shark-socket.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.protocols.http.port }}
+      targetPort: http
+      protocol: TCP
+---
+{{- end }}
+{{- if .Values.protocols.websocket.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: shark-socket-ws
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shark-socket.labels" . | nindent 4 }}
+    protocol: websocket
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "shark-socket.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: websocket
+      port: {{ .Values.protocols.websocket.port }}
+      targetPort: websocket
+      protocol: TCP
+---
+{{- end }}
+{{- if .Values.protocols.coap.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: shark-socket-coap
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shark-socket.labels" . | nindent 4 }}
+    protocol: coap
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "shark-socket.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: coap
+      port: {{ .Values.protocols.coap.port }}
+      targetPort: coap
+      protocol: UDP
+---
+{{- end }}
+{{- if .Values.protocols.quic.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: shark-socket-quic
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shark-socket.labels" . | nindent 4 }}
+    protocol: quic
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "shark-socket.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: quic
+      port: {{ .Values.protocols.quic.port }}
+      targetPort: quic
+      protocol: UDP
+---
+{{- end }}
+{{- if .Values.protocols.grpcweb.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: shark-socket-grpcweb
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shark-socket.labels" . | nindent 4 }}
+    protocol: grpcweb
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "shark-socket.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: grpcweb
+      port: {{ .Values.protocols.grpcweb.port }}
+      targetPort: grpcweb
+      protocol: TCP
+---
+{{- end }}
+{{- if .Values.metrics.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: shark-socket-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shark-socket.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "shark-socket.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ .Values.metrics.port }}
+      targetPort: metrics
+      protocol: TCP
+{{- end }}

@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  shark-socket:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    ports:
+      - "18000:18000"       # TCP
+      - "18200:18200/udp"   # UDP
+      - "18400:18400"       # HTTP
+      - "18600:18600"       # WebSocket
+      - "18800:18800/udp"   # CoAP
+      - "18900:18900/udp"   # QUIC
+      - "18650:18650"       # gRPC-Web
+      - "9091:9091"         # Metrics
+    environment:
+      - SHARK_LOG_LEVEL=info
+      - SHARK_LOG_FORMAT=json
+      - SHARK_METRICS_ADDR=:9091
+      - SHARK_METRICS_ENABLED=true
+      - SHARK_SHUTDOWN_TIMEOUT=30s
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9091/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+
+  prometheus:
+    image: prom/prometheus:latest
+    profiles: ["prod", "monitoring"]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+    depends_on:
+      - shark-socket
+    restart: unless-stopped

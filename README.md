@@ -5,8 +5,9 @@
 [![Tests](https://img.shields.io/badge/Tests-627%20passed-brightgreen)](./tests)
 [![Fuzz](https://img.shields.io/badge/Fuzz-7%20tests-brightgreen)](./tests)
 [![Coverage](https://img.shields.io/badge/Coverage-37%20pkgs-brightgreen)](./tests)
-[![Docker](https://img.shields.io/badge/Docker-ready-blue)](./Dockerfile)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-ready-blue)](./k8s)
+[![Docker](https://img.shields.io/badge/Docker-ready-blue)](./deploy/docker/Dockerfile)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-ready-blue)](./deploy/k8s)
+[![Helm](https://img.shields.io/badge/Helm-ready-0F1689)](./deploy/k8s/helm/shark-socket)
 
 [English](./README_EN.md) | 中文文档
 
@@ -463,24 +464,21 @@ shark-socket/
 │   ├── unit/               # 跨包单元测试
 │   ├── integration/        # 多协议系统集成测试
 │   └── benchmark/          # 性能基准测试
-├── k8s/                    # Kubernetes 生产部署清单
-│   ├── namespace.yaml      # 独立命名空间
-│   ├── deployment.yaml     # 2 副本 Deployment
-│   ├── service.yaml        # 每个协议独立 Service
-│   ├── hpa.yaml            # HPA + PDB
-│   ├── ingress.yaml        # HTTP + WebSocket Ingress
-│   ├── networkpolicy.yaml  # 网络安全策略
-│   ├── configmap.yaml      # Prometheus 配置
-│   ├── kustomization.yaml  # Kustomize 聚合
-│   └── prometheus/         # Prometheus Deployment + Service
+├── cmd/
+│   └── shark-socket/       # 生产入口（环境变量配置）
+├── deploy/                 # 部署清单
+│   ├── README.md           #   部署文档
+│   ├── docker/             #   Dockerfile + docker-compose
+│   └── k8s/                #   Kubernetes 清单 + Helm Chart
+│       ├── app/            #     应用清单 (Deployment/Service/Ingress/HPA)
+│       ├── infra/          #     基础设施 (Prometheus)
+│       └── helm/           #     Helm Chart
 ├── scripts/                # 跨平台测试脚本
 │   ├── run_tests.go        #   Go 运行器（所有平台，推荐）
 │   ├── run_tests.sh        #   Bash 运行器（Linux/macOS/Git Bash）
 │   ├── run_tests.bat       #   CMD 运行器（Windows）
 │   └── parse_test_log.go   #   JSON 日志解析器
 ├── docs/                   # 架构设计文档
-├── Dockerfile              # 多阶段构建
-├── docker-compose.yml        # 含 Prometheus 的编排
 └── Makefile                # 常用构建命令
 ```
 
@@ -762,14 +760,22 @@ errs.IsPluginControl(err)      // 插件控制流
 
 ## 🐳 部署
 
+完整部署文档见 [deploy/README.md](./deploy/README.md)。
+
 ### Docker
 
 ```bash
 # 构建镜像
-docker build -t shark-socket .
+make docker-build
 
-# Docker Compose（含 Prometheus）
-docker-compose up -d
+# Docker Compose（生产模式）
+docker compose -f deploy/docker/docker-compose.yml up -d
+
+# Docker Compose（开发模式）
+docker compose -f deploy/docker/docker-compose.yml --profile dev up
+
+# 带 Prometheus 监控
+docker compose -f deploy/docker/docker-compose.yml --profile prod up -d
 
 # 验证
 curl http://localhost:18400/hello
@@ -785,47 +791,44 @@ curl http://localhost:9091/healthz
 | 18200 | UDP | UDP echo |
 | 18400 | TCP | HTTP API |
 | 18600 | TCP | WebSocket |
-| 18650 | TCP | gRPC-Web |
 | 18800 | UDP | CoAP |
-| 18900 | UDP | QUIC |
+| 18900 | UDP | QUIC（默认禁用） |
+| 18650 | TCP | gRPC-Web（默认禁用） |
 | 9091 | TCP | 指标 / 健康检查 |
 
 ### Kubernetes
 
-`k8s/` 目录提供完整的 Kubernetes 生产部署清单。
+#### kubectl + Kustomize
 
 ```bash
-# 一键部署
-kubectl apply -k k8s/
+kubectl apply -k deploy/k8s/app/
 ```
 
-#### K8s 资源清单
+#### Helm
 
-| 资源 | 文件 | 说明 |
-|------|------|------|
-| Namespace | `namespace.yaml` | 独立命名空间 `shark-socket` |
-| Deployment | `deployment.yaml` | 2 副本、反亲和、健康检查、preStop |
-| Service | `service.yaml` | 每个协议独立 ClusterIP + NodePort 模板 |
-| HPA + PDB | `hpa.yaml` | CPU 50%/Memory 70%，2-10 副本，minAvailable: 1 |
-| NetworkPolicy | `networkpolicy.yaml` | 命名空间内 + Ingress + 监控白名单 |
-| Prometheus | `prometheus/` | Deployment + Service + ConfigMap |
-| Ingress | `ingress.yaml` | HTTP + WebSocket 路由（nginx） |
-| ConfigMap | `configmap.yaml` | Prometheus 抓取配置 |
+```bash
+# 默认配置
+helm install shark-socket deploy/k8s/helm/shark-socket/ \
+  --namespace shark-socket --create-namespace
+
+# 生产配置
+helm install shark-socket deploy/k8s/helm/shark-socket/ \
+  --namespace shark-socket --create-namespace \
+  --values deploy/k8s/helm/shark-socket/values-prod.yaml
+```
 
 #### 健康检查
 
 | 探针 | 端点 | 端口 | 用途 |
 |------|------|------|------|
-| Liveness | `/healthz` | 9091 | 返回运行状态、协议列表、会话数、goroutine 数 |
-| Readiness | `/readyz` | 9091 | 返回是否就绪（503 未启动 / 200 就绪） |
+| Liveness | `/healthz` | 9091 | 运行状态、协议列表、会话数、goroutine 数 |
+| Readiness | `/readyz` | 9091 | 就绪状态（503/200） |
 
 #### 优雅关闭
 
-Kubernetes 生命周期配置实现零停机滚动更新：
-
-1. `preStop: sleep 5` — 等待负载均衡器摘除 Pod
-2. SIGTERM 触发 Gateway 6 阶段关闭（15s 超时）
-3. `terminationGracePeriodSeconds: 30` — 30s 后强制终止
+1. `preStop: sleep 10` — 等待负载均衡器摘除 Pod
+2. SIGTERM 触发 Gateway 6 阶段关闭
+3. `terminationGracePeriodSeconds: 60` — 60s 后强制终止
 
 #### 验证部署
 
@@ -855,7 +858,10 @@ make lint        # golangci-lint
 make benchmark   # 基准测试
 make race        # 竞态检测
 make examples    # 编译所有示例
-make docker      # 构建 Docker 镜像
+make docker-build       # 构建 Docker 镜像
+make docker-compose-up  # 启动 Docker Compose
+make helm-lint           # 验证 Helm Chart
+make build-production    # 构建生产二进制
 make all         # vet + build + test
 ```
 

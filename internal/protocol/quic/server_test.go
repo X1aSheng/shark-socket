@@ -106,8 +106,8 @@ func TestDefaultOptions(t *testing.T) {
 	if opts.Host != "0.0.0.0" {
 		t.Errorf("expected default host 0.0.0.0, got %s", opts.Host)
 	}
-	if opts.Port != 18600 {
-		t.Errorf("expected default port 18600, got %d", opts.Port)
+	if opts.Port != 18900 {
+		t.Errorf("expected default port 18900, got %d", opts.Port)
 	}
 	if opts.WorkerCount != 4 {
 		t.Errorf("expected default worker count 4, got %d", opts.WorkerCount)
@@ -159,7 +159,7 @@ func TestOptions_Validate(t *testing.T) {
 	}{
 		{
 			name: "valid options",
-			opts: Options{Port: 18600, TLSConfig: &tls.Config{}},
+			opts: Options{Port: 18900, TLSConfig: &tls.Config{}},
 			wantErr: false,
 		},
 		{
@@ -174,12 +174,12 @@ func TestOptions_Validate(t *testing.T) {
 		},
 		{
 			name: "missing TLS config",
-			opts: Options{Port: 18600, TLSConfig: nil},
+			opts: Options{Port: 18900, TLSConfig: nil},
 			wantErr: true,
 		},
 		{
 			name: "negative max streams",
-			opts: Options{Port: 18600, TLSConfig: &tls.Config{}, MaxIncomingStreams: -1},
+			opts: Options{Port: 18900, TLSConfig: &tls.Config{}, MaxIncomingStreams: -1},
 			wantErr: true,
 		},
 	}

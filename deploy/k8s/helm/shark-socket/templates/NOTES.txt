@@ -1,0 +1,39 @@
+shark-socket {{ .Chart.AppVersion }} has been deployed!
+
+** Namespace: ** {{ .Release.Namespace }}
+** Release: ** {{ .Release.Name }}
+
+{{- if .Values.metrics.enabled }}
+  Metrics:  http://shark-socket-metrics:{{ .Values.metrics.port }}/metrics
+  Health:   http://shark-socket-metrics:{{ .Values.metrics.port }}/healthz
+{{- end }}
+
+{{- if .Values.protocols.tcp.enabled }}
+  TCP:      nc shark-socket-tcp {{ .Values.protocols.tcp.port }}
+{{- end }}
+{{- if .Values.protocols.udp.enabled }}
+  UDP:      nc -u shark-socket-udp {{ .Values.protocols.udp.port }}
+{{- end }}
+{{- if .Values.protocols.http.enabled }}
+  HTTP:     curl http://shark-socket-http:{{ .Values.protocols.http.port }}/hello
+{{- end }}
+{{- if .Values.protocols.websocket.enabled }}
+  WebSocket: websocat ws://shark-socket-ws:{{ .Values.protocols.websocket.port }}{{ .Values.protocols.websocket.path }}
+{{- end }}
+{{- if .Values.protocols.coap.enabled }}
+  CoAP:     coap-client coap://shark-socket-coap:{{ .Values.protocols.coap.port }}
+{{- end }}
+{{- if .Values.protocols.quic.enabled }}
+  QUIC:     quic-client shark-socket-quic:{{ .Values.protocols.quic.port }}
+{{- end }}
+{{- if .Values.protocols.grpcweb.enabled }}
+  gRPC-Web: curl http://shark-socket-grpcweb:{{ .Values.protocols.grpcweb.port }}/grpc
+{{- end }}
+
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+  Ingress:  https://{{ .host }}
+{{- end }}
+{{- end }}
+
+To learn more, visit: https://github.com/X1aSheng/shark-socket

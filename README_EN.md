@@ -5,8 +5,9 @@
 [![Tests](https://img.shields.io/badge/Tests-627%20passed-brightgreen)](./tests)
 [![Fuzz](https://img.shields.io/badge/Fuzz-7%20tests-brightgreen)](./tests)
 [![Coverage](https://img.shields.io/badge/Coverage-37%20pkgs-brightgreen)](./tests)
-[![Docker](https://img.shields.io/badge/Docker-ready-blue)](./Dockerfile)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-ready-blue)](./k8s)
+[![Docker](https://img.shields.io/badge/Docker-ready-blue)](./deploy/docker/Dockerfile)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-ready-blue)](./deploy/k8s)
+[![Helm](https://img.shields.io/badge/Helm-ready-0F1689)](./deploy/k8s/helm/shark-socket)
 
 [中文文档](./README.md) | English
 

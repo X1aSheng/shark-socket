@@ -1,0 +1,17 @@
+{{- if and .Values.metrics.enabled .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "shark-socket.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shark-socket.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "shark-socket.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+      path: {{ .Values.serviceMonitor.path }}
+{{- end }}

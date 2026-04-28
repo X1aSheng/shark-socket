@@ -29,7 +29,22 @@ examples:
 		echo "Building $$d..." && (cd "$$d" && go build .) || exit 1; \
 	done
 
-docker:
-	docker build -t shark-socket .
+build-production:
+	go build -ldflags="-s -w" -o bin/shark-socket ./cmd/shark-socket/
+
+docker-build:
+	docker build -f deploy/docker/Dockerfile -t shark-socket:latest .
+
+docker-compose-up:
+	docker compose -f deploy/docker/docker-compose.yml up -d
+
+docker-compose-dev:
+	docker compose -f deploy/docker/docker-compose.yml --profile dev up
+
+helm-lint:
+	helm lint deploy/k8s/helm/shark-socket/
+
+k8s-validate:
+	kubectl apply -k deploy/k8s/app/ --dry-run=client
 
 all: vet build test

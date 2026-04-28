@@ -108,6 +108,50 @@ spec:
       protocol: UDP
 
 ---
+# QUIC Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: shark-socket-quic
+  namespace: shark-socket
+  labels:
+    app.kubernetes.io/name: shark-socket
+    app.kubernetes.io/component: gateway
+    protocol: quic
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: shark-socket
+    app.kubernetes.io/component: gateway
+  ports:
+    - name: quic
+      port: 18900
+      targetPort: quic
+      protocol: UDP
+
+---
+# gRPC-Web Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: shark-socket-grpcweb
+  namespace: shark-socket
+  labels:
+    app.kubernetes.io/name: shark-socket
+    app.kubernetes.io/component: gateway
+    protocol: grpcweb
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: shark-socket
+    app.kubernetes.io/component: gateway
+  ports:
+    - name: grpcweb
+      port: 18650
+      targetPort: grpcweb
+      protocol: TCP
+
+---
 # Metrics Service (Prometheus scrape target)
 apiVersion: v1
 kind: Service
@@ -127,44 +171,3 @@ spec:
       port: 9091
       targetPort: metrics
       protocol: TCP
-
----
-# NodePort Service (optional: uncomment to expose TCP/UDP externally)
-# apiVersion: v1
-# kind: Service
-# metadata:
-#   name: shark-socket-nodeport
-#   namespace: shark-socket
-#   labels:
-#     app.kubernetes.io/name: shark-socket
-# spec:
-#   type: NodePort
-#   selector:
-#     app.kubernetes.io/name: shark-socket
-#     app.kubernetes.io/component: gateway
-#   ports:
-#     - name: tcp
-#       port: 18000
-#       targetPort: tcp
-#       nodePort: 30000
-#       protocol: TCP
-#     - name: udp
-#       port: 18200
-#       targetPort: udp
-#       nodePort: 30001
-#       protocol: UDP
-#     - name: http
-#       port: 18400
-#       targetPort: http
-#       nodePort: 30002
-#       protocol: TCP
-#     - name: websocket
-#       port: 18600
-#       targetPort: websocket
-#       nodePort: 30003
-#       protocol: TCP
-#     - name: coap
-#       port: 18800
-#       targetPort: coap
-#       nodePort: 30004
-#       protocol: UDP

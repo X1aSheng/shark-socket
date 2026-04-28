@@ -1,0 +1,21 @@
+apiVersion: v2
+name: shark-socket
+description: Multi-protocol network gateway (TCP, UDP, HTTP, WebSocket, CoAP, QUIC, gRPC-Web)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - networking
+  - gateway
+  - tcp
+  - udp
+  - http
+  - websocket
+  - coap
+  - quic
+  - grpc
+home: https://github.com/X1aSheng/shark-socket
+sources:
+  - https://github.com/X1aSheng/shark-socket
+maintainers:
+  - name: Victor

@@ -36,4 +36,4 @@ Thumbs.db
 .env.local
 
 # Claude Code local config
-.claude/
+#.claude/
