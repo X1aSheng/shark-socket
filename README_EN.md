@@ -1,15 +1,16 @@
 # Shark-Socket
 
 [![Go Version](https://img.shields.io/badge/Go-1.26%2B-blue)](https://go.dev)
-[![CI](https://img.shields.io/badge/CI-golangci--lint%20%7C%20test%20%7C%20bench-brightgreen)](.github/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-600%2B%20passed-brightgreen)](./tests)
+[![Tests](https://img.shields.io/badge/Tests-627%20passed-brightgreen)](./tests)
+[![Fuzz](https://img.shields.io/badge/Fuzz-7%20tests-brightgreen)](./tests)
+[![Coverage](https://img.shields.io/badge/Coverage-37%20pkgs-brightgreen)](./tests)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue)](./Dockerfile)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-ready-blue)](./k8s)
 
 [中文文档](./README.md) | English
 
-A high-performance, extensible **multi-protocol networking framework** developed in Go, supporting **TCP**, **TLS**, **UDP**, **HTTP**, **WebSocket**, and **CoAP** protocols with unified abstraction and gateway integration.
+A high-performance, extensible **multi-protocol networking framework** developed in Go, supporting **TCP**, **TLS**, **UDP**, **HTTP**, **HTTP/2**, **WebSocket**, **CoAP**, **QUIC**, and **gRPC-Web** protocols with unified abstraction and gateway integration.
 
 ---
 
@@ -17,16 +18,16 @@ A high-performance, extensible **multi-protocol networking framework** developed
 
 | Feature | Description |
 |---------|-------------|
-| 🔄 **Multi-Protocol** | Unified abstraction for TCP, TLS, UDP, HTTP, WebSocket, CoAP with shared handler |
-| 🛡️ **Type Safety** | Generic `Session[M]` with compile-time message type safety, `SendTyped` + `Send([]byte)` |
-| ⚡ **High Performance** | 32-shard SessionManager, Worker Pool, 6-level BufferPool, zero-GC allocation |
-| 🔌 **Plugin System** | Full lifecycle hooks: OnAccept / OnMessage / OnClose, priority-ordered execution |
-| 📊 **Observability** | Built-in Prometheus metrics, structured logging (slog), health check endpoints |
-| 🗄️ **Middleware** | Cache / Store / PubSub interface layer, Redis, SQL, NATS adapters |
-| 🌐 **Distributed** | ClusterPlugin for cross-node session awareness via PubSub broadcasting |
-| 🛡️ **Security** | Blacklist, RateLimit, AutoBan, CircuitBreaker, OverloadProtector |
-| 🎯 **Graceful Shutdown** | 6-stage graceful shutdown, SIGTERM handling, connection draining |
-| 🐳 **Cloud Native** | Docker, docker-compose, Kubernetes manifests (HPA/PDB/NetworkPolicy/Ingress) |
+| **Multi-Protocol** | Unified abstraction for TCP, TLS, UDP, HTTP, HTTP/2, WebSocket, CoAP, QUIC, gRPC-Web |
+| **Type Safety** | Generic `Session[M]` with compile-time message type safety, `SendTyped` + `Send([]byte)` |
+| **High Performance** | 32-shard SessionManager, Worker Pool, 6-level BufferPool, zero-GC allocation |
+| **Plugin System** | Full lifecycle hooks: OnAccept / OnMessage / OnClose, priority-ordered execution, panic protection |
+| **Observability** | Prometheus metrics, structured logging (slog), OpenTelemetry tracing, access logging |
+| **Middleware** | Cache / Store / PubSub interface layer, ready for Redis, SQL, NATS adapters |
+| **Distributed** | ClusterPlugin for cross-node session awareness via PubSub broadcasting |
+| **Security** | Blacklist, RateLimit, AutoBan, CircuitBreaker, OverloadProtector, connection limiting |
+| **Graceful Shutdown** | 6-stage graceful shutdown, SIGTERM handling, connection draining |
+| **Cloud Native** | Docker, docker-compose, Kubernetes manifests (HPA/PDB/NetworkPolicy/Ingress) |
 
 ---
 
@@ -160,11 +161,13 @@ See [Architecture Design Document](docs/shark-socket%20ARCHITECTURE.md) for full
 
 | Protocol | Default Port | Type | Features |
 |----------|-------------|------|----------|
-| **TCP** | 18000 | Streaming | 4 framer types, WorkerPool (4 policies), writeQueue, drain, TLS |
+| **TCP** | 18000 | Streaming | 4 framer types, WorkerPool (4 policies), writeQueue, drain, TLS, hot reload |
 | **UDP** | 18200 | Datagram | Pseudo-sessions (by address), TTL auto-sweep |
-| **HTTP** | 18400 | Request-Response | Mode A (thin wrapper) + Mode B (session + plugins) |
-| **WebSocket** | 18600 | Full-Duplex | Ping/Pong keepalive, origin check, gorilla/websocket |
+| **HTTP** | 18400 | Request-Response | Mode A (thin wrapper) + Mode B (session + plugins), HTTP/2 (TLS/h2c) |
+| **WebSocket** | 18600 | Full-Duplex | Ping/Pong keepalive, Origin check, access logging |
 | **CoAP** | 18800 | Constrained Application | CON retransmit, ACK, MessageID dedup (RFC 7252) |
+| **QUIC** | 18900 | Multi-Stream | UDP multiplexing, stream control, 0-RTT |
+| **gRPC-Web** | 18650 | Gateway | WebSocket/Direct dual mode, Protobuf serialization |
 
 ### TCP Framer Types
 
@@ -231,6 +234,7 @@ Return special errors to control chain execution:
 | `HeartbeatPlugin` | 30 | TimeWheel-based idle timeout |
 | `ClusterPlugin` | 40 | Cross-node session routing via PubSub |
 | `PersistencePlugin` | 50 | Async batch writes with circuit breaker |
+| `SlowQueryPlugin` | -10 | Slow request logging (default 100ms threshold) |
 
 All plugin hooks are protected against **panics** — plugin crashes won't affect the main flow.
 
@@ -301,6 +305,7 @@ The framework automatically collects the following metrics (Prometheus format):
 | `shark_session_lru_evictions_total` | LRU eviction count |
 | `shark_bufferpool_hits_total` | BufferPool hit count |
 | `shark_plugin_duration_seconds` | Plugin execution latency |
+| `shark_worker_panics_total` | Worker panic count |
 
 ---
 
@@ -341,16 +346,23 @@ shark-socket/
 
 ## 🧪 Testing
 
+### Test Scale
+
+- **627 test functions** (620 Test + 7 Fuzz), **55 benchmarks**
+- **75 test files** across **37 packages**
+- All passing, zero failures
+- Comprehensive fuzz testing: all Framer and CoAP parser coverage
+
 ### Running Tests
 
 ```bash
-# All tests (25 packages, 600+ test cases, all pass)
+# All tests
 go test ./... -v
 
 # With coverage
 go test ./... -cover
 
-# Benchmarks (49 benchmarks across 5 packages)
+# Benchmarks
 go test -bench=. -benchmem -run=^$ ./...
 
 # Race detector
@@ -360,46 +372,43 @@ go test -race ./...
 go test ./internal/protocol/tcp/... -v
 ```
 
-### Test Logging
+### Automated Test Scripts (recommended)
 
-Automatically record structured test logs:
+Three cross-platform test scripts with identical functionality:
 
-```bash
-bash scripts/run_tests.sh              # all tests
-bash scripts/run_tests.sh --unit       # unit tests only
-bash scripts/run_tests.sh --integration # integration tests only
-bash scripts/run_tests.sh --benchmark  # benchmarks only
-```
+| Script | Platform | Usage |
+|--------|----------|-------|
+| `scripts/run_tests.go` | **All platforms** | `go run scripts/run_tests.go` |
+| `scripts/run_tests.sh` | Linux / macOS / Git Bash | `bash scripts/run_tests.sh` |
+| `scripts/run_tests.bat` | Windows CMD | `scripts\run_tests.bat` |
 
-Logs are saved to `logs/` with JSON raw data + readable text reports.
+Supported modes: `--all` (default), `--unit`, `--integration`, `--benchmark`, `--cover`.
 
 ### Test Coverage
 
-22 internal packages + 3 test packages, 600+ test cases:
-
 | Package | Coverage |
 |---------|----------|
-| defense | 100.0% |
 | errs | 100.0% |
 | infra/cache | 100.0% |
 | infra/store | 100.0% |
 | infra/tracing | 100.0% |
-| infra/pubsub | 93.9% |
+| infra/pubsub | 96.1% |
+| defense | 95.1% |
 | api | 92.6% |
-| session | 92.2% |
 | types | 92.3% |
-| utils | 89.0% |
-| infra/bufferpool | 87.5% |
-| protocol/tcp | 87.0% |
-| protocol/websocket | 83.4% |
-| protocol/http | 83.0% |
-| protocol/udp | 81.4% |
-| infra/circuitbreaker | 82.8% |
-| protocol/coap | 77.8% |
+| session | 87.8% |
+| infra/bufferpool | 86.8% |
+| protocol/tcp | 85.4% |
+| utils | 84.7% |
+| protocol/websocket | 80.2% |
+| infra/circuitbreaker | 79.4% |
+| protocol/udp | 78.4% |
+| protocol/coap | 75.2% |
+| protocol/http | 75.2% |
 | infra/logger | 73.9% |
-| infra/metrics | 60.4% |
 | plugin | 62.7% |
-| gateway | 48.5% |
+| infra/metrics | 53.3% |
+| gateway | 52.1% |
 
 Test methodology: Server readiness is verified via polling (`waitForTCPServer` / `waitForUDPServer`) instead of fixed sleeps, ensuring stability across CI and local environments.
 
@@ -493,7 +502,9 @@ curl http://localhost:9091/metrics
 | 18200 | UDP | UDP echo |
 | 18400 | TCP | HTTP API |
 | 18600 | TCP | WebSocket |
+| 18650 | TCP | gRPC-Web |
 | 18800 | UDP | CoAP |
+| 18900 | UDP | QUIC |
 | 9091 | TCP | Metrics / Health |
 
 ### Kubernetes
@@ -555,10 +566,28 @@ curl http://localhost:9091/metrics
 
 ## 📖 Documentation
 
-- [Architecture Design Document](docs/shark-socket%20ARCHITECTURE.md)
+- [Architecture Design Document](docs/shark-socket%20ARCHITECTURE.md) — Full design decisions and implementation details
+- [Test Coverage Document](docs/TEST_COVERAGE.md) — All 627 tests detailed
+- [Code Review Report](docs/REVIEW_PHASE3.md) — 3-round expert review, 25/25 issues resolved
 - [API Documentation](https://pkg.go.dev/github.com/X1aSheng/shark-socket)
-- [Example Code](examples/)
+- [Example Code](examples/) — 9 runnable examples
 - [中文文档](./README.md)
+
+---
+
+## 📈 Project Statistics
+
+| Metric | Value |
+|--------|-------|
+| Go Lines of Code | 32,000+ |
+| Go Files | 176 |
+| Packages | 37 |
+| Test Functions | 627 (620 Test + 7 Fuzz) |
+| Benchmarks | 55 |
+| Test Files | 75 |
+| Examples | 9 |
+| External Dependencies | 3 (prometheus/client_golang, quic-go, gorilla/websocket) |
+| Code Review | 25/25 complete (3-round expert review) |
 
 ---
 

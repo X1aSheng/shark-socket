@@ -2,8 +2,9 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.26%2B-blue)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-619%20passed-brightgreen)](./tests)
-[![Coverage](https://img.shields.io/badge/Coverage-22%20pkgs-brightgreen)](./tests)
+[![Tests](https://img.shields.io/badge/Tests-627%20passed-brightgreen)](./tests)
+[![Fuzz](https://img.shields.io/badge/Fuzz-7%20tests-brightgreen)](./tests)
+[![Coverage](https://img.shields.io/badge/Coverage-37%20pkgs-brightgreen)](./tests)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue)](./Dockerfile)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-ready-blue)](./k8s)
 
@@ -555,9 +556,10 @@ AMD Ryzen 7 8845HS (Windows 11, Go 1.26.1) 上的基准测试结果。
 
 ### 测试规模
 
-- **619 个测试函数**，**24 个基准测试**
-- **73 个测试文件**，覆盖 **34 个包**
+- **627 个测试函数**（620 Test + 7 Fuzz），**55 个基准测试**
+- **75 个测试文件**，覆盖 **37 个包**
 - 全部通过，零失败
+- 全面 Fuzz 测试：所有 Framer 和 CoAP 解析器覆盖
 
 ### 手动运行
 
@@ -859,6 +861,8 @@ make all         # vet + build + test
 ## 📖 文档
 
 - [架构设计文档](docs/shark-socket%20ARCHITECTURE.md) — 完整设计决策与实现细节
+- [测试覆盖文档](docs/TEST_COVERAGE.md) — 全部 627 个测试详解
+- [代码审查报告](docs/REVIEW_PHASE3.md) — 3 轮专家审查，25/25 问题已修复
 - [API 文档](https://pkg.go.dev/github.com/X1aSheng/shark-socket) — GoDoc
 - [示例代码](examples/) — 9 个可运行示例
 - [English Documentation](./README_EN.md)
@@ -869,14 +873,15 @@ make all         # vet + build + test
 
 | 指标 | 数值 |
 |------|------|
-| Go 代码行数 | 22,000+ |
-| Go 文件数 | 160+ |
-| 包数量 | 34 |
-| 测试函数 | 619 |
-| 基准测试 | 24 |
-| 测试文件 | 73 |
+| Go 代码行数 | 32,000+ |
+| Go 文件数 | 176 |
+| 包数量 | 37 |
+| 测试函数 | 627 (620 Test + 7 Fuzz) |
+| 基准测试 | 55 |
+| 测试文件 | 75 |
 | 示例 | 9 |
 | 外部依赖 | 3 (prometheus/client_golang, quic-go, gorilla/websocket) |
+| 代码审查 | 25/25 全部完成 (3 轮专家审查) |
 
 ---
 

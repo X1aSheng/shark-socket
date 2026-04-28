@@ -27,27 +27,27 @@ shark-socket/
 
 ## 测试统计
 
-| 层级 | 测试文件数 | Test 函数 | Benchmark 函数 |
-|------|-----------|-----------|----------------|
-| tests/unit | 3 | 40 | 0 |
-| tests/integration | 2 | 16 | 0 |
-| tests/benchmark | 2 | 0 | 24 |
-| internal/defense | 3 | 14 | 0 |
-| internal/errs | 1 | 7 | 0 |
-| internal/gateway | 2 | 7 | 0 |
-| internal/infra | 8 | 52 | 7 |
-| internal/plugin | 6 | 28 | 6 |
-| internal/protocol/tcp | 9 | 58 | 4 |
-| internal/protocol/udp | 4 | 14 | 0 |
-| internal/protocol/http | 4 | 19 | 0 |
-| internal/protocol/websocket | 4 | 20 | 0 |
-| internal/protocol/coap | 5 | 27 | 0 |
-| internal/protocol/quic | 1 | 0 | 0 |
-| internal/protocol/grpcgw | 2 | 0 | 0 |
-| internal/session | 4 | 30 | 5 |
-| internal/types | 4 | 7 | 0 |
-| internal/utils | 3 | 18 | 0 |
-| **合计** | **73** | **619** | **46** |
+| 层级 | 测试文件数 | Test 函数 | Fuzz 函数 | Benchmark 函数 |
+|------|-----------|-----------|-----------|----------------|
+| tests/unit | 3 | 40 | 0 | 0 |
+| tests/integration | 2 | 18 | 0 | 0 |
+| tests/benchmark | 2 | 0 | 0 | 24 |
+| internal/defense | 3 | 14 | 0 | 0 |
+| internal/errs | 1 | 7 | 0 | 0 |
+| internal/gateway | 2 | 7 | 0 | 0 |
+| internal/infra | 8 | 52 | 0 | 7 |
+| internal/plugin | 6 | 28 | 0 | 6 |
+| internal/protocol/tcp | 10 | 58 | 5 | 4 |
+| internal/protocol/udp | 4 | 14 | 0 | 0 |
+| internal/protocol/http | 4 | 19 | 0 | 0 |
+| internal/protocol/websocket | 4 | 20 | 0 | 0 |
+| internal/protocol/coap | 6 | 27 | 2 | 0 |
+| internal/protocol/quic | 1 | 0 | 0 | 0 |
+| internal/protocol/grpcgw | 2 | 0 | 0 | 0 |
+| internal/session | 4 | 30 | 0 | 5 |
+| internal/types | 4 | 7 | 0 | 0 |
+| internal/utils | 3 | 18 | 0 | 0 |
+| **合计** | **75** | **620** | **7** | **46** |
 
 ---
 
@@ -116,6 +116,8 @@ shark-socket/
 | `TestMultiProtocol_AllProtocols` | TCP + HTTP + WebSocket 通过网关联合运行验证 |
 | `TestMultiProtocol_UDPAndCoAP` | UDP + CoAP 数据报交换验证 |
 | `TestGateway_GracefulShutdown` | 网关优雅关闭：超时 + 端口释放验证 |
+| `TestGateway_SharedManager` | 共享 SessionManager 跨协议分配全局唯一 ID |
+| `TestGateway_GracefulShutdownWithActiveConnections` | 活跃连接存在时优雅关闭：飞行中请求完成 + 新连接被拒 |
 
 ---
 
@@ -501,6 +503,16 @@ shark-socket/
 | `TestRawFramer_ReadEmpty` | 空读 EOF |
 | `TestFramerInterface` | 所有帧器实现 Framer 接口 |
 
+**framer_fuzz_test.go — Fuzz 测试**
+
+| 函数 | 说明 |
+|------|------|
+| `FuzzLengthPrefixFramer` | 任意字节输入不 panic（~830k 次迭代） |
+| `FuzzLineFramer` | 任意字节输入不 panic（~67k 次迭代） |
+| `FuzzRawFramer` | 任意字节输入不 panic（~409k 次迭代） |
+| `FuzzFixedSizeFramer` | 任意字节输入不 panic（~420k 次迭代） |
+| `FuzzLengthPrefixRoundtrip` | WriteFrame → ReadFrame 往返一致性验证 |
+
 **session_test.go — 会话**
 
 | 函数 | 说明 |
@@ -694,6 +706,13 @@ shark-socket/
 | `TestSerialize_RoundTrip_MultipleOptions` | 多选项往返 |
 | `TestSerialize_KnownBytes` | 已知字节序列验证 |
 | `TestSerialize_WithPayloadMarker` | 负载标记验证 |
+
+**message_fuzz_test.go — Fuzz 测试**
+
+| 函数 | 说明 |
+|------|------|
+| `FuzzParseMessage` | 任意字节解析不 panic，合法解析结果可序列化往返（~481k 次迭代） |
+| `FuzzCoAPRoundtrip` | 构造消息 → Serialize → ParseMessage 往返一致性（~548k 次迭代） |
 
 **server_test.go**
 
