@@ -45,24 +45,33 @@ func TestBufferPool_Levels(t *testing.T) {
 
 func TestBufferPool_Stats(t *testing.T) {
 	bp := bufferpool.New()
-	// Drain the pool first to ensure a miss
 	for i := 0; i < 10; i++ {
 		buf := bp.Get(100)
 		bp.Put(buf)
 	}
 
 	stats := bp.Stats()
-	// At least one miss should have occurred on first Get
-	t.Logf("Stats: hits=%v misses=%v allocs=%v totalMem=%d",
-		stats.Hits, stats.Misses, stats.Allocs, stats.TotalMem)
+	totalOps := uint64(0)
+	for i := range stats.Hits {
+		totalOps += stats.Hits[i] + stats.Misses[i] + stats.Allocs[i]
+	}
+	if totalOps == 0 {
+		t.Error("expected at least one pool operation tracked, got zero")
+	}
+	t.Logf("Stats: hits=%v misses=%v allocs=%v totalMem=%d hugeAlloc=%d",
+		stats.Hits, stats.Misses, stats.Allocs, stats.TotalMem, stats.HugeAlloc)
 }
 
 func TestBufferPool_MemoryCap(t *testing.T) {
 	bp := bufferpool.New()
-	bp.SetTotalMemoryCap(1) // very low cap
+	bp.SetTotalMemoryCap(1)
 
 	buf := bp.Get(100)
-	bp.Put(buf) // should be discarded due to cap
+	bp.Put(buf)
+
+	// After exceeding memory cap, total memory should not have grown
+	stats := bp.Stats()
+	t.Logf("Memory after cap exceeded: totalMem=%d", stats.TotalMem)
 }
 
 func TestBufferPool_Default(t *testing.T) {

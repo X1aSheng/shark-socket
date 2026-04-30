@@ -1,6 +1,7 @@
 package unit_test
 
 import (
+	"net"
 	"testing"
 	"time"
 
@@ -118,7 +119,16 @@ func TestOptions_Addr(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Logf("expected default addr: %s", tt.addr)
+			host, port, err := net.SplitHostPort(tt.addr)
+			if err != nil {
+				t.Fatalf("invalid address %q: %v", tt.addr, err)
+			}
+			if host != "127.0.0.1" {
+				t.Errorf("host = %q, want 127.0.0.1", host)
+			}
+			if port == "" {
+				t.Error("port is empty")
+			}
 		})
 	}
 }

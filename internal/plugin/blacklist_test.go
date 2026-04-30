@@ -1,7 +1,6 @@
 package plugin
 
 import (
-	"net"
 	"testing"
 	"time"
 
@@ -137,15 +136,7 @@ func TestBlacklistPlugin_IPv6Blocking(t *testing.T) {
 	p := NewBlacklistPlugin("::1")
 	defer p.Close()
 
-	sess := &mockRawSession{
-		id:         1,
-		protocol:   1,
-		remoteAddr: &net.TCPAddr{IP: net.ParseIP("::1"), Port: 12345},
-		localAddr:  &net.TCPAddr{IP: net.ParseIP("::"), Port: 8080},
-		state:      1,
-		alive:      true,
-		meta:       make(map[string]any),
-	}
+	sess := newMockSession(1, "::1")
 	if err := p.OnAccept(sess); !isErrBlock(err) {
 		t.Fatalf("expected ErrBlock for IPv6 ::1, got %v", err)
 	}

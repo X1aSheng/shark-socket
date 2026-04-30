@@ -176,7 +176,9 @@ func TestMultiProtocol_UDPAndCoAP(t *testing.T) {
 	}
 	udpSrv := udp.NewServer(udpHandler, udp.WithAddr("127.0.0.1", 0))
 
+	var coapCount atomic.Int32
 	coapHandler := func(sess types.RawSession, msg types.RawMessage) error {
+		coapCount.Add(1)
 		return sess.Send(msg.Payload)
 	}
 	coapSrv := coap.NewServer(coapHandler, coap.WithAddr("127.0.0.1", 0))
@@ -236,11 +238,26 @@ func TestMultiProtocol_UDPAndCoAP(t *testing.T) {
 			MessageID: 0x0001,
 			Payload:   []byte("coap-test"),
 		}
-		data, _ := msg.Serialize()
-		conn.Write(data)
+		data, err := msg.Serialize()
+		if err != nil {
+			t.Fatalf("Serialize: %v", err)
+		}
+		if _, err := conn.Write(data); err != nil {
+			t.Fatalf("Write: %v", err)
+		}
 
-		time.Sleep(100 * time.Millisecond)
-		t.Log("CoAP NON message sent and processed")
+		// Wait for handler to process the message
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if coapCount.Load() > 0 {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+
+		if coapCount.Load() == 0 {
+			t.Error("CoAP handler was not called")
+		}
 	})
 }
 

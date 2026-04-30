@@ -22,8 +22,8 @@ type mockRawSession struct {
 	remoteAddr net.Addr
 	localAddr  net.Addr
 	createdAt  time.Time
-	state      types.SessionState
-	alive      bool
+	alive      atomic.Bool
+	state      atomic.Int32 // stores types.SessionState
 	lastActive time.Time
 	closed     atomic.Bool
 	meta       map[string]any
@@ -34,17 +34,18 @@ func newMockSession(id uint64, remoteIP string) *mockRawSession {
 	if ip == nil {
 		ip = net.ParseIP("127.0.0.1")
 	}
-	return &mockRawSession{
+	m := &mockRawSession{
 		id:         id,
 		protocol:   types.TCP,
 		remoteAddr: &net.TCPAddr{IP: ip, Port: 12345},
 		localAddr:  &net.TCPAddr{IP: net.ParseIP("0.0.0.0"), Port: 8080},
 		createdAt:  time.Now(),
-		state:      types.Active,
-		alive:      true,
 		lastActive: time.Now(),
 		meta:       make(map[string]any),
 	}
+	m.alive.Store(true)
+	m.state.Store(int32(types.Active))
+	return m
 }
 
 func (m *mockRawSession) ID() uint64                     { return m.id }
@@ -52,8 +53,8 @@ func (m *mockRawSession) Protocol() types.ProtocolType   { return m.protocol }
 func (m *mockRawSession) RemoteAddr() net.Addr           { return m.remoteAddr }
 func (m *mockRawSession) LocalAddr() net.Addr            { return m.localAddr }
 func (m *mockRawSession) CreatedAt() time.Time           { return m.createdAt }
-func (m *mockRawSession) State() types.SessionState      { return m.state }
-func (m *mockRawSession) IsAlive() bool                  { return m.alive }
+func (m *mockRawSession) State() types.SessionState      { return types.SessionState(m.state.Load()) }
+func (m *mockRawSession) IsAlive() bool                  { return m.alive.Load() }
 func (m *mockRawSession) LastActiveAt() time.Time        { return m.lastActive }
 func (m *mockRawSession) Send(data []byte) error         { return nil }
 func (m *mockRawSession) SendTyped(msg []byte) error     { return nil }
@@ -63,8 +64,8 @@ func (m *mockRawSession) GetMeta(key string) (any, bool) { v, ok := m.meta[key];
 func (m *mockRawSession) DelMeta(key string)             { delete(m.meta, key) }
 func (m *mockRawSession) Close() error {
 	m.closed.Store(true)
-	m.alive = false
-	m.state = types.Closed
+	m.alive.Store(false)
+	m.state.Store(int32(types.Closed))
 	return nil
 }
 
