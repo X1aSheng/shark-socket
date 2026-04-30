@@ -51,11 +51,15 @@ func NewServer(opts ...Option) *Server {
 }
 
 // Handle registers a handler for a pattern (Mode A).
+// Must be called before Start(). After Start(), the ServeMux is served
+// and cannot be safely modified.
 func (s *Server) Handle(pattern string, handler stdhttp.Handler) {
 	s.mux.Handle(pattern, handler)
 }
 
 // HandleFunc registers a handler function for a pattern (Mode A).
+// Must be called before Start(). After Start(), the ServeMux is served
+// and cannot be safely modified.
 func (s *Server) HandleFunc(pattern string, handler stdhttp.HandlerFunc) {
 	s.mux.HandleFunc(pattern, handler)
 }
@@ -100,6 +104,7 @@ func (s *Server) Start() error {
 	// Configure HTTP/2 if enabled
 	if s.opts.EnableHTTP2 {
 		if err := s.configureHTTP2(); err != nil {
+			s.listener.Close()
 			return fmt.Errorf("http: configure HTTP/2: %w", err)
 		}
 	}

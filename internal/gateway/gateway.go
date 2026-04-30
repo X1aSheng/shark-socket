@@ -93,6 +93,10 @@ func (g *Gateway) Start() error {
 	}
 
 	if g.opts.EnableMetrics {
+		g.metricsServer = &stdhttp.Server{
+			Addr:    g.opts.MetricsAddr,
+			Handler: g.metricsMux(),
+		}
 		go g.serveMetrics()
 	}
 
@@ -203,17 +207,12 @@ func (g *Gateway) Run() error {
 		log.Printf("Stage 3 (SessionClose) error: %v", err)
 	}
 
-	// Stage 4: Close session manager
-	if err := g.stageManagerClose(); err != nil {
-		log.Printf("Stage 4 (ManagerClose) error: %v", err)
-	}
-
-	// Stage 5: Close metrics server
+	// Stage 4: Close metrics server
 	if err := g.stageMetricsClose(); err != nil {
-		log.Printf("Stage 5 (MetricsClose) error: %v", err)
+		log.Printf("Stage 4 (MetricsClose) error: %v", err)
 	}
 
-	// Stage 6: Finalize
+	// Stage 5: Finalize
 	g.stageFinalize()
 
 	return nil
@@ -273,15 +272,6 @@ func (g *Gateway) stageSessionClose() error {
 	return nil
 }
 
-// stageManagerClose closes the session manager.
-func (g *Gateway) stageManagerClose() error {
-	// Sessions already closed in stageSessionClose; manager cleanup is idempotent.
-	if g.sharedManager != nil {
-		_ = g.sharedManager.Close()
-	}
-	return nil
-}
-
 // stageMetricsClose closes the metrics server.
 func (g *Gateway) stageMetricsClose() error {
 	ctx, cancel := context.WithTimeout(context.Background(), g.opts.StageTimeouts.MetricsClose)
@@ -324,16 +314,15 @@ func (g *Gateway) startConfigReload() error {
 	return nil
 }
 
-func (g *Gateway) serveMetrics() {
+func (g *Gateway) metricsMux() *stdhttp.ServeMux {
 	mux := stdhttp.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/healthz", g.handleHealthz)
 	mux.HandleFunc("/readyz", g.handleReadyz)
+	return mux
+}
 
-	g.metricsServer = &stdhttp.Server{
-		Addr:    g.opts.MetricsAddr,
-		Handler: mux,
-	}
+func (g *Gateway) serveMetrics() {
 	log.Printf("Metrics server listening on %s", g.opts.MetricsAddr)
 	if err := g.metricsServer.ListenAndServe(); err != nil && err != stdhttp.ErrServerClosed {
 		log.Printf("Metrics server error: %v", err)

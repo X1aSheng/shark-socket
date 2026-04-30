@@ -217,6 +217,7 @@ func (s *Server) readLoop(sess *WSSession) {
 	defer sess.Close()
 
 	for {
+		_ = sess.conn.SetReadDeadline(time.Now().Add(s.opts.PingInterval + s.opts.PongTimeout))
 		_, msgData, err := sess.conn.ReadMessage()
 		if err != nil {
 			return
