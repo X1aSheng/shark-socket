@@ -82,7 +82,8 @@
       "Bash(go fmt *)",
       "WebFetch(domain:github.com)",
       "Bash(curl -sI https://github.com)",
-      "Bash(curl -s --connect-timeout 10 https://api.github.com)"
+      "Bash(curl -s --connect-timeout 10 https://api.github.com)",
+      "WebSearch"
     ]
   }
 }
