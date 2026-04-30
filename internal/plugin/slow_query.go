@@ -95,7 +95,7 @@ func (p *SlowQueryPlugin) LogSlow(sess types.RawSession, duration time.Duration,
 	}
 
 	if p.cfg.IncludePayload {
-		log.Printf("[slow-query] session=%d proto=%v duration=%v size=%d",
+		log.Printf("[slow-query] session=%d proto=%v duration=%v size=%d (payload logging not yet implemented)",
 			sess.ID(), sess.Protocol(), duration, size)
 	} else {
 		log.Printf("[slow-query] session=%d proto=%v duration=%v size=%d",

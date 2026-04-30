@@ -107,11 +107,12 @@ func (s *Server) readLoop() {
 
 		// Message deduplication (atomic check-and-record)
 		if sess.CheckAndRecord(msg.MessageID) {
-			// Already processed, resend ACK if needed
+			// Already processed — acknowledge without claiming content
 			if msg.Type == CON {
-				ack := NewACK(msg, CodeContent, nil)
-				ackData, _ := ack.Serialize()
-				_ = sess.Send(ackData)
+				ack := NewACK(msg, CodeEmpty, nil)
+				if ackData, err := ack.Serialize(); err == nil {
+					_ = sess.Send(ackData)
+				}
 			}
 			continue
 		}

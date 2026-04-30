@@ -39,7 +39,7 @@ docker-compose-up:
 	docker compose -f deploy/docker/docker-compose.yml up -d
 
 docker-compose-dev:
-	docker compose -f deploy/docker/docker-compose.yml --profile dev up
+	docker compose -f deploy/docker/docker-compose.yml up
 
 helm-lint:
 	helm lint deploy/k8s/helm/shark-socket/

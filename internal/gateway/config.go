@@ -60,8 +60,8 @@ func (g *Gateway) ApplyConfig(cfg *GatewayConfig) error {
 		changed = append(changed, "enable_metrics")
 	}
 
-	// Log level change would require logger integration
 	if cfg.LogLevel != "" {
+		log.Printf("gateway: log level change requested to %q (logger integration pending)", cfg.LogLevel)
 		changed = append(changed, "log_level")
 	}
 
