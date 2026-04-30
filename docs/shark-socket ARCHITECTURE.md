@@ -208,10 +208,19 @@ shark-socket/
 │   └── graceful_shutdown/main.go
 ├── scripts/
 │   ├── build.sh
-│   └── docker-build.sh
-├── Dockerfile
-├── docker-compose.yml
-├── go.mod                        # Go 1.26，外部依赖仅 2 个
+│   ├── run_tests.sh
+│   └── run_tests.bat
+├── deploy/
+│   ├── docker/
+│   │   ├── Dockerfile
+│   │   ├── docker-compose.yml
+│   │   └── .dockerignore
+│   ├── k8s/
+│   │   ├── app/
+│   │   ├── infra/
+│   │   └── helm/
+│   └── README.md
+├── go.mod                        # Go 1.26
 ├── go.sum
 └── README.md
 ```
