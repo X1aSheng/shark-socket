@@ -9,7 +9,7 @@ import (
 // Options holds gateway configuration.
 type Options struct {
 	// StageTimeouts defines per-stage shutdown timeouts.
-	// Stages (in order): StopAccept → Drain → SessionClose → ManagerClose → MetricsClose → Finalize
+	// Stages (in order): StopAccept → Drain → SessionClose → MetricsClose → Finalize
 	StageTimeouts StageTimeouts
 
 	MetricsAddr   string
