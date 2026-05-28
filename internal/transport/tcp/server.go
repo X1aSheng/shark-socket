@@ -1,0 +1,182 @@
+package tcp
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net"
+	"sync"
+	"sync/atomic"
+
+	"github.com/X1aSheng/shark-socket-new/internal/core"
+	"github.com/X1aSheng/shark-socket-new/internal/runtime"
+)
+
+type Server struct {
+	opts     Options
+	rt       core.Runtime
+	listener net.Listener
+	closed   atomic.Bool
+	acceptWG sync.WaitGroup
+	connWG   sync.WaitGroup
+	sessions sync.Map
+	pool     *workerPool
+}
+
+func NewServer(opts ...Option) *Server {
+	cfg := defaultOptions()
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	return &Server{opts: cfg}
+}
+
+func (s *Server) Protocol() core.Protocol { return core.ProtocolTCP }
+
+func (s *Server) UseRuntime(rt core.Runtime) {
+	s.rt = rt
+}
+
+func (s *Server) Start(ctx context.Context) error {
+	if s.rt == nil {
+		s.rt = runtime.NewRuntime(nil, nil)
+	}
+	s.pool = newWorkerPool(s.opts.Handler, s.opts.WorkerCount, s.opts.TaskQueueSize, s.opts.FullPolicy)
+	s.pool.start(s.opts.WorkerCount)
+	ln, err := net.Listen("tcp", s.opts.Addr)
+	if err != nil {
+		s.pool.stop()
+		return fmt.Errorf("tcp listen %s: %w", s.opts.Addr, err)
+	}
+	s.listener = ln
+
+	s.acceptWG.Add(1)
+	go s.acceptLoop(ctx)
+	return nil
+}
+
+func (s *Server) Stop(ctx context.Context) error {
+	_ = s.StopAccept(ctx)
+	if err := s.CloseSessions(ctx); err != nil {
+		return err
+	}
+	return s.Drain(ctx)
+}
+
+func (s *Server) StopAccept(context.Context) error {
+	if !s.closed.CompareAndSwap(false, true) {
+		return nil
+	}
+	if s.listener != nil {
+		return s.listener.Close()
+	}
+	return nil
+}
+
+func (s *Server) Drain(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		s.acceptWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *Server) CloseSessions(ctx context.Context) error {
+	var firstErr error
+	s.sessions.Range(func(_, v any) bool {
+		sess := v.(*session)
+		if err := sess.Close(ctx); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		return true
+	})
+	done := make(chan struct{})
+	go func() {
+		s.connWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		if s.pool != nil {
+			s.pool.stop()
+		}
+		return firstErr
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *Server) Addr() net.Addr {
+	if s.listener == nil {
+		return nil
+	}
+	return s.listener.Addr()
+}
+
+func (s *Server) acceptLoop(ctx context.Context) {
+	defer s.acceptWG.Done()
+	for {
+		conn, err := s.listener.Accept()
+		if err != nil {
+			if s.closed.Load() || ctx.Err() != nil {
+				return
+			}
+			slog.Warn("tcp accept failed", "error", err)
+			continue
+		}
+		s.connWG.Add(1)
+		go func() {
+			defer s.connWG.Done()
+			s.handleConn(conn)
+		}()
+	}
+}
+
+func (s *Server) handleConn(conn net.Conn) {
+	id := s.rt.Sessions().NextID()
+	sess := newSession(id, conn, s.opts.Framer, s.opts.WriteQueue)
+	s.sessions.Store(id, sess)
+	defer func() {
+		s.sessions.Delete(id)
+		s.rt.Sessions().Unregister(id)
+		s.rt.Plugins().OnClose(sess)
+	}()
+
+	if err := s.rt.Sessions().Register(sess); err != nil {
+		_ = sess.Close(context.Background())
+		return
+	}
+	if err := s.rt.Plugins().OnAccept(sess); err != nil {
+		_ = sess.Close(context.Background())
+		return
+	}
+
+	go sess.writeLoop()
+	sess.readLoop(func(payload []byte) {
+		payload, err := s.rt.Plugins().OnMessage(sess, payload)
+		if err != nil {
+			if err == core.ErrPluginDrop {
+				return
+			}
+			_ = sess.Close(context.Background())
+			return
+		}
+		if s.pool != nil {
+			if err := s.pool.submit(sess, payload); err != nil && err == core.ErrWriteQueueFull {
+				s.rt.Metrics().IncCounter("tcp_task_queue_full_total")
+			}
+		}
+	})
+}
+
+var (
+	_ core.Server              = (*Server)(nil)
+	_ core.RuntimeConfigurable = (*Server)(nil)
+	_ core.StagedServer        = (*Server)(nil)
+)
