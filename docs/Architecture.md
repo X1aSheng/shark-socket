@@ -444,3 +444,23 @@ Result:
 - Verified heartbeat closes and unregisters idle sessions.
 - Verified persistence writes lifecycle events.
 - Verified AutoBan blocks remotes after threshold is reached.
+
+### Step 16: Observability Test Primitives
+
+Scope:
+
+- In-memory metrics implementation for tests and local diagnostics.
+- In-memory logger implementation for runtime assertions.
+
+Commands:
+
+```bash
+go test ./internal/infra/observability -count=1 -v
+go test ./... -count=1
+```
+
+Result:
+
+- Passed.
+- Verified counter, gauge, and histogram storage.
+- Verified structured log capture.
