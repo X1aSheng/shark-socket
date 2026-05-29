@@ -11,6 +11,7 @@ This project uses semantic versioning. Pre-release tags use the form
 - Added GitHub Actions CI for scripted tests, validation, deploy checks, and log artifacts.
 - Added project review report `docs/PROJECT-REVIEW-260530-004244.md`.
 - Added protocol testing guide and expanded edge-case coverage across TCP, UDP, HTTP, WebSocket, CoAP, LwM2M, QUIC, and gRPC-Web.
+- Added JSON/environment configurable runtime entrypoint with health, readiness, metrics, sample config, and container listener defaults.
 
 ## v0.1.0-rc.1 - 2026-05-30
 

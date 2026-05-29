@@ -9,5 +9,5 @@ FROM alpine:3.22
 RUN adduser -D -H shark
 USER shark
 COPY --from=build /out/shark-socket-new /usr/local/bin/shark-socket-new
-EXPOSE 18000
+EXPOSE 18000 18080 18081
 ENTRYPOINT ["/usr/local/bin/shark-socket-new"]

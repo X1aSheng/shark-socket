@@ -2,37 +2,44 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
+	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
-	"github.com/X1aSheng/shark-socket-new/api"
+	"github.com/X1aSheng/shark-socket-new/internal/app"
 )
 
 func main() {
+	configPath := flag.String("config", os.Getenv("SHARK_CONFIG"), "path to JSON configuration file")
+	flag.Parse()
+
+	cfg, err := app.LoadConfig(*configPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	runtimeApp, err := app.New(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	gw := api.NewGateway()
-	if err := gw.Register(api.NewTCPServer(
-		api.WithTCPAddr("127.0.0.1:18000"),
-		api.WithTCPHandler(func(sess api.Session, msg api.Message) error {
-			return sess.Send(msg.Payload)
-		}),
-	)); err != nil {
+	if err := runtimeApp.Start(ctx); err != nil {
 		log.Fatal(err)
 	}
-
-	if err := gw.Start(ctx); err != nil {
-		log.Fatal(err)
-	}
-	log.Println("shark-socket-new listening on tcp://127.0.0.1:18000")
+	log.Printf("shark-socket-new protocols=%v health=%s metrics=%s", runtimeApp.Protocols, cfg.HealthAddr, cfg.MetricsAddr)
 
 	<-ctx.Done()
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	timeout, err := cfg.ShutdownDuration()
+	if err != nil {
+		log.Fatal(err)
+	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	if err := gw.Stop(shutdownCtx); err != nil {
+	if err := runtimeApp.Stop(shutdownCtx); err != nil {
 		log.Fatal(err)
 	}
 }

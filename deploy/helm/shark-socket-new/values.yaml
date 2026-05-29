@@ -8,6 +8,13 @@ image:
 service:
   type: ClusterIP
   port: 18000
+  metricsPort: 18080
+  healthPort: 18081
+
+config:
+  tcpAddr: "0.0.0.0:18000"
+  metricsAddr: "0.0.0.0:18080"
+  healthAddr: "0.0.0.0:18081"
 
 podSecurityContext:
   runAsNonRoot: true

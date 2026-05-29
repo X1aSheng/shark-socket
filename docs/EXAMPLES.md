@@ -2,6 +2,12 @@
 
 ## Multi-Protocol Runtime
 
+Run the configurable multi-protocol gateway:
+
+```powershell
+go run ./cmd/shark-socket-new -config .\examples\config\multi-protocol.json
+```
+
 Run the multi-protocol example:
 
 ```powershell

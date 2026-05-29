@@ -9,3 +9,9 @@ spec:
     - name: tcp
       port: 18000
       targetPort: 18000
+    - name: metrics
+      port: 18080
+      targetPort: 18080
+    - name: health
+      port: 18081
+      targetPort: 18081

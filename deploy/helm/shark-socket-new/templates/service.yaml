@@ -10,3 +10,9 @@ spec:
     - name: tcp
       port: {{ .Values.service.port }}
       targetPort: {{ .Values.service.port }}
+    - name: metrics
+      port: {{ .Values.service.metricsPort }}
+      targetPort: {{ .Values.service.metricsPort }}
+    - name: health
+      port: {{ .Values.service.healthPort }}
+      targetPort: {{ .Values.service.healthPort }}

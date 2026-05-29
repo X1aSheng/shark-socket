@@ -1,0 +1,35 @@
+{
+  "shutdown_timeout": "10s",
+  "health_addr": "127.0.0.1:18081",
+  "metrics_addr": "127.0.0.1:18080",
+  "protocols": [
+    {
+      "name": "tcp",
+      "addr": "127.0.0.1:18000"
+    },
+    {
+      "name": "udp",
+      "addr": "127.0.0.1:18002"
+    },
+    {
+      "name": "http",
+      "addr": "127.0.0.1:18003"
+    },
+    {
+      "name": "websocket",
+      "addr": "127.0.0.1:18004",
+      "path": "/ws"
+    },
+    {
+      "name": "coap",
+      "addr": "127.0.0.1:18005",
+      "mode": "lwm2m"
+    },
+    {
+      "name": "grpc-web",
+      "addr": "127.0.0.1:18006",
+      "path": "/grpc/ws",
+      "max_message_bytes": 4194304
+    }
+  ]
+}

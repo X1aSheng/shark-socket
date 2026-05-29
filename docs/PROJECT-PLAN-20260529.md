@@ -1,6 +1,6 @@
 # Shark-Socket-New Project Plan
 
-Updated: 2026-05-30T00:56:21
+Updated: 2026-05-30T01:25:00
 
 ## Timestamp Format
 
@@ -88,6 +88,7 @@ This plan is based on the current repository state, not aspirational scope.
 | 30 | GitHub Actions validation workflow | Done | 2026-05-30T00:43:15 | `c106bbf` | Deploy workflow semantics test, deploy validation, full test sweep, vet |
 | 31 | Protocol test guide | Done | 2026-05-30T00:50:00 | `777f6ae` | Independent protocol testing guide and README link |
 | 32 | Protocol edge coverage expansion | Done | 2026-05-30T00:56:21 | `b00d46a` | Focused protocol tests, full test sweep, vet, scripted all-mode validation, race validation |
+| 33 | Configurable runtime entrypoint | Done | 2026-05-30T01:12:39 | Pending | App config tests, deploy tests, full test sweep, vet, build, deploy validation, race validation |
 
 ## Active Improvement Plan
 
@@ -95,6 +96,7 @@ This plan is based on the current repository state, not aspirational scope.
 | --- | --- | --- | --- | --- |
 | P0 | Documentation accuracy | Done | Keep this plan, `Architecture.md`, README, and changelog aligned with implemented capability | README now describes current multi-protocol state and links release notes |
 | P0 | Release validation automation | Done | Add scripted validation command that runs test/vet/race with local toolchain PATH | `scripts/validate.ps1` supports normal and race validation |
+| P0 | Configurable runtime entrypoint | Partial | Start multi-protocol gateway from config instead of source edits | JSON config, env overrides, health/readiness, metrics, and container listener env exist; TLS/QUIC config remains pending |
 | P1 | LwM2M over CoAP binding | Done | Connect LwM2M lifecycle operations to CoAP request/response handlers | CoAP responder maps register/update/deregister/read/write payloads to LwM2M server operations |
 | P1 | gRPC-Web WebSocket mode | Done | Add WebSocket transport mode for gRPC-Web gateway | Direct HTTP and WebSocket modes now share runtime/plugin/session behavior |
 | P1 | External observability adapters | Done | Add Prometheus/OpenTelemetry adapters behind existing core interfaces | Prometheus metrics exporter and OpenTelemetry tracer adapter exist |

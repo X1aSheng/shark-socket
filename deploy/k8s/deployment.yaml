@@ -32,6 +32,17 @@ spec:
           ports:
             - name: tcp
               containerPort: 18000
+            - name: metrics
+              containerPort: 18080
+            - name: health
+              containerPort: 18081
+          env:
+            - name: SHARK_TCP_ADDR
+              value: "0.0.0.0:18000"
+            - name: SHARK_METRICS_ADDR
+              value: "0.0.0.0:18080"
+            - name: SHARK_HEALTH_ADDR
+              value: "0.0.0.0:18081"
           resources:
             requests:
               cpu: 50m
@@ -40,12 +51,14 @@ spec:
               cpu: 500m
               memory: 256Mi
           readinessProbe:
-            tcpSocket:
-              port: 18000
+            httpGet:
+              path: /readyz
+              port: health
             initialDelaySeconds: 3
             periodSeconds: 10
           livenessProbe:
-            tcpSocket:
-              port: 18000
+            httpGet:
+              path: /healthz
+              port: health
             initialDelaySeconds: 10
             periodSeconds: 20

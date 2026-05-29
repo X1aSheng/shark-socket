@@ -1,6 +1,6 @@
 # Shark-Socket-New Implementation Goals
 
-Updated: 2026-05-30T01:10:00
+Updated: 2026-05-30T01:25:00
 
 ## Purpose
 
@@ -225,3 +225,11 @@ Expected evidence:
 - Kubernetes or Helm render/apply log.
 - Local client request/response transcript.
 - Updated documentation with exact commands and results.
+
+## Current Progress Notes
+
+- Configurable runtime entrypoint is partially complete: JSON config,
+  environment overrides, health/readiness endpoints, metrics listener, container
+  listener environment, and sample multi-protocol config exist.
+- TLS/mTLS configuration remains part of the security-baseline milestone.
+- QUIC config remains pending because it requires TLS material handling.

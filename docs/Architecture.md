@@ -853,3 +853,33 @@ Result:
 - Scripted integration report: 6 passed, 0 failed, 0 skipped.
 - Race validation passed.
 - Deploy static validation passed; Docker, Kubectl, and Helm render checks were skipped locally because those tools are not installed.
+
+### Step 32: Configurable Runtime Entrypoint
+
+Scope:
+
+- `cmd/shark-socket-new` now accepts `-config` and `SHARK_CONFIG`.
+- Added JSON config loading and environment overrides for shutdown, health, metrics, TCP, WebSocket, and gRPC-Web settings.
+- Added `internal/app` runtime assembly layer for Gateway, protocol registration, health, readiness, and Prometheus metrics HTTP servers.
+- Added sample multi-protocol config at `examples/config/multi-protocol.json`.
+- Docker, docker-compose, K8s, and Helm now bind listeners to `0.0.0.0` through environment variables.
+- K8s and Helm probes now use `/readyz` and `/healthz` over the configured health port.
+
+Commands:
+
+```bash
+go test ./internal/app ./tests/deploy -count=1 -v
+go test ./... -count=1
+go vet ./...
+go build ./cmd/shark-socket-new
+powershell -ExecutionPolicy Bypass -File .\scripts\validate_deploy.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1 -Race
+```
+
+Result:
+
+- Passed at 2026-05-30T01:12:39.
+- Verified config loading, environment overrides, configured protocol registration, and readiness behavior.
+- Verified deploy static tests for exposed health/metrics ports, environment variables, and HTTP probes.
+- Docker, Kubectl, and Helm render checks were skipped locally because those tools are not installed.
+- QUIC configuration remains pending because TLS material handling is not yet designed.

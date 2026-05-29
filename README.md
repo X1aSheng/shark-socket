@@ -37,6 +37,17 @@ go run ./cmd/shark-socket-new
 
 The example starts a TCP echo server on `127.0.0.1:18000`.
 
+Run with a configuration file:
+
+```powershell
+go run ./cmd/shark-socket-new -config .\examples\config\multi-protocol.json
+```
+
+Health and readiness endpoints are available when `health_addr` is configured:
+
+- `GET /healthz`
+- `GET /readyz`
+
 ## Validate
 
 Fast validation:
@@ -92,6 +103,7 @@ Raw JSON and readable reports are written to `logs/`.
 - Architecture: [docs/Architecture.md](docs/Architecture.md)
 - Project plan: [docs/PROJECT-PLAN-20260529.md](docs/PROJECT-PLAN-20260529.md)
 - Implementation goals: [docs/IMPLEMENTATION-GOALS-20260530.md](docs/IMPLEMENTATION-GOALS-20260530.md)
+- Configuration: [docs/CONFIGURATION-20260530.md](docs/CONFIGURATION-20260530.md)
 - Test strategy: [docs/TEST-STRATEGY-20260529.md](docs/TEST-STRATEGY-20260529.md)
 - Protocol test guide: [docs/PROTOCOL-TEST-GUIDE-20260530.md](docs/PROTOCOL-TEST-GUIDE-20260530.md)
 - Examples: [docs/EXAMPLES.md](docs/EXAMPLES.md)
