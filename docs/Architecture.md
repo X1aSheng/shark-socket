@@ -411,11 +411,13 @@ Commands:
 ```bash
 go test ./... -count=1
 go vet ./...
-$env:CGO_ENABLED='1'; go test -race ./... -count=1
+$env:PATH='D:\Programs\w64devkit\bin;D:\Programs\LLVM\bin;' + $env:PATH
+$env:CGO_ENABLED='1'
+go test -race ./... -count=1
 ```
 
 Result:
 
 - `go test ./... -count=1`: passed.
 - `go vet ./...`: passed.
-- `go test -race ./... -count=1`: blocked by local toolchain because `gcc` is not installed in `%PATH%`; no code-level race failure was observed.
+- `go test -race ./... -count=1`: passed with `w64devkit`/`LLVM` on `%PATH%`.
