@@ -1,6 +1,12 @@
 # Shark-Socket-New Project Plan
 
-Updated: 2026-05-29 10:45 Asia/Shanghai
+Updated: 2026-05-29T12:15:52
+
+## Timestamp Format
+
+- General planning and design timestamps use `YYYY-MM-DDTHH:mm:ss`.
+- Test and validation logs that need precision use `YYYY-MM-DDTHH:mm:ss.xxx`.
+- Timezone suffixes are intentionally omitted from project documents.
 
 ## Plan Basis
 
@@ -45,21 +51,21 @@ This plan is based on the current repository state, not aspirational scope.
 
 | Step | Milestone | Status | Completed At | Commit | Validation |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Core/runtime foundation | Done | 2026-05-29 06:53 +0800 | `079b1fc` | Runtime tests, full test sweep |
-| 2 | TCP transport slice | Done | 2026-05-29 06:53 +0800 | `542f168` | TCP focused tests, full test sweep |
-| 3 | UDP/HTTP/WebSocket transports | Done | 2026-05-29 06:53 +0800 | `a5e2752` | Transport focused tests, full test sweep |
-| 4 | Public API, plugins, docs | Done | 2026-05-29 06:54 +0800 | `d54b76b` | API build via full test sweep |
-| 5 | CoAP transport | Done | 2026-05-29 09:30 +0800 | `8ff0ca5` | CoAP focused tests, full test sweep |
-| 6 | LwM2M lifecycle model | Done | 2026-05-29 09:33 +0800 | `20816a3` | LwM2M focused tests, full test sweep |
-| 7 | QUIC transport | Done | 2026-05-29 09:36 +0800 | `b6774f3` | QUIC focused tests, full test sweep |
-| 8 | gRPC-Web direct transport | Done | 2026-05-29 09:38 +0800 | `9b92f40` | gRPC-Web focused tests, full test sweep |
-| 9 | Core infra primitives | Done | 2026-05-29 09:40 +0800 | `ffb022e` | Infra focused tests, full test sweep |
-| 10 | Deployment baseline | Done | 2026-05-29 09:41 +0800 | `3086e6e` | Static deploy tests, full test sweep |
-| 11 | Release validation record | Done | 2026-05-29 09:42 +0800 | `cbc9946` | Test/vet record |
-| 12 | Successful race validation | Done | 2026-05-29 09:58 +0800 | `cd5cba6` | Full race test |
-| 13 | Expanded plugin ecosystem | Done | 2026-05-29 10:17 +0800 | `57d22b2` | Plugin focused tests, full test sweep |
-| 14 | Observability test primitives | Done | 2026-05-29 10:18 +0800 | `2ba964d` | Observability focused tests, full test sweep |
-| 15 | Infra/cache/breaker/heartbeat hardening | Done | 2026-05-29 10:32 +0800 | `8d613f5` | Focused tests, full test sweep, race test |
+| 1 | Core/runtime foundation | Done | 2026-05-29T06:53:30 | `079b1fc` | Runtime tests, full test sweep |
+| 2 | TCP transport slice | Done | 2026-05-29T06:53:40 | `542f168` | TCP focused tests, full test sweep |
+| 3 | UDP/HTTP/WebSocket transports | Done | 2026-05-29T06:53:54 | `a5e2752` | Transport focused tests, full test sweep |
+| 4 | Public API, plugins, docs | Done | 2026-05-29T06:54:06 | `d54b76b` | API build via full test sweep |
+| 5 | CoAP transport | Done | 2026-05-29T09:30:28 | `8ff0ca5` | CoAP focused tests, full test sweep |
+| 6 | LwM2M lifecycle model | Done | 2026-05-29T09:33:16 | `20816a3` | LwM2M focused tests, full test sweep |
+| 7 | QUIC transport | Done | 2026-05-29T09:36:33 | `b6774f3` | QUIC focused tests, full test sweep |
+| 8 | gRPC-Web direct transport | Done | 2026-05-29T09:38:56 | `9b92f40` | gRPC-Web focused tests, full test sweep |
+| 9 | Core infra primitives | Done | 2026-05-29T09:40:36 | `ffb022e` | Infra focused tests, full test sweep |
+| 10 | Deployment baseline | Done | 2026-05-29T09:41:47 | `3086e6e` | Static deploy tests, full test sweep |
+| 11 | Release validation record | Done | 2026-05-29T09:42:41 | `cbc9946` | Test/vet record |
+| 12 | Successful race validation | Done | 2026-05-29T09:58:16 | `cd5cba6` | Full race test |
+| 13 | Expanded plugin ecosystem | Done | 2026-05-29T10:17:00 | `57d22b2` | Plugin focused tests, full test sweep |
+| 14 | Observability test primitives | Done | 2026-05-29T10:18:00 | `2ba964d` | Observability focused tests, full test sweep |
+| 15 | Infra/cache/breaker/heartbeat hardening | Done | 2026-05-29T10:32:25 | `8d613f5` | Focused tests, full test sweep, race test |
 
 ## Active Improvement Plan
 

@@ -11,6 +11,12 @@ The redesign focuses on runtime correctness before feature breadth.
 5. Put typed messages above raw transport sessions through codecs.
 6. Make staged shutdown a real protocol contract, not a comment.
 
+## Timestamp Format
+
+- General design timestamps use `YYYY-MM-DDTHH:mm:ss`.
+- Test and validation logs that need precision use `YYYY-MM-DDTHH:mm:ss.xxx`.
+- Timezone suffixes are intentionally omitted from project documents.
+
 ## Layers
 
 ```text
