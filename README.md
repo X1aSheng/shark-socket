@@ -66,6 +66,15 @@ $env:CGO_ENABLED='1'
 go test -race ./... -count=1
 ```
 
+Release hardening commands:
+
+```powershell
+go test ./internal/transport/tcp -run='^$' -fuzz=FuzzLengthPrefixFramer -fuzztime=2s
+go test ./internal/transport/tcp -run='^$' -fuzz=FuzzLineFramerRead -fuzztime=2s
+go test ./internal/transport/coap -run='^$' -fuzz=FuzzParseMessage -fuzztime=2s
+go test './internal/transport/tcp' './internal/transport/coap' '-run=^$' '-bench=.' '-benchmem'
+```
+
 ## Documentation
 
 - Architecture: [docs/Architecture.md](docs/Architecture.md)

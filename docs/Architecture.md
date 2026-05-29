@@ -568,3 +568,37 @@ Result:
 - Passed at 2026-05-29T12:27:15.243.
 - Verified direct HTTP mode still passes.
 - Verified WebSocket echo, max-size close behavior, origin rejection, and session cleanup.
+
+### Step 21: TCP And CoAP Fuzz/Benchmark Baseline
+
+Scope:
+
+- TCP length-prefix and line framer fuzz smoke tests.
+- CoAP message parse/marshal fuzz smoke test.
+- Benchmark baseline for TCP framers and CoAP parse/marshal.
+
+Commands:
+
+```bash
+go test ./internal/transport/tcp ./internal/transport/coap -count=1 -v
+go test ./internal/transport/tcp -run=^$ -fuzz=FuzzLengthPrefixFramer -fuzztime=2s
+go test ./internal/transport/tcp -run=^$ -fuzz=FuzzLineFramerRead -fuzztime=2s
+go test ./internal/transport/coap -run=^$ -fuzz=FuzzParseMessage -fuzztime=2s
+go test './internal/transport/tcp' './internal/transport/coap' '-run=^$' '-bench=.' '-benchmem'
+powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1
+```
+
+Benchmark Baseline:
+
+```text
+BenchmarkLengthPrefixFramerRoundTrip-16    249.4 ns/op    664 B/op    6 allocs/op
+BenchmarkLineFramerRoundTrip-16           2496 ns/op     1840 B/op   12 allocs/op
+BenchmarkMessageParse-16                    88.33 ns/op   264 B/op    2 allocs/op
+BenchmarkMessageMarshal-16                 101.2 ns/op    304 B/op    3 allocs/op
+```
+
+Result:
+
+- Passed at 2026-05-29T12:30:30.148.
+- Verified fuzz smoke for TCP length-prefix, TCP line framing, and CoAP parse/marshal.
+- Verified full validation script after adding fuzz and benchmark tests.

@@ -1,6 +1,6 @@
 # Shark-Socket-New Project Plan
 
-Updated: 2026-05-29T12:27:15
+Updated: 2026-05-29T12:30:30
 
 ## Timestamp Format
 
@@ -14,7 +14,7 @@ This plan is based on the current repository state, not aspirational scope.
 
 - Module: `github.com/X1aSheng/shark-socket-new`, Go `1.26.1`.
 - Current branch: `shark-socket-new-main`.
-- Current design reference: `docs/Architecture.md`, including Step 1 through Step 20 validation records.
+- Current design reference: `docs/Architecture.md`, including Step 1 through Step 21 validation records.
 - Current verified commands:
   - `go test ./... -count=1`
   - `go vet ./...`
@@ -45,7 +45,7 @@ This plan is based on the current repository state, not aspirational scope.
 | Plugins | Partial | Core plugins exist; cluster and slow-query style plugins are not yet implemented |
 | Infra | Partial | In-memory primitives exist; external adapters/exporters are not yet implemented |
 | Deploy | Baseline | Static Docker/K8s/Helm manifest tests pass |
-| Release validation | Partial | Unit/integration/race/vet pass; benchmark/fuzz/deploy CLI validation still pending |
+| Release validation | Partial | Unit/integration/race/vet/fuzz/benchmark pass; deploy CLI validation still pending |
 
 ## Completed Milestones
 
@@ -69,6 +69,7 @@ This plan is based on the current repository state, not aspirational scope.
 | 16 | Documentation alignment and validation script | Done | 2026-05-29T12:21:22 | Pending | README status matrix, `scripts/validate.ps1`, normal validation, race validation |
 | 17 | LwM2M over CoAP binding | Done | 2026-05-29T12:24:31 | Pending | CoAP + LwM2M integration test, full validation |
 | 18 | gRPC-Web WebSocket mode | Done | 2026-05-29T12:27:15 | Pending | gRPC-Web focused tests, full validation |
+| 19 | TCP/CoAP fuzz and benchmark baseline | Done | 2026-05-29T12:30:30 | Pending | TCP/CoAP focused tests, fuzz smoke, benchmark baseline, full validation |
 
 ## Active Improvement Plan
 
@@ -80,15 +81,14 @@ This plan is based on the current repository state, not aspirational scope.
 | P1 | gRPC-Web WebSocket mode | Done | Add WebSocket transport mode for gRPC-Web gateway | Direct HTTP and WebSocket modes now share runtime/plugin/session behavior |
 | P1 | External observability adapters | Planned | Add Prometheus/OpenTelemetry adapters behind existing core interfaces | Core interfaces and memory adapters exist |
 | P1 | Deploy validation depth | Planned | Add Docker/Helm/K8s render checks when tools are available | Current deploy tests only assert manifest presence and Dockerfile entrypoint |
-| P2 | Benchmarks and fuzzing | Planned | Add protocol benchmarks and fuzz tests for CoAP/TCP framing | Current validation is unit/integration/race/vet focused |
+| P2 | Benchmarks and fuzzing | Done | Add protocol benchmarks and fuzz tests for CoAP/TCP framing | TCP framer and CoAP parser fuzz smoke plus benchmark baselines are recorded |
 | P2 | Plugin completeness | Planned | Add cluster and slow-query style plugins if production use requires them | Current plugin set covers common local safety, not clustering |
 
 ## Next Execution Steps
 
 1. Release hardening
-   - Add benchmark baselines.
-   - Add fuzz smoke for CoAP parse/marshal and TCP framers.
    - Add deploy CLI validation gated by tool availability.
+   - Refresh final race validation after deploy validation changes.
 
 ## Acceptance Criteria
 
