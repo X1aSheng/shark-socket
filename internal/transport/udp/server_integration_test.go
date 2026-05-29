@@ -29,6 +29,20 @@ func (p *prefixPlugin) OnClose(core.Session) {
 	p.closed++
 }
 
+type conditionalDropPlugin struct {
+	core.BasePlugin
+	drop string
+}
+
+func (p conditionalDropPlugin) Name() string { return "udp-conditional-drop" }
+
+func (p conditionalDropPlugin) OnMessage(_ core.Session, data []byte) ([]byte, error) {
+	if string(data) == p.drop {
+		return nil, core.ErrPluginDrop
+	}
+	return data, nil
+}
+
 func TestGatewayUDPGlobalPluginEchoAndShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -125,4 +139,57 @@ func TestUDPSessionTTL(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("session did not expire: server=%d runtime=%d", server.SessionCount(), gateway.Runtime().Sessions().Count())
+}
+
+func TestGatewayUDPPluginDropSuppressesResponseAndKeepsSession(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gateway := runtime.NewGateway(runtime.WithPlugins(conditionalDropPlugin{drop: "drop"}))
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer shutdownCancel()
+		_ = gateway.Stop(shutdownCtx)
+	}()
+
+	conn, err := net.Dial("udp", server.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.Write([]byte("drop")); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 1024)
+	if n, err := conn.Read(buf); err == nil {
+		t.Fatalf("received dropped datagram response %q", buf[:n])
+	}
+	if server.SessionCount() != 1 {
+		t.Fatalf("session count = %d, want 1", server.SessionCount())
+	}
+	if _, err := conn.Write([]byte("keep")); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	n, err := conn.Read(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(buf[:n]) != "keep" {
+		t.Fatalf("echo = %q, want keep", buf[:n])
+	}
 }

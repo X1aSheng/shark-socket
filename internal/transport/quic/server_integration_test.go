@@ -94,6 +94,52 @@ func TestGatewayQUICEchoAndShutdown(t *testing.T) {
 	}
 }
 
+func TestQUICOversizedStreamDoesNotInvokeHandler(t *testing.T) {
+	called := make(chan struct{}, 1)
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithTLS(testTLSConfig(t)),
+		WithHandler(func(core.Session, core.Message) error {
+			called <- struct{}{}
+			return nil
+		}),
+	)
+	server.opts.MaxMessageSize = 3
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = gateway.Stop(shutdownCtx)
+	}()
+
+	conn, err := quicgo.DialAddr(context.Background(), server.Addr().String(), ClientTLSConfig(true), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := conn.OpenStreamSync(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Write([]byte("hello")); err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-called:
+		t.Fatal("handler called for oversized stream")
+	case <-time.After(100 * time.Millisecond):
+	}
+	_ = conn.CloseWithError(0, "done")
+}
+
 func testTLSConfig(t *testing.T) *tls.Config {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)

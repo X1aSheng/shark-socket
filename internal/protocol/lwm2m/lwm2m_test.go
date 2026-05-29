@@ -53,3 +53,16 @@ func TestSweepExpired(t *testing.T) {
 		t.Fatalf("removed = %d, want 1", removed)
 	}
 }
+
+func TestInvalidCoAPPayloadDoesNotMutateRegistrations(t *testing.T) {
+	server := NewServer()
+	if _, err := server.HandleCoAPPayload([]byte("register device-1 bad-lifetime")); err == nil {
+		t.Fatal("HandleCoAPPayload succeeded, want error")
+	}
+	if _, ok := server.Registration("device-1"); ok {
+		t.Fatal("invalid command created registration")
+	}
+	if _, err := server.HandleCoAPPayload([]byte("unknown device-1")); err == nil {
+		t.Fatal("unknown command succeeded, want error")
+	}
+}

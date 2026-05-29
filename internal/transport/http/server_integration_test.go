@@ -3,6 +3,7 @@ package http
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	stdhttp "net/http"
 	"testing"
@@ -110,6 +111,35 @@ func TestHTTPModeBBodyLimit(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != stdhttp.StatusRequestEntityTooLarge {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, stdhttp.StatusRequestEntityTooLarge)
+	}
+}
+
+func TestHTTPModeBHandlerErrorReturns500AndCleansSession(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithHandler(func(core.Session, core.Message) error {
+			return errors.New("handler failed")
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer stopGateway(t, gateway)
+
+	resp, err := stdhttp.Post("http://"+server.Addr().String()+"/", "text/plain", bytes.NewReader([]byte("hello")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != stdhttp.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, stdhttp.StatusInternalServerError)
+	}
+	if count := gateway.Runtime().Sessions().Count(); count != 0 {
+		t.Fatalf("session count = %d, want 0", count)
 	}
 }
 

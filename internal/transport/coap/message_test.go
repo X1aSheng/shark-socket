@@ -26,6 +26,15 @@ func TestParseRejectsInvalidVersion(t *testing.T) {
 	}
 }
 
+func TestTokenLengthValidation(t *testing.T) {
+	if _, err := (Message{Type: TypeCON, Code: CodeGet, Token: []byte{1, 2, 3, 4, 5, 6, 7, 8, 9}}).Marshal(); err != ErrTokenTooLong {
+		t.Fatalf("Marshal error = %v, want %v", err, ErrTokenTooLong)
+	}
+	if _, err := Parse([]byte{Version<<6 | 9, CodeGet, 0, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9}); err != ErrTokenTooLong {
+		t.Fatalf("Parse error = %v, want %v", err, ErrTokenTooLong)
+	}
+}
+
 func FuzzParseMessage(f *testing.F) {
 	seed, err := (Message{Type: TypeCON, Code: CodePost, MessageID: 42, Token: []byte{1}, Payload: []byte("hello")}).Marshal()
 	if err != nil {

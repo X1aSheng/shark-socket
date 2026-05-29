@@ -134,6 +134,38 @@ func TestGRPCWebMaxMessageSize(t *testing.T) {
 	}
 }
 
+func TestGRPCWebStrictMalformedFrameReturnsBadRequest(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer stopGateway(t, gateway)
+
+	req, err := http.NewRequest(http.MethodPost, "http://"+server.Addr().String()+"/grpc", bytes.NewReader([]byte{0, 0, 0, 0, 5, 'h'}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("content-type", "application/grpc-web+proto")
+	req.Header.Set("x-grpc-web", "1")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+}
+
 func testGRPCWebDataFrame(payload []byte) []byte {
 	frame := []byte{0}
 	frame = binary.BigEndian.AppendUint32(frame, uint32(len(payload)))

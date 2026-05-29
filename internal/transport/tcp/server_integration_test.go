@@ -24,6 +24,20 @@ func (p prefixPlugin) OnMessage(_ core.Session, data []byte) ([]byte, error) {
 	return out, nil
 }
 
+type conditionalDropPlugin struct {
+	core.BasePlugin
+	drop string
+}
+
+func (p conditionalDropPlugin) Name() string { return "conditional-drop" }
+
+func (p conditionalDropPlugin) OnMessage(_ core.Session, data []byte) ([]byte, error) {
+	if string(data) == p.drop {
+		return nil, core.ErrPluginDrop
+	}
+	return data, nil
+}
+
 func TestGatewayTCPGlobalPluginEchoAndShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -160,5 +174,59 @@ func TestGatewayTCPRestartKeepsSessionManagerUsable(t *testing.T) {
 	}
 	if string(got) != "restart" {
 		t.Fatalf("echo = %q, want restart", got)
+	}
+}
+
+func TestGatewayTCPPluginDropSkipsHandlerAndKeepsConnection(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gateway := runtime.NewGateway(runtime.WithPlugins(conditionalDropPlugin{drop: "drop"}))
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer shutdownCancel()
+		_ = gateway.Stop(shutdownCtx)
+	}()
+
+	client := NewClient(server.Addr().String())
+	if err := client.Connect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	if err := client.Send([]byte("drop")); err != nil {
+		t.Fatal(err)
+	}
+	if conn, ok := client.conn.(interface{ SetReadDeadline(time.Time) error }); ok {
+		if err := conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, err := client.Receive(); err == nil {
+		t.Fatalf("received dropped payload response %q", got)
+	}
+	if conn, ok := client.conn.(interface{ SetReadDeadline(time.Time) error }); ok {
+		if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := client.Send([]byte("keep")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := client.Receive()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "keep" {
+		t.Fatalf("echo = %q, want keep", got)
 	}
 }

@@ -111,6 +111,67 @@ func TestCoAPSessionTTL(t *testing.T) {
 	t.Fatalf("session did not expire: server=%d runtime=%d", server.SessionCount(), gateway.Runtime().Sessions().Count())
 }
 
+func TestCoAPDuplicateCONDoesNotRerunHandler(t *testing.T) {
+	handled := 0
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithHandler(func(core.Session, core.Message) error {
+			handled++
+			return nil
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer stopGateway(t, gateway)
+
+	conn, err := net.Dial("udp", server.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	req := Message{Type: TypeCON, Code: CodePost, MessageID: 11, Token: []byte{7}, Payload: []byte("hello")}
+	first := exchangeMessage(t, conn, req)
+	if first.Code != CodeCreated {
+		t.Fatalf("first ack code = %d, want %d", first.Code, CodeCreated)
+	}
+	second := exchangeMessage(t, conn, req)
+	if second.Code != CodeValid {
+		t.Fatalf("second ack code = %d, want %d", second.Code, CodeValid)
+	}
+	if handled != 1 {
+		t.Fatalf("handler calls = %d, want 1", handled)
+	}
+}
+
+func exchangeMessage(t *testing.T, conn net.Conn, req Message) Message {
+	t.Helper()
+	data, err := req.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 1024)
+	n, err := conn.Read(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ack, err := Parse(buf[:n])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ack
+}
+
 func stopGateway(t *testing.T, gateway *runtime.Gateway) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
