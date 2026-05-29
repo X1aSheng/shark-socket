@@ -1,6 +1,7 @@
 package grpcweb
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/X1aSheng/shark-socket-new/internal/core"
@@ -13,6 +14,9 @@ type Options struct {
 	MaxMessageBytes int64
 	ReadTimeout     time.Duration
 	WriteTimeout    time.Duration
+	WebSocket       bool
+	WebSocketPath   string
+	CheckOrigin     func(*http.Request) bool
 }
 
 type Option func(*Options)
@@ -24,6 +28,10 @@ func defaultOptions() Options {
 		MaxMessageBytes: 4 * 1024 * 1024,
 		ReadTimeout:     10 * time.Second,
 		WriteTimeout:    10 * time.Second,
+		WebSocketPath:   "/grpc/ws",
+		CheckOrigin: func(*http.Request) bool {
+			return true
+		},
 	}
 }
 
@@ -45,4 +53,21 @@ func WithHandler(handler core.Handler) Option {
 
 func WithMaxMessageBytes(max int64) Option {
 	return func(o *Options) { o.MaxMessageBytes = max }
+}
+
+func WithWebSocketMode(path string) Option {
+	return func(o *Options) {
+		o.WebSocket = true
+		if path != "" {
+			o.WebSocketPath = path
+		}
+	}
+}
+
+func WithCheckOrigin(fn func(*http.Request) bool) Option {
+	return func(o *Options) {
+		if fn != nil {
+			o.CheckOrigin = fn
+		}
+	}
 }

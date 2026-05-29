@@ -1,6 +1,6 @@
 # Shark-Socket-New Project Plan
 
-Updated: 2026-05-29T12:24:31
+Updated: 2026-05-29T12:27:15
 
 ## Timestamp Format
 
@@ -14,7 +14,7 @@ This plan is based on the current repository state, not aspirational scope.
 
 - Module: `github.com/X1aSheng/shark-socket-new`, Go `1.26.1`.
 - Current branch: `shark-socket-new-main`.
-- Current design reference: `docs/Architecture.md`, including Step 1 through Step 17 validation records.
+- Current design reference: `docs/Architecture.md`, including Step 1 through Step 20 validation records.
 - Current verified commands:
   - `go test ./... -count=1`
   - `go vet ./...`
@@ -23,8 +23,8 @@ This plan is based on the current repository state, not aspirational scope.
   - `api`: public facade for runtime, transports, plugins, and protocol helpers.
   - `internal/core`: protocol/session/server/plugin/runtime contracts.
   - `internal/runtime`: Gateway, plugin chain, shared SessionManager, lifecycle orchestration.
-  - `internal/transport`: TCP, UDP, HTTP, WebSocket, CoAP, QUIC, gRPC-Web direct.
-  - `internal/protocol/lwm2m`: in-memory LwM2M lifecycle model.
+  - `internal/transport`: TCP, UDP, HTTP, WebSocket, CoAP, QUIC, gRPC-Web direct and WebSocket modes.
+  - `internal/protocol/lwm2m`: in-memory LwM2M lifecycle model with CoAP binding.
   - `internal/plugin`: blacklist, rate limit, heartbeat, persistence, autoban.
   - `internal/infra`: cache, store, pubsub, circuit breaker, in-memory observability.
   - `deploy`: Docker, docker-compose, K8s, Helm baseline.
@@ -41,7 +41,7 @@ This plan is based on the current repository state, not aspirational scope.
 | CoAP | Done | Message parse/marshal, CON ACK, TTL cleanup tests |
 | LwM2M | Done | Lifecycle/resource model and CoAP text-command binding exist |
 | QUIC | Done | TLS requirement, stream echo, plugin transform, shutdown cleanup tests |
-| gRPC-Web | Partial | Direct HTTP mode exists; WebSocket mode and protobuf framing depth are not yet implemented |
+| gRPC-Web | Done | Direct HTTP mode and WebSocket mode exist; protobuf framing depth is intentionally minimal |
 | Plugins | Partial | Core plugins exist; cluster and slow-query style plugins are not yet implemented |
 | Infra | Partial | In-memory primitives exist; external adapters/exporters are not yet implemented |
 | Deploy | Baseline | Static Docker/K8s/Helm manifest tests pass |
@@ -68,6 +68,7 @@ This plan is based on the current repository state, not aspirational scope.
 | 15 | Infra/cache/breaker/heartbeat hardening | Done | 2026-05-29T10:32:25 | `8d613f5` | Focused tests, full test sweep, race test |
 | 16 | Documentation alignment and validation script | Done | 2026-05-29T12:21:22 | Pending | README status matrix, `scripts/validate.ps1`, normal validation, race validation |
 | 17 | LwM2M over CoAP binding | Done | 2026-05-29T12:24:31 | Pending | CoAP + LwM2M integration test, full validation |
+| 18 | gRPC-Web WebSocket mode | Done | 2026-05-29T12:27:15 | Pending | gRPC-Web focused tests, full validation |
 
 ## Active Improvement Plan
 
@@ -76,7 +77,7 @@ This plan is based on the current repository state, not aspirational scope.
 | P0 | Documentation accuracy | Done | Keep this plan, `Architecture.md`, and README aligned with implemented capability | README now describes current multi-protocol state |
 | P0 | Release validation automation | Done | Add scripted validation command that runs test/vet/race with local toolchain PATH | `scripts/validate.ps1` supports normal and race validation |
 | P1 | LwM2M over CoAP binding | Done | Connect LwM2M lifecycle operations to CoAP request/response handlers | CoAP responder maps register/update/deregister/read/write payloads to LwM2M server operations |
-| P1 | gRPC-Web WebSocket mode | Planned | Add WebSocket transport mode for gRPC-Web gateway | Current gRPC-Web supports direct HTTP only |
+| P1 | gRPC-Web WebSocket mode | Done | Add WebSocket transport mode for gRPC-Web gateway | Direct HTTP and WebSocket modes now share runtime/plugin/session behavior |
 | P1 | External observability adapters | Planned | Add Prometheus/OpenTelemetry adapters behind existing core interfaces | Core interfaces and memory adapters exist |
 | P1 | Deploy validation depth | Planned | Add Docker/Helm/K8s render checks when tools are available | Current deploy tests only assert manifest presence and Dockerfile entrypoint |
 | P2 | Benchmarks and fuzzing | Planned | Add protocol benchmarks and fuzz tests for CoAP/TCP framing | Current validation is unit/integration/race/vet focused |
@@ -84,12 +85,7 @@ This plan is based on the current repository state, not aspirational scope.
 
 ## Next Execution Steps
 
-1. gRPC-Web WebSocket mode
-   - Add a WebSocket mode adapter using the existing WebSocket transport patterns.
-   - Preserve direct HTTP mode behavior.
-   - Validation: direct mode tests continue passing; new WebSocket mode echo/max-size tests pass.
-
-2. Release hardening
+1. Release hardening
    - Add benchmark baselines.
    - Add fuzz smoke for CoAP parse/marshal and TCP framers.
    - Add deploy CLI validation gated by tool availability.
@@ -103,7 +99,6 @@ The project is considered replacement-ready when all of the following are true:
 - `go test -race ./... -count=1` passes on a machine with C toolchain installed.
 - README and docs accurately describe implemented capability and known limitations.
 - Deploy artifacts can be statically validated and rendered with Docker/Helm/K8s tools where available.
-- gRPC-Web supports the intended production modes or clearly documents direct-only scope.
 
 ## Update Rules
 

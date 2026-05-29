@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/tls"
+	"net/http"
 	"time"
 
 	"github.com/X1aSheng/shark-socket-new/internal/core"
@@ -217,6 +218,14 @@ func WithGRPCWebHandler(handler Handler) GRPCWebOption {
 
 func WithGRPCWebMaxMessageBytes(max int64) GRPCWebOption {
 	return grpcweb.WithMaxMessageBytes(max)
+}
+
+func WithGRPCWebWebSocketMode(path string) GRPCWebOption {
+	return grpcweb.WithWebSocketMode(path)
+}
+
+func WithGRPCWebCheckOrigin(fn func(*http.Request) bool) GRPCWebOption {
+	return grpcweb.WithCheckOrigin(fn)
 }
 
 func NewBlacklistPlugin(entries ...string) *BlacklistPlugin {

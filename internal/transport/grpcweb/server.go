@@ -7,10 +7,12 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync"
 	"sync/atomic"
 
 	"github.com/X1aSheng/shark-socket-new/internal/core"
 	"github.com/X1aSheng/shark-socket-new/internal/runtime"
+	"github.com/gorilla/websocket"
 )
 
 type Server struct {
@@ -19,6 +21,8 @@ type Server struct {
 	listener net.Listener
 	server   *http.Server
 	closed   atomic.Bool
+	wg       sync.WaitGroup
+	sessions sync.Map
 }
 
 func NewServer(opts ...Option) *Server {
@@ -41,6 +45,9 @@ func (s *Server) Start(context.Context) error {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc(s.opts.Path, s.handle)
+	if s.opts.WebSocket {
+		mux.HandleFunc(s.opts.WebSocketPath, s.handleWebSocket)
+	}
 	s.server = &http.Server{
 		Addr:         s.opts.Addr,
 		Handler:      mux,
@@ -76,8 +83,27 @@ func (s *Server) StopAccept(ctx context.Context) error {
 	return nil
 }
 
-func (s *Server) Drain(context.Context) error         { return nil }
-func (s *Server) CloseSessions(context.Context) error { return nil }
+func (s *Server) Drain(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *Server) CloseSessions(ctx context.Context) error {
+	s.sessions.Range(func(key, value any) bool {
+		s.closeWebSocketSession(ctx, key.(uint64), value.(*webSocketSession))
+		return true
+	})
+	return nil
+}
 
 func (s *Server) Addr() net.Addr {
 	if s.listener == nil {
@@ -130,6 +156,64 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	upgrader := websocket.Upgrader{CheckOrigin: s.opts.CheckOrigin}
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	if s.opts.MaxMessageBytes > 0 {
+		conn.SetReadLimit(s.opts.MaxMessageBytes)
+	}
+	id := s.rt.Sessions().NextID()
+	sess := newWebSocketSession(id, conn)
+	s.sessions.Store(id, sess)
+	if err := s.rt.Sessions().Register(sess); err != nil {
+		s.closeWebSocketSession(context.Background(), id, sess)
+		return
+	}
+	if err := s.rt.Plugins().OnAccept(sess); err != nil {
+		s.closeWebSocketSession(context.Background(), id, sess)
+		return
+	}
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		s.readWebSocketLoop(sess)
+	}()
+}
+
+func (s *Server) readWebSocketLoop(sess *webSocketSession) {
+	defer s.closeWebSocketSession(context.Background(), sess.ID(), sess)
+	for {
+		_, payload, err := sess.conn.ReadMessage()
+		if err != nil {
+			return
+		}
+		sess.touch()
+		payload, err = s.rt.Plugins().OnMessage(sess, payload)
+		if err != nil {
+			if err == core.ErrPluginDrop {
+				continue
+			}
+			return
+		}
+		if s.opts.Handler != nil {
+			msg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolGRPCWeb, Payload: payload}
+			if err := s.opts.Handler(sess, msg); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func (s *Server) closeWebSocketSession(ctx context.Context, id uint64, sess *webSocketSession) {
+	s.sessions.Delete(id)
+	s.rt.Sessions().Unregister(id)
+	_ = sess.Close(ctx)
+	s.rt.Plugins().OnClose(sess)
 }
 
 var (

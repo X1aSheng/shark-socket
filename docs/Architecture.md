@@ -547,3 +547,24 @@ Result:
 
 - Passed at 2026-05-29T12:24:31.075.
 - Verified CoAP CON ACK response payloads for LwM2M register/write/read/deregister.
+
+### Step 20: gRPC-Web WebSocket Mode
+
+Scope:
+
+- Optional WebSocket mode for the gRPC-Web transport.
+- WebSocket sessions report protocol `grpc-web` and use the same runtime plugin chain as direct HTTP mode.
+- Max message size and origin checks apply to WebSocket mode.
+
+Commands:
+
+```bash
+go test ./internal/transport/grpcweb -count=1 -v
+powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1
+```
+
+Result:
+
+- Passed at 2026-05-29T12:27:15.243.
+- Verified direct HTTP mode still passes.
+- Verified WebSocket echo, max-size close behavior, origin rejection, and session cleanup.
