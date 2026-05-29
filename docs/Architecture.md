@@ -818,3 +818,38 @@ Result:
 - GitHub Actions workflow semantics are covered by `tests/deploy`.
 - Docker, Kubectl, and Helm render checks were skipped locally because those tools are not installed.
 - Cloud-server build/deploy and local-to-cloud interaction remain blocked pending external access details.
+
+### Step 31: Protocol Test Method And Edge Coverage
+
+Scope:
+
+- Protocol-specific testing guide added for TCP, UDP, HTTP, WebSocket, CoAP, LwM2M, QUIC, and gRPC-Web.
+- TCP plugin-drop regression verifies dropped frames skip handlers while the connection remains usable.
+- UDP plugin-drop regression verifies dropped datagrams suppress responses while preserving pseudo-sessions.
+- HTTP handler-error regression verifies `500` mapping and per-request session cleanup.
+- WebSocket max-message regression verifies connection close and Gateway cleanup.
+- CoAP token-length and duplicate-CON regressions verify parser limits and idempotent confirmable handling.
+- LwM2M invalid-command regression verifies failed CoAP text commands do not mutate registrations.
+- QUIC oversized-stream regression verifies handlers are not invoked for payloads over the configured limit.
+- gRPC-Web strict malformed-frame regression verifies `400` response behavior.
+
+Commands:
+
+```bash
+go test ./internal/transport/tcp ./internal/transport/udp ./internal/transport/http -count=1 -v
+go test ./internal/transport/websocket ./internal/transport/coap ./internal/protocol/lwm2m -count=1 -v
+go test ./internal/transport/quic ./internal/transport/grpcweb -count=1 -v
+go test ./... -count=1
+go vet ./...
+go run scripts/run_tests.go -mode all -timeout 5m
+powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1 -Race
+powershell -ExecutionPolicy Bypass -File .\scripts\validate_deploy.ps1
+```
+
+Result:
+
+- Passed at 2026-05-30T00:56:21.
+- Scripted unit report: 88 passed, 0 failed, 0 skipped.
+- Scripted integration report: 6 passed, 0 failed, 0 skipped.
+- Race validation passed.
+- Deploy static validation passed; Docker, Kubectl, and Helm render checks were skipped locally because those tools are not installed.

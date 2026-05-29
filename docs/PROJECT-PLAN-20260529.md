@@ -1,6 +1,6 @@
 # Shark-Socket-New Project Plan
 
-Updated: 2026-05-30T00:43:33
+Updated: 2026-05-30T00:56:21
 
 ## Timestamp Format
 
@@ -85,6 +85,8 @@ This plan is based on the current repository state, not aspirational scope.
 | 28 | Production enhancement pass | Done | 2026-05-30T00:33:34 | `c2b6464` | gRPC-Web focused tests, observability/API focused tests, deploy validation, examples compile, full validation, race validation |
 | 29 | Gateway restart lifecycle fix | Done | 2026-05-30T00:42:00 | `35b8428` | Restart regression test, full test sweep, vet |
 | 30 | GitHub Actions validation workflow | Done | 2026-05-30T00:43:15 | `c106bbf` | Deploy workflow semantics test, deploy validation, full test sweep, vet |
+| 31 | Protocol test guide | Done | 2026-05-30T00:50:00 | `777f6ae` | Independent protocol testing guide and README link |
+| 32 | Protocol edge coverage expansion | Done | 2026-05-30T00:56:21 | `b00d46a` | Focused protocol tests, full test sweep, vet, scripted all-mode validation, race validation |
 
 ## Active Improvement Plan
 
@@ -101,6 +103,8 @@ This plan is based on the current repository state, not aspirational scope.
 | P2 | Plugin completeness | Done | Add cluster plugin if production use requires it | Cluster pub/sub plugin now covers cross-node local broadcast behavior |
 | P2 | Gateway restart lifecycle | Done | Allow stop/start reuse of the same Gateway and shared SessionManager | TCP restart regression covers the bug found in review |
 | P2 | GitHub Actions CI | Done | Run scripted validation, deploy checks, and log artifact upload on push/PR | `.github/workflows/ci.yml` and deploy workflow semantics test exist |
+| P2 | Protocol test methodology | Done | Document protocol-specific test strategy and required edge cases | `docs/PROTOCOL-TEST-GUIDE-20260530.md` |
+| P2 | Protocol edge regressions | Done | Add targeted edge tests across TCP, UDP, HTTP, WebSocket, CoAP, LwM2M, QUIC, and gRPC-Web | Scripted unit count increased to 88 passed |
 
 ## Next Execution Steps
 

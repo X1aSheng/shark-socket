@@ -10,6 +10,7 @@ This project uses semantic versioning. Pre-release tags use the form
 - Fixed Gateway restart lifecycle after shutdown.
 - Added GitHub Actions CI for scripted tests, validation, deploy checks, and log artifacts.
 - Added project review report `docs/PROJECT-REVIEW-260530-004244.md`.
+- Added protocol testing guide and expanded edge-case coverage across TCP, UDP, HTTP, WebSocket, CoAP, LwM2M, QUIC, and gRPC-Web.
 
 ## v0.1.0-rc.1 - 2026-05-30
 

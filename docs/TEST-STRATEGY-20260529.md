@@ -1,6 +1,6 @@
 # Shark-Socket-New Test Strategy
 
-Updated: 2026-05-30T00:43:33
+Updated: 2026-05-30T00:56:21
 
 ## Basis
 
@@ -95,3 +95,19 @@ Current CI gates:
 `tests/deploy` includes a static workflow semantics test so the CI entrypoint,
 Go version, validation scripts, and artifact upload step remain visible to
 normal test runs.
+
+## Protocol Coverage Guide
+
+Detailed protocol-specific test methods are maintained in
+`docs/PROTOCOL-TEST-GUIDE-20260530.md`.
+
+Latest protocol expansion added focused regressions for:
+
+- TCP plugin drop while keeping the connection reusable.
+- UDP plugin drop while preserving pseudo-session state.
+- HTTP handler error status and cleanup.
+- WebSocket max message size cleanup.
+- CoAP token-length validation and duplicate CON idempotency.
+- LwM2M invalid CoAP command non-mutation.
+- QUIC oversized stream suppression.
+- gRPC-Web strict malformed frame rejection.
