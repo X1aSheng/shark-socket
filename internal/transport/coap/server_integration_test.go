@@ -1,0 +1,121 @@
+package coap
+
+import (
+	"context"
+	"net"
+	"testing"
+	"time"
+
+	"github.com/X1aSheng/shark-socket-new/internal/core"
+	"github.com/X1aSheng/shark-socket-new/internal/runtime"
+)
+
+type prefixPlugin struct {
+	core.BasePlugin
+	prefix []byte
+}
+
+func (p prefixPlugin) Name() string { return "coap-prefix" }
+
+func (p prefixPlugin) OnMessage(_ core.Session, data []byte) ([]byte, error) {
+	out := append([]byte(nil), p.prefix...)
+	out = append(out, data...)
+	return out, nil
+}
+
+func TestGatewayCoAPCONAckAndPlugin(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			sess.SetMeta("payload", string(msg.Payload))
+			return nil
+		}),
+	)
+	gateway := runtime.NewGateway(runtime.WithPlugins(prefixPlugin{prefix: []byte("global:")}))
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer stopGateway(t, gateway)
+
+	conn, err := net.Dial("udp", server.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	req := Message{Type: TypeCON, Code: CodePost, MessageID: 7, Token: []byte{1}, Payload: []byte("hello")}
+	data, err := req.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 1024)
+	n, err := conn.Read(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ack, err := Parse(buf[:n])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ack.Type != TypeACK || ack.MessageID != req.MessageID || ack.Code != CodeCreated {
+		t.Fatalf("ack = %#v", ack)
+	}
+	if server.SessionCount() != 1 {
+		t.Fatalf("session count = %d, want 1", server.SessionCount())
+	}
+}
+
+func TestCoAPSessionTTL(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithSessionTTL(20*time.Millisecond),
+		WithSweepInterval(10*time.Millisecond),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer stopGateway(t, gateway)
+
+	conn, err := net.Dial("udp", server.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	req := Message{Type: TypeNON, Code: CodePost, MessageID: 9, Payload: []byte("touch")}
+	data, err := req.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if server.SessionCount() == 0 && gateway.Runtime().Sessions().Count() == 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("session did not expire: server=%d runtime=%d", server.SessionCount(), gateway.Runtime().Sessions().Count())
+}
+
+func stopGateway(t *testing.T, gateway *runtime.Gateway) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := gateway.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+}

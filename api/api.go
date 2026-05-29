@@ -7,6 +7,7 @@ import (
 	"github.com/X1aSheng/shark-socket-new/internal/core"
 	"github.com/X1aSheng/shark-socket-new/internal/plugin"
 	"github.com/X1aSheng/shark-socket-new/internal/runtime"
+	"github.com/X1aSheng/shark-socket-new/internal/transport/coap"
 	transporthttp "github.com/X1aSheng/shark-socket-new/internal/transport/http"
 	"github.com/X1aSheng/shark-socket-new/internal/transport/tcp"
 	"github.com/X1aSheng/shark-socket-new/internal/transport/udp"
@@ -32,6 +33,8 @@ type (
 	HTTPOption          = transporthttp.Option
 	WebSocketServer     = websocket.Server
 	WebSocketOption     = websocket.Option
+	CoAPServer          = coap.Server
+	CoAPOption          = coap.Option
 	BlacklistPlugin     = plugin.Blacklist
 	RateLimitPlugin     = plugin.RateLimit
 	Logger              = core.Logger
@@ -130,6 +133,18 @@ func WithWebSocketPath(path string) WebSocketOption {
 
 func WithWebSocketHandler(handler Handler) WebSocketOption {
 	return websocket.WithHandler(handler)
+}
+
+func NewCoAPServer(opts ...CoAPOption) *CoAPServer {
+	return coap.NewServer(opts...)
+}
+
+func WithCoAPAddr(addr string) CoAPOption {
+	return coap.WithAddr(addr)
+}
+
+func WithCoAPHandler(handler Handler) CoAPOption {
+	return coap.WithHandler(handler)
 }
 
 func NewBlacklistPlugin(entries ...string) *BlacklistPlugin {

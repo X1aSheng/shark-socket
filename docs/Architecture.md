@@ -256,3 +256,27 @@ Result:
 - Passed.
 - Verified blacklist blocks exact IP matches.
 - Verified rate limit drops messages over the configured window quota.
+
+### Step 8: CoAP Runtime Slice
+
+Scope:
+
+- Minimal RFC 7252 message header parse/marshal.
+- UDP-backed CoAP pseudo-sessions through Gateway runtime.
+- CON request ACK generation.
+- Global plugin execution on CoAP payloads.
+- TTL sweep and shutdown cleanup.
+
+Commands:
+
+```bash
+go test ./internal/transport/coap -count=1 -v
+go test ./... -count=1
+```
+
+Result:
+
+- Passed.
+- Verified CoAP message round-trip and invalid version rejection.
+- Verified CON POST receives ACK Created with the same Message ID.
+- Verified inactive CoAP pseudo-sessions expire through TTL sweep.
