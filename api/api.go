@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
 	"time"
 
 	"github.com/X1aSheng/shark-socket-new/internal/core"
@@ -10,6 +11,7 @@ import (
 	"github.com/X1aSheng/shark-socket-new/internal/runtime"
 	"github.com/X1aSheng/shark-socket-new/internal/transport/coap"
 	transporthttp "github.com/X1aSheng/shark-socket-new/internal/transport/http"
+	"github.com/X1aSheng/shark-socket-new/internal/transport/quic"
 	"github.com/X1aSheng/shark-socket-new/internal/transport/tcp"
 	"github.com/X1aSheng/shark-socket-new/internal/transport/udp"
 	"github.com/X1aSheng/shark-socket-new/internal/transport/websocket"
@@ -43,6 +45,8 @@ type (
 	LwM2MObjectPath     = lwm2m.ObjectPath
 	LwM2MRegistration   = lwm2m.Registration
 	LwM2MResource       = lwm2m.Resource
+	QUICServer          = quic.Server
+	QUICOption          = quic.Option
 	BlacklistPlugin     = plugin.Blacklist
 	RateLimitPlugin     = plugin.RateLimit
 	Logger              = core.Logger
@@ -165,6 +169,22 @@ func NewLwM2MClient(endpoint string, server *LwM2MServer, opts ...LwM2MClientOpt
 
 func ParseLwM2MPath(path string) (LwM2MObjectPath, error) {
 	return lwm2m.ParsePath(path)
+}
+
+func NewQUICServer(opts ...QUICOption) *QUICServer {
+	return quic.NewServer(opts...)
+}
+
+func WithQUICAddr(addr string) QUICOption {
+	return quic.WithAddr(addr)
+}
+
+func WithQUICTLS(config *tls.Config) QUICOption {
+	return quic.WithTLS(config)
+}
+
+func WithQUICHandler(handler Handler) QUICOption {
+	return quic.WithHandler(handler)
 }
 
 func NewBlacklistPlugin(entries ...string) *BlacklistPlugin {

@@ -302,3 +302,27 @@ Result:
 - Passed.
 - Verified registration lifecycle and resource read/write.
 - Verified expired registrations are swept.
+
+### Step 10: QUIC Runtime Slice
+
+Scope:
+
+- QUIC Gateway transport using quic-go.
+- TLS configuration requirement.
+- Bidirectional stream request and response flow.
+- Global plugin execution on stream payloads.
+- Shutdown cleanup through Gateway runtime.
+
+Commands:
+
+```bash
+go test ./internal/transport/quic -count=1 -v
+go test ./... -count=1
+```
+
+Result:
+
+- Passed.
+- Verified QUIC refuses to start without TLS config.
+- Verified QUIC echo with global plugin transform.
+- Verified Gateway shutdown clears QUIC runtime sessions.
