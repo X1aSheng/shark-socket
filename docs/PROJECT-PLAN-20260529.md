@@ -1,6 +1,6 @@
 # Shark-Socket-New Project Plan
 
-Updated: 2026-05-29T12:15:52
+Updated: 2026-05-29T12:21:22
 
 ## Timestamp Format
 
@@ -66,13 +66,14 @@ This plan is based on the current repository state, not aspirational scope.
 | 13 | Expanded plugin ecosystem | Done | 2026-05-29T10:17:00 | `57d22b2` | Plugin focused tests, full test sweep |
 | 14 | Observability test primitives | Done | 2026-05-29T10:18:00 | `2ba964d` | Observability focused tests, full test sweep |
 | 15 | Infra/cache/breaker/heartbeat hardening | Done | 2026-05-29T10:32:25 | `8d613f5` | Focused tests, full test sweep, race test |
+| 16 | Documentation alignment and validation script | Done | 2026-05-29T12:21:22 | Pending | README status matrix, `scripts/validate.ps1`, normal validation, race validation |
 
 ## Active Improvement Plan
 
 | Priority | Workstream | Status | Target | Plan Basis |
 | --- | --- | --- | --- | --- |
-| P0 | Documentation accuracy | In Progress | Keep this plan, `Architecture.md`, and README aligned with implemented capability | README still describes only the initial TCP vertical slice |
-| P0 | Release validation automation | Planned | Add scripted validation command that runs test/vet/race with local toolchain PATH | Race validation now works but requires manual env setup |
+| P0 | Documentation accuracy | Done | Keep this plan, `Architecture.md`, and README aligned with implemented capability | README now describes current multi-protocol state |
+| P0 | Release validation automation | Done | Add scripted validation command that runs test/vet/race with local toolchain PATH | `scripts/validate.ps1` supports normal and race validation |
 | P1 | LwM2M over CoAP binding | Planned | Connect LwM2M lifecycle operations to CoAP request/response handlers | Current LwM2M is an in-memory model only |
 | P1 | gRPC-Web WebSocket mode | Planned | Add WebSocket transport mode for gRPC-Web gateway | Current gRPC-Web supports direct HTTP only |
 | P1 | External observability adapters | Planned | Add Prometheus/OpenTelemetry adapters behind existing core interfaces | Core interfaces and memory adapters exist |
@@ -82,27 +83,17 @@ This plan is based on the current repository state, not aspirational scope.
 
 ## Next Execution Steps
 
-1. Documentation alignment
-   - Update `README.md` from “architecture spike” to current multi-protocol status.
-   - Add a concise feature matrix matching implemented packages.
-   - Validation: `go test ./... -count=1`.
-
-2. Validation script
-   - Add `scripts/validate.ps1` for Windows.
-   - Include `go test ./... -count=1`, `go vet ./...`, and optional race mode with `w64devkit`/`LLVM` PATH setup.
-   - Validation: run the script in normal mode and race mode.
-
-3. LwM2M over CoAP binding
+1. LwM2M over CoAP binding
    - Add a handler adapter that maps simple CoAP payload operations to `Register`, `Update`, `Deregister`, `Read`, and `Write`.
    - Keep wire shape minimal and documented before expanding.
    - Validation: CoAP + LwM2M integration test.
 
-4. gRPC-Web WebSocket mode
+2. gRPC-Web WebSocket mode
    - Add a WebSocket mode adapter using the existing WebSocket transport patterns.
    - Preserve direct HTTP mode behavior.
    - Validation: direct mode tests continue passing; new WebSocket mode echo/max-size tests pass.
 
-5. Release hardening
+3. Release hardening
    - Add benchmark baselines.
    - Add fuzz smoke for CoAP parse/marshal and TCP framers.
    - Add deploy CLI validation gated by tool availability.

@@ -495,3 +495,25 @@ Result:
 - Verified circuit breaker execute/open/half-open/snapshot behavior.
 - Verified cache maintenance and expiry cleanup.
 - Verified heartbeat loop sweeps idle sessions and Stop is idempotent.
+
+### Step 18: Documentation And Validation Script
+
+Scope:
+
+- README updated from initial architecture spike wording to current multi-protocol implementation status.
+- Project plan updated to make completed and remaining work explicit.
+- Windows validation script added for normal and race validation.
+
+Commands:
+
+```bash
+powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1 -Race
+```
+
+Result:
+
+- Passed at 2026-05-29T12:21:22.812.
+- Verified `go test ./... -count=1`.
+- Verified `go vet ./...`.
+- Verified `go test -race ./... -count=1` with `w64devkit`/`LLVM` on `%PATH%`.

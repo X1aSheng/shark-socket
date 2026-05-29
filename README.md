@@ -1,23 +1,33 @@
 # shark-socket-new
 
-`shark-socket-new` is a redesigned architecture spike for Shark-Socket.
+`shark-socket-new` is a redesigned multi-protocol runtime gateway for
+Shark-Socket. It keeps the useful ideas from the original project while making
+runtime ownership, plugin execution, and graceful shutdown explicit.
 
-The goal is not to copy the old project file-by-file. It keeps the useful
-ideas, then makes the runtime contracts explicit:
+## Design Principles
 
 - Gateway owns global runtime composition.
-- Transports receive runtime dependencies instead of closing shared resources.
+- Transports receive runtime dependencies and do not close shared managers.
 - Global plugins are applied through one plugin runner.
 - Graceful shutdown is staged through optional transport capabilities.
-- Typed messages are layered through codecs, while the transport core stays raw.
+- Typed messages are layered through codecs while transport sessions stay raw.
 
-## Current Vertical Slice
+## Feature Matrix
 
-- `api`: public facade.
-- `internal/core`: stable contracts.
-- `internal/runtime`: Gateway, plugin chain, session manager.
-- `internal/transport/tcp`: TCP transport with length-prefixed framing.
-- `cmd/shark-socket-new`: echo server example.
+| Area | Status | Notes |
+| --- | --- | --- |
+| Runtime/Gateway | Implemented | Runtime injection, shared SessionManager, plugin chain, staged stop |
+| TCP | Implemented | Length-prefix, line, fixed-size, raw framers, client, worker pool |
+| UDP | Implemented | Pseudo-sessions, TTL sweep, plugin path |
+| HTTP | Implemented | Mode A router and Mode B session/plugin/handler flow |
+| WebSocket | Implemented | Binary message path, origin check, ping loop |
+| CoAP | Implemented | Message parse/marshal, CON ACK, pseudo-sessions |
+| LwM2M | Partial | In-memory lifecycle/resource model; CoAP network binding planned |
+| QUIC | Implemented | TLS-required stream transport using quic-go |
+| gRPC-Web | Partial | Direct HTTP mode; WebSocket mode planned |
+| Plugins | Partial | Blacklist, RateLimit, Heartbeat, Persistence, AutoBan |
+| Infra | Partial | In-memory cache/store/pubsub/circuitbreaker/observability |
+| Deploy | Baseline | Docker, docker-compose, K8s, Helm manifests |
 
 ## Run
 
@@ -25,10 +35,38 @@ ideas, then makes the runtime contracts explicit:
 go run ./cmd/shark-socket-new
 ```
 
-The example listens on `127.0.0.1:18000` and echoes length-prefixed TCP frames.
+The example starts a TCP echo server on `127.0.0.1:18000`.
 
-## Design Status
+## Validate
 
-This is a compileable architecture baseline. More protocols should be added by
-implementing `core.Server`, and optionally `core.RuntimeConfigurable` and
-`core.StagedServer`.
+Fast validation:
+
+```powershell
+.\scripts\validate.ps1
+```
+
+Race validation with the local Windows toolchain:
+
+```powershell
+.\scripts\validate.ps1 -Race
+```
+
+The race mode expects these compiler toolchains to be available:
+
+- `D:\Programs\w64devkit\bin`
+- `D:\Programs\LLVM\bin`
+
+Equivalent manual commands:
+
+```powershell
+go test ./... -count=1
+go vet ./...
+$env:PATH='D:\Programs\w64devkit\bin;D:\Programs\LLVM\bin;' + $env:PATH
+$env:CGO_ENABLED='1'
+go test -race ./... -count=1
+```
+
+## Documentation
+
+- Architecture: [docs/Architecture.md](docs/Architecture.md)
+- Project plan: [docs/PROJECT-PLAN-20260529.md](docs/PROJECT-PLAN-20260529.md)
