@@ -15,6 +15,7 @@ This plan is based on the current repository state, not aspirational scope.
 - Module: `github.com/X1aSheng/shark-socket-new`, Go `1.26.1`.
 - Current branch: `shark-socket-new-main`.
 - Current design reference: `docs/Architecture.md`, including Step 1 through Step 28 validation records.
+- Forward implementation guide: `docs/IMPLEMENTATION-GOALS-20260530.md`.
 - Current test reference: `docs/TEST-STRATEGY-20260529.md`.
 - Current verified commands:
   - `go test ./... -count=1`
