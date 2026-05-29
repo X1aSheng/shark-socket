@@ -1,6 +1,6 @@
 # Shark-Socket-New Project Plan
 
-Updated: 2026-05-29T12:21:22
+Updated: 2026-05-29T12:24:31
 
 ## Timestamp Format
 
@@ -39,7 +39,7 @@ This plan is based on the current repository state, not aspirational scope.
 | HTTP | Done | Mode A router, Mode B runtime path, body limit tests |
 | WebSocket | Done | Runtime integration, origin check, ping loop, shutdown cleanup tests |
 | CoAP | Done | Message parse/marshal, CON ACK, TTL cleanup tests |
-| LwM2M | Partial | Lifecycle/resource model exists; network binding to CoAP is not yet implemented |
+| LwM2M | Done | Lifecycle/resource model and CoAP text-command binding exist |
 | QUIC | Done | TLS requirement, stream echo, plugin transform, shutdown cleanup tests |
 | gRPC-Web | Partial | Direct HTTP mode exists; WebSocket mode and protobuf framing depth are not yet implemented |
 | Plugins | Partial | Core plugins exist; cluster and slow-query style plugins are not yet implemented |
@@ -67,6 +67,7 @@ This plan is based on the current repository state, not aspirational scope.
 | 14 | Observability test primitives | Done | 2026-05-29T10:18:00 | `2ba964d` | Observability focused tests, full test sweep |
 | 15 | Infra/cache/breaker/heartbeat hardening | Done | 2026-05-29T10:32:25 | `8d613f5` | Focused tests, full test sweep, race test |
 | 16 | Documentation alignment and validation script | Done | 2026-05-29T12:21:22 | Pending | README status matrix, `scripts/validate.ps1`, normal validation, race validation |
+| 17 | LwM2M over CoAP binding | Done | 2026-05-29T12:24:31 | Pending | CoAP + LwM2M integration test, full validation |
 
 ## Active Improvement Plan
 
@@ -74,7 +75,7 @@ This plan is based on the current repository state, not aspirational scope.
 | --- | --- | --- | --- | --- |
 | P0 | Documentation accuracy | Done | Keep this plan, `Architecture.md`, and README aligned with implemented capability | README now describes current multi-protocol state |
 | P0 | Release validation automation | Done | Add scripted validation command that runs test/vet/race with local toolchain PATH | `scripts/validate.ps1` supports normal and race validation |
-| P1 | LwM2M over CoAP binding | Planned | Connect LwM2M lifecycle operations to CoAP request/response handlers | Current LwM2M is an in-memory model only |
+| P1 | LwM2M over CoAP binding | Done | Connect LwM2M lifecycle operations to CoAP request/response handlers | CoAP responder maps register/update/deregister/read/write payloads to LwM2M server operations |
 | P1 | gRPC-Web WebSocket mode | Planned | Add WebSocket transport mode for gRPC-Web gateway | Current gRPC-Web supports direct HTTP only |
 | P1 | External observability adapters | Planned | Add Prometheus/OpenTelemetry adapters behind existing core interfaces | Core interfaces and memory adapters exist |
 | P1 | Deploy validation depth | Planned | Add Docker/Helm/K8s render checks when tools are available | Current deploy tests only assert manifest presence and Dockerfile entrypoint |
@@ -83,17 +84,12 @@ This plan is based on the current repository state, not aspirational scope.
 
 ## Next Execution Steps
 
-1. LwM2M over CoAP binding
-   - Add a handler adapter that maps simple CoAP payload operations to `Register`, `Update`, `Deregister`, `Read`, and `Write`.
-   - Keep wire shape minimal and documented before expanding.
-   - Validation: CoAP + LwM2M integration test.
-
-2. gRPC-Web WebSocket mode
+1. gRPC-Web WebSocket mode
    - Add a WebSocket mode adapter using the existing WebSocket transport patterns.
    - Preserve direct HTTP mode behavior.
    - Validation: direct mode tests continue passing; new WebSocket mode echo/max-size tests pass.
 
-3. Release hardening
+2. Release hardening
    - Add benchmark baselines.
    - Add fuzz smoke for CoAP parse/marshal and TCP framers.
    - Add deploy CLI validation gated by tool availability.
@@ -107,7 +103,6 @@ The project is considered replacement-ready when all of the following are true:
 - `go test -race ./... -count=1` passes on a machine with C toolchain installed.
 - README and docs accurately describe implemented capability and known limitations.
 - Deploy artifacts can be statically validated and rendered with Docker/Helm/K8s tools where available.
-- LwM2M has a network-facing CoAP binding, not only an in-memory lifecycle model.
 - gRPC-Web supports the intended production modes or clearly documents direct-only scope.
 
 ## Update Rules

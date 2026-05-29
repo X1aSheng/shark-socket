@@ -517,3 +517,33 @@ Result:
 - Verified `go test ./... -count=1`.
 - Verified `go vet ./...`.
 - Verified `go test -race ./... -count=1` with `w64devkit`/`LLVM` on `%PATH%`.
+
+### Step 19: LwM2M Over CoAP Binding
+
+Scope:
+
+- CoAP responder option for request/response payload flows.
+- LwM2M CoAP payload adapter for `register`, `update`, `deregister`, `write`, and `read`.
+- Public API helpers for CoAP responder wiring.
+
+Wire Shape:
+
+```text
+register <endpoint> <lifetime-seconds> [object-path...]
+update <endpoint> <lifetime-seconds>
+deregister <endpoint>
+write <endpoint> <resource-path> <value>
+read <endpoint> <resource-path>
+```
+
+Commands:
+
+```bash
+go test ./internal/protocol/lwm2m ./internal/transport/coap -count=1 -v
+powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1
+```
+
+Result:
+
+- Passed at 2026-05-29T12:24:31.075.
+- Verified CoAP CON ACK response payloads for LwM2M register/write/read/deregister.

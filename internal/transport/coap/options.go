@@ -9,6 +9,7 @@ import (
 type Options struct {
 	Addr          string
 	Handler       core.Handler
+	Responder     func(core.Session, core.Message) ([]byte, error)
 	SessionTTL    time.Duration
 	SweepInterval time.Duration
 	MaxDatagram   int
@@ -31,6 +32,10 @@ func WithAddr(addr string) Option {
 
 func WithHandler(handler core.Handler) Option {
 	return func(o *Options) { o.Handler = handler }
+}
+
+func WithResponder(responder func(core.Session, core.Message) ([]byte, error)) Option {
+	return func(o *Options) { o.Responder = responder }
 }
 
 func WithSessionTTL(ttl time.Duration) Option {

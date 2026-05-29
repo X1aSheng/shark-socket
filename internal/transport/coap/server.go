@@ -150,14 +150,22 @@ func (s *Server) readLoop(ctx context.Context) {
 			}
 			continue
 		}
-		if s.opts.Handler != nil && len(payload) > 0 {
+		var responsePayload []byte
+		if s.opts.Responder != nil && len(payload) > 0 {
+			handlerMsg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolCoAP, Payload: payload}
+			responsePayload, err = s.opts.Responder(sess, handlerMsg)
+			if err != nil {
+				_ = sess.Close(context.Background())
+				continue
+			}
+		} else if s.opts.Handler != nil && len(payload) > 0 {
 			handlerMsg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolCoAP, Payload: payload}
 			if err := s.opts.Handler(sess, handlerMsg); err != nil {
 				_ = sess.Close(context.Background())
 			}
 		}
 		if msg.Type == TypeCON {
-			_ = s.sendACK(sess, msg, responseCode(msg.Code), nil)
+			_ = s.sendACK(sess, msg, responseCode(msg.Code), responsePayload)
 		}
 	}
 }

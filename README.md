@@ -22,7 +22,7 @@ runtime ownership, plugin execution, and graceful shutdown explicit.
 | HTTP | Implemented | Mode A router and Mode B session/plugin/handler flow |
 | WebSocket | Implemented | Binary message path, origin check, ping loop |
 | CoAP | Implemented | Message parse/marshal, CON ACK, pseudo-sessions |
-| LwM2M | Partial | In-memory lifecycle/resource model; CoAP network binding planned |
+| LwM2M | Implemented | In-memory lifecycle/resource model with CoAP text-command binding |
 | QUIC | Implemented | TLS-required stream transport using quic-go |
 | gRPC-Web | Partial | Direct HTTP mode; WebSocket mode planned |
 | Plugins | Partial | Blacklist, RateLimit, Heartbeat, Persistence, AutoBan |

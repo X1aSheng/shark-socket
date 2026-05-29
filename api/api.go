@@ -167,6 +167,10 @@ func WithCoAPHandler(handler Handler) CoAPOption {
 	return coap.WithHandler(handler)
 }
 
+func WithCoAPResponder(responder func(Session, Message) ([]byte, error)) CoAPOption {
+	return coap.WithResponder(responder)
+}
+
 func NewLwM2MServer(opts ...LwM2MServerOption) *LwM2MServer {
 	return lwm2m.NewServer(opts...)
 }
@@ -177,6 +181,10 @@ func NewLwM2MClient(endpoint string, server *LwM2MServer, opts ...LwM2MClientOpt
 
 func ParseLwM2MPath(path string) (LwM2MObjectPath, error) {
 	return lwm2m.ParsePath(path)
+}
+
+func NewLwM2MCoAPResponder(server *LwM2MServer) func(Session, Message) ([]byte, error) {
+	return lwm2m.NewCoAPResponder(server)
 }
 
 func NewQUICServer(opts ...QUICOption) *QUICServer {
