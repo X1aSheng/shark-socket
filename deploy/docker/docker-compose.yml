@@ -1,0 +1,7 @@
+services:
+  shark-socket-new:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    ports:
+      - "18000:18000"

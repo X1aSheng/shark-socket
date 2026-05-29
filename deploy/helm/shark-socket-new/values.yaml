@@ -1,0 +1,10 @@
+replicaCount: 1
+
+image:
+  repository: shark-socket-new
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 18000

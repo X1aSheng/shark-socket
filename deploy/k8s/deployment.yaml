@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shark-socket-new
+  labels:
+    app: shark-socket-new
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: shark-socket-new
+  template:
+    metadata:
+      labels:
+        app: shark-socket-new
+    spec:
+      containers:
+        - name: shark-socket-new
+          image: shark-socket-new:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: tcp
+              containerPort: 18000
+          readinessProbe:
+            tcpSocket:
+              port: 18000
+            initialDelaySeconds: 3
+            periodSeconds: 10

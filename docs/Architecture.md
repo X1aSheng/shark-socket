@@ -373,3 +373,27 @@ Result:
 - Verified store save/load/delete.
 - Verified pubsub delivery.
 - Verified circuit breaker closed/open/half-open/closed flow.
+
+### Step 13: Deployment Baseline
+
+Scope:
+
+- Docker multi-stage build.
+- docker-compose service.
+- Kubernetes Deployment and Service manifests.
+- Helm chart baseline.
+- Static deploy tests.
+
+Commands:
+
+```bash
+go test ./tests/deploy -count=1 -v
+go test ./... -count=1
+```
+
+Result:
+
+- Passed.
+- Verified Dockerfile builds `cmd/shark-socket-new`.
+- Verified Dockerfile has an entrypoint.
+- Verified K8s and Helm baseline manifests exist.
