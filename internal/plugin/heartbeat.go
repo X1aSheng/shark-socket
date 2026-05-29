@@ -10,11 +10,12 @@ import (
 
 type Heartbeat struct {
 	core.BasePlugin
-	manager core.SessionManager
-	timeout time.Duration
-	ticker  *time.Ticker
-	stop    chan struct{}
-	once    sync.Once
+	manager  core.SessionManager
+	timeout  time.Duration
+	ticker   *time.Ticker
+	stop     chan struct{}
+	start    sync.Once
+	stopOnce sync.Once
 }
 
 func NewHeartbeat(manager core.SessionManager, timeout time.Duration) *Heartbeat {
@@ -34,21 +35,19 @@ func (p *Heartbeat) Start(interval time.Duration) {
 	if interval <= 0 {
 		interval = time.Second
 	}
-	p.once.Do(func() {
+	p.start.Do(func() {
 		p.ticker = time.NewTicker(interval)
 		go p.loop()
 	})
 }
 
 func (p *Heartbeat) Stop() {
-	if p.ticker != nil {
-		p.ticker.Stop()
-	}
-	select {
-	case <-p.stop:
-	default:
+	p.stopOnce.Do(func() {
+		if p.ticker != nil {
+			p.ticker.Stop()
+		}
 		close(p.stop)
-	}
+	})
 }
 
 func (p *Heartbeat) Sweep(now time.Time) int {

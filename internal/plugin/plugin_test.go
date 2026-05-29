@@ -97,6 +97,28 @@ func TestHeartbeatSweepsIdleSessions(t *testing.T) {
 	}
 }
 
+func TestHeartbeatStartStopIsIdempotent(t *testing.T) {
+	manager := runtime.NewSessionManager()
+	sess := &heartbeatSession{fakeSession: fakeSession{addr: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234}}, lastActive: time.Now().Add(-time.Minute)}
+	if err := manager.Register(sess); err != nil {
+		t.Fatal(err)
+	}
+	p := NewHeartbeat(manager, time.Millisecond)
+	p.Start(time.Millisecond)
+	p.Start(time.Millisecond)
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if manager.Count() == 0 {
+			p.Stop()
+			p.Stop()
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	p.Stop()
+	t.Fatal("heartbeat loop did not sweep idle session")
+}
+
 type heartbeatSession struct {
 	fakeSession
 	lastActive time.Time

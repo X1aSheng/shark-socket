@@ -464,3 +464,28 @@ Result:
 - Passed.
 - Verified counter, gauge, and histogram storage.
 - Verified structured log capture.
+
+### Step 17: Infra And Heartbeat Hardening
+
+Scope:
+
+- Circuit breaker Execute wrapper, half-open single-probe gate, and state snapshots.
+- Cache maintenance APIs: Has, Len, Sweep, and Clear.
+- Heartbeat idempotent Start/Stop and automatic idle-session sweep.
+
+Commands:
+
+```bash
+go test ./internal/infra/circuitbreaker ./internal/infra/cache ./internal/plugin -count=1 -v
+go test ./... -count=1
+$env:PATH='D:\Programs\w64devkit\bin;D:\Programs\LLVM\bin;' + $env:PATH
+$env:CGO_ENABLED='1'
+go test -race ./... -count=1
+```
+
+Result:
+
+- Passed.
+- Verified circuit breaker execute/open/half-open/snapshot behavior.
+- Verified cache maintenance and expiry cleanup.
+- Verified heartbeat loop sweeps idle sessions and Stop is idempotent.

@@ -9,6 +9,7 @@ type Cache interface {
 	Get(string) ([]byte, bool)
 	Set(string, []byte, time.Duration)
 	Delete(string)
+	Has(string) bool
 }
 
 type entry struct {
@@ -52,6 +53,37 @@ func (m *Memory) Set(key string, value []byte, ttl time.Duration) {
 func (m *Memory) Delete(key string) {
 	m.mu.Lock()
 	delete(m.items, key)
+	m.mu.Unlock()
+}
+
+func (m *Memory) Has(key string) bool {
+	_, ok := m.Get(key)
+	return ok
+}
+
+func (m *Memory) Len() int {
+	m.Sweep(time.Now())
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.items)
+}
+
+func (m *Memory) Sweep(now time.Time) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	removed := 0
+	for key, item := range m.items {
+		if !item.expiresAt.IsZero() && now.After(item.expiresAt) {
+			delete(m.items, key)
+			removed++
+		}
+	}
+	return removed
+}
+
+func (m *Memory) Clear() {
+	m.mu.Lock()
+	m.items = make(map[string]entry)
 	m.mu.Unlock()
 }
 
