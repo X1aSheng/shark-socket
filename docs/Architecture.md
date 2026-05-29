@@ -756,3 +756,34 @@ Result:
 - Scripted integration report: 5 passed, 0 failed, 0 skipped.
 - Benchmark report regenerated for TCP framers and CoAP message parse/marshal.
 - Verified `go test -race ./... -count=1` with local `w64devkit` and `LLVM` paths.
+
+### Step 29: Production Enhancement Pass
+
+Scope:
+
+- gRPC-Web binary frame parsing and framed response/trailer generation.
+- OpenTelemetry tracer adapter behind the existing core tracing interface.
+- Docker Compose, Kubernetes, and Helm production defaults for security, probes, resources, and configurable ports.
+- Compile-checked multi-protocol example and examples guide.
+
+Commands:
+
+```bash
+go test ./internal/transport/grpcweb -count=1 -v
+go test ./internal/infra/observability ./api -count=1 -v
+go test ./tests/deploy -count=1 -v
+powershell -ExecutionPolicy Bypass -File .\scripts\validate_deploy.ps1
+go test ./examples/... ./api -count=1 -v
+powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1 -Race
+```
+
+Result:
+
+- Passed at 2026-05-30T00:33:34.
+- Verified raw gRPC-Web direct mode remains compatible.
+- Verified framed gRPC-Web request payloads produce data frames and `grpc-status: 0` trailers.
+- Verified OpenTelemetry spans receive attributes and recorded errors through the core tracer adapter.
+- Verified deployment static semantics after security/probe/resource hardening.
+- Verified multi-protocol example compiles.
+- Verified full race validation after the production enhancement pass.

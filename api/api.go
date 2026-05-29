@@ -20,12 +20,14 @@ import (
 	"github.com/X1aSheng/shark-socket-new/internal/transport/tcp"
 	"github.com/X1aSheng/shark-socket-new/internal/transport/udp"
 	"github.com/X1aSheng/shark-socket-new/internal/transport/websocket"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type (
 	Protocol            = core.Protocol
 	Session             = core.Session
 	SessionManager      = core.SessionManager
+	Server              = core.Server
 	Message             = core.Message
 	Handler             = core.Handler
 	Plugin              = core.Plugin
@@ -63,6 +65,7 @@ type (
 	PersistencePlugin   = plugin.Persistence
 	SlowHandlerOption   = plugin.SlowHandlerOption
 	PrometheusMetrics   = observability.PrometheusMetrics
+	OpenTelemetryTracer = observability.OpenTelemetryTracer
 	PubSub              = pubsub.PubSub
 	Logger              = core.Logger
 	Metrics             = core.Metrics
@@ -268,6 +271,10 @@ func NewSlowHandler(logger Logger, threshold time.Duration, next Handler, opts .
 
 func NewPrometheusMetrics() *PrometheusMetrics {
 	return observability.NewPrometheusMetrics()
+}
+
+func NewOpenTelemetryTracer(tracer trace.Tracer) *OpenTelemetryTracer {
+	return observability.NewOpenTelemetryTracer(tracer)
 }
 
 func AdaptTyped[M any](codec Codec[M], handler TypedHandler[M]) Handler {

@@ -125,8 +125,15 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusRequestEntityTooLarge), http.StatusRequestEntityTooLarge)
 		return
 	}
+	strictFraming := r.Header.Get("x-grpc-web") == "1"
+	body, framed, err := parseRequestPayload(body, strictFraming)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	framed = framed || isGRPCWebRequest(r) && strictFraming
 	id := s.rt.Sessions().NextID()
-	sess := newSession(id, w, r)
+	sess := newSession(id, w, r, framed)
 	if err := s.rt.Sessions().Register(sess); err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
@@ -152,10 +159,12 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	if s.opts.Handler != nil {
 		msg := core.Message{SessionID: id, Protocol: core.ProtocolGRPCWeb, Payload: body}
 		if err := s.opts.Handler(sess, msg); err != nil {
+			_ = sess.SendTrailers(13, err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
+	_ = sess.SendTrailers(0, "")
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {

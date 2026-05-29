@@ -1,6 +1,6 @@
 # Shark-Socket-New Project Plan
 
-Updated: 2026-05-30T00:13:42
+Updated: 2026-05-30T00:33:34
 
 ## Timestamp Format
 
@@ -27,8 +27,9 @@ This plan is based on the current repository state, not aspirational scope.
   - `internal/transport`: TCP, UDP, HTTP, WebSocket, CoAP, QUIC, gRPC-Web direct and WebSocket modes.
   - `internal/protocol/lwm2m`: in-memory LwM2M lifecycle model with CoAP binding.
   - `internal/plugin`: blacklist, rate limit, heartbeat, persistence, autoban, slow handler logging adapter, cluster pub/sub.
-  - `internal/infra`: cache, store, pubsub, circuit breaker, in-memory observability, Prometheus metrics exporter.
-  - `deploy`: Docker, docker-compose, K8s, Helm baseline.
+  - `internal/infra`: cache, store, pubsub, circuit breaker, in-memory observability, Prometheus metrics exporter, OpenTelemetry tracer adapter.
+  - `deploy`: Docker, docker-compose, K8s, Helm production-oriented baseline.
+  - `examples`: compile-checked multi-protocol runtime example.
 
 ## Current Status Summary
 
@@ -42,10 +43,11 @@ This plan is based on the current repository state, not aspirational scope.
 | CoAP | Done | Message parse/marshal, CON ACK, TTL cleanup tests |
 | LwM2M | Done | Lifecycle/resource model and CoAP text-command binding exist |
 | QUIC | Done | TLS requirement, stream echo, plugin transform, shutdown cleanup tests |
-| gRPC-Web | Done | Direct HTTP mode and WebSocket mode exist; protobuf framing depth is intentionally minimal |
+| gRPC-Web | Done | Direct HTTP mode, binary frame parsing, grpc-status trailers, and WebSocket mode exist |
 | Plugins | Done | Core plugins, slow-handler logging adapter, and cluster pub/sub plugin exist |
-| Infra | Done | In-memory primitives and Prometheus metrics exporter exist; OpenTelemetry remains optional future work |
-| Deploy | Hardened | Static semantic tests pass; optional Docker/Kubectl/Helm rendering is logged when tools are available |
+| Infra | Done | In-memory primitives, Prometheus metrics exporter, and OpenTelemetry tracer adapter exist |
+| Deploy | Hardened | Security contexts, resource requests/limits, probes, static semantic tests, and optional Docker/Kubectl/Helm rendering exist |
+| Examples | Done | Multi-protocol example and examples guide cover TCP, WebSocket, CoAP/LwM2M, metrics, and tracing |
 | Release validation | Done | Unit/integration/race/vet/fuzz/benchmark/deploy validation pass; latest normal validation passed |
 | Release notes | Done | `CHANGELOG.md` defines `v0.1.0-rc.1` release candidate scope, validation, and known scope |
 
@@ -79,7 +81,8 @@ This plan is based on the current repository state, not aspirational scope.
 | 24 | Prometheus metrics exporter | Done | 2026-05-29T13:50:35 | `e2de2ba` | Observability focused tests, full validation |
 | 25 | Cluster pub/sub plugin | Done | 2026-05-29T13:53:26 | `d2cf09e` | Plugin focused tests, full validation |
 | 26 | Final scripted release sweep | Done | 2026-05-29T13:54:39 | `7bd3c4d` | `run_tests.go -mode all`, `validate.ps1 -Race` |
-| 27 | Release candidate notes | Done | 2026-05-30T00:13:42 | This commit | `CHANGELOG.md`, README changelog link, normal validation |
+| 27 | Release candidate notes | Done | 2026-05-30T00:13:42 | `9f58140` | `CHANGELOG.md`, README changelog link, normal validation |
+| 28 | Production enhancement pass | Done | 2026-05-30T00:33:34 | Pending | gRPC-Web focused tests, observability/API focused tests, deploy validation, examples compile, full validation, race validation |
 
 ## Active Improvement Plan
 
@@ -89,8 +92,8 @@ This plan is based on the current repository state, not aspirational scope.
 | P0 | Release validation automation | Done | Add scripted validation command that runs test/vet/race with local toolchain PATH | `scripts/validate.ps1` supports normal and race validation |
 | P1 | LwM2M over CoAP binding | Done | Connect LwM2M lifecycle operations to CoAP request/response handlers | CoAP responder maps register/update/deregister/read/write payloads to LwM2M server operations |
 | P1 | gRPC-Web WebSocket mode | Done | Add WebSocket transport mode for gRPC-Web gateway | Direct HTTP and WebSocket modes now share runtime/plugin/session behavior |
-| P1 | External observability adapters | Done | Add Prometheus/OpenTelemetry adapters behind existing core interfaces | Prometheus metrics exporter exists; OpenTelemetry tracing remains optional future work |
-| P1 | Deploy validation depth | Done | Add Docker/Helm/K8s render checks when tools are available | Deploy tests assert manifest semantics and `validate_deploy.ps1` records optional tool rendering |
+| P1 | External observability adapters | Done | Add Prometheus/OpenTelemetry adapters behind existing core interfaces | Prometheus metrics exporter and OpenTelemetry tracer adapter exist |
+| P1 | Deploy validation depth | Done | Add Docker/Helm/K8s render checks when tools are available | Deploy tests assert manifest semantics and production defaults; `validate_deploy.ps1` records optional tool rendering |
 | P1 | Test logging workflow | Done | Preserve raw JSON and readable reports for scripted validation | `scripts/run_tests.go`, `scripts/parse_test_log.go`, and `validate.ps1` write logs under `logs/` |
 | P2 | Benchmarks and fuzzing | Done | Add protocol benchmarks and fuzz tests for CoAP/TCP framing | TCP framer and CoAP parser fuzz smoke plus benchmark baselines are recorded |
 | P2 | Plugin completeness | Done | Add cluster plugin if production use requires it | Cluster pub/sub plugin now covers cross-node local broadcast behavior |

@@ -5,7 +5,7 @@ metadata:
   labels:
     app: shark-socket-new
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: shark-socket-new
@@ -14,15 +14,38 @@ spec:
       labels:
         app: shark-socket-new
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: shark-socket-new
           image: shark-socket-new:latest
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           ports:
             - name: tcp
               containerPort: 18000
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
           readinessProbe:
             tcpSocket:
               port: 18000
             initialDelaySeconds: 3
             periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 18000
+            initialDelaySeconds: 10
+            periodSeconds: 20

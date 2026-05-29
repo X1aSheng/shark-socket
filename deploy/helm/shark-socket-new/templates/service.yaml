@@ -9,4 +9,4 @@ spec:
   ports:
     - name: tcp
       port: {{ .Values.service.port }}
-      targetPort: 18000
+      targetPort: {{ .Values.service.port }}

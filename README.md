@@ -24,10 +24,10 @@ runtime ownership, plugin execution, and graceful shutdown explicit.
 | CoAP | Implemented | Message parse/marshal, CON ACK, pseudo-sessions |
 | LwM2M | Implemented | In-memory lifecycle/resource model with CoAP text-command binding |
 | QUIC | Implemented | TLS-required stream transport using quic-go |
-| gRPC-Web | Implemented | Direct HTTP mode and WebSocket mode |
+| gRPC-Web | Implemented | Direct HTTP mode, binary framing/trailers, and WebSocket mode |
 | Plugins | Implemented | Blacklist, RateLimit, Heartbeat, Persistence, AutoBan, SlowHandler, Cluster |
-| Infra | Implemented | In-memory cache/store/pubsub/circuitbreaker/observability, Prometheus metrics exporter |
-| Deploy | Baseline | Docker, docker-compose, K8s, Helm manifests |
+| Infra | Implemented | In-memory cache/store/pubsub/circuitbreaker/observability, Prometheus metrics exporter, OpenTelemetry tracer adapter |
+| Deploy | Hardened | Docker, docker-compose, K8s, Helm manifests with security, probe, and resource defaults |
 
 ## Run
 
@@ -92,4 +92,5 @@ Raw JSON and readable reports are written to `logs/`.
 - Architecture: [docs/Architecture.md](docs/Architecture.md)
 - Project plan: [docs/PROJECT-PLAN-20260529.md](docs/PROJECT-PLAN-20260529.md)
 - Test strategy: [docs/TEST-STRATEGY-20260529.md](docs/TEST-STRATEGY-20260529.md)
+- Examples: [docs/EXAMPLES.md](docs/EXAMPLES.md)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)

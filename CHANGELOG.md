@@ -24,10 +24,11 @@ Release candidate for the redesigned Shark-Socket runtime gateway.
 - CoAP transport with message parse/marshal, CON ACK responses, responder hooks, pseudo-sessions, TTL sweeping, and runtime plugin execution.
 - LwM2M in-memory lifecycle/resource model with registration, update, deregistration, lifetime expiry, resource read/write, and CoAP text-command binding.
 - QUIC transport using `quic-go`, TLS-required startup, bidirectional stream request/response flow, runtime plugin execution, and shutdown cleanup.
-- gRPC-Web transport with direct HTTP mode, WebSocket mode, max message size limits, origin checks, runtime plugin execution, and session cleanup.
+- gRPC-Web transport with direct HTTP mode, binary frame parsing, framed data responses, grpc-status trailer frames, WebSocket mode, max message size limits, origin checks, runtime plugin execution, and session cleanup.
 - Plugin ecosystem covering blacklist, rate limit, heartbeat, persistence, autoban, slow handler logging, and cluster pub/sub broadcast.
-- Infrastructure primitives for in-memory cache, store, pub/sub, circuit breaker, in-memory observability, and Prometheus metrics export.
-- Deployment baseline for Docker, docker-compose, Kubernetes, and Helm.
+- Infrastructure primitives for in-memory cache, store, pub/sub, circuit breaker, in-memory observability, Prometheus metrics export, and OpenTelemetry tracing.
+- Deployment baseline for Docker, docker-compose, Kubernetes, and Helm, including security contexts, resource requests/limits, liveness/readiness probes, and configurable Helm ports.
+- Compile-checked multi-protocol example and examples documentation for TCP, WebSocket, CoAP/LwM2M, Prometheus metrics, and OpenTelemetry tracing.
 - Validation tooling for normal, race, deploy, scripted unit/integration/benchmark/all test runs, JSON logs, parsed reports, fuzz smoke tests, and benchmark baselines.
 
 ### Validation
@@ -38,7 +39,4 @@ Release candidate for the redesigned Shark-Socket runtime gateway.
 
 ### Known Scope
 
-- gRPC-Web framing is intentionally minimal for the current direct runtime slice.
-- OpenTelemetry tracing remains optional future work; Prometheus metrics export is implemented.
 - Docker, Kubernetes, and Helm render checks are run when those tools are installed, and otherwise recorded as explicit skips by `scripts/validate_deploy.ps1`.
-

@@ -15,6 +15,7 @@ type session struct {
 	id        uint64
 	request   *http.Request
 	response  http.ResponseWriter
+	framed    bool
 	createdAt time.Time
 	activeAt  atomic.Int64
 	state     atomic.Uint32
@@ -23,9 +24,9 @@ type session struct {
 	cancel    context.CancelFunc
 }
 
-func newSession(id uint64, w http.ResponseWriter, r *http.Request) *session {
+func newSession(id uint64, w http.ResponseWriter, r *http.Request, framed bool) *session {
 	ctx, cancel := context.WithCancel(r.Context())
-	s := &session{id: id, request: r, response: w, createdAt: time.Now(), ctx: ctx, cancel: cancel}
+	s := &session{id: id, request: r, response: w, framed: framed, createdAt: time.Now(), ctx: ctx, cancel: cancel}
 	s.activeAt.Store(time.Now().UnixNano())
 	s.state.Store(uint32(core.StateActive))
 	return s
@@ -48,7 +49,18 @@ func (s *session) Send(payload []byte) error {
 		return core.ErrSessionClosed
 	}
 	s.response.Header().Set("content-type", "application/grpc-web+proto")
+	if s.framed {
+		payload = appendDataFrame(nil, payload)
+	}
 	_, err := s.response.Write(payload)
+	return err
+}
+
+func (s *session) SendTrailers(status int, message string) error {
+	if !s.framed {
+		return nil
+	}
+	_, err := s.response.Write(appendTrailerFrame(nil, status, message))
 	return err
 }
 
