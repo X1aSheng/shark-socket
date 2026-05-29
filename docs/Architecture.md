@@ -280,3 +280,25 @@ Result:
 - Verified CoAP message round-trip and invalid version rejection.
 - Verified CON POST receives ACK Created with the same Message ID.
 - Verified inactive CoAP pseudo-sessions expire through TTL sweep.
+
+### Step 9: LwM2M Lifecycle Model
+
+Scope:
+
+- LwM2M object path parsing.
+- In-memory registration, update, deregistration, and lifetime expiry.
+- Resource read/write model.
+- Public API constructors for LwM2M server/client.
+
+Commands:
+
+```bash
+go test ./internal/protocol/lwm2m -count=1 -v
+go test ./... -count=1
+```
+
+Result:
+
+- Passed.
+- Verified registration lifecycle and resource read/write.
+- Verified expired registrations are swept.

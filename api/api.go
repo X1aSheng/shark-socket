@@ -6,6 +6,7 @@ import (
 
 	"github.com/X1aSheng/shark-socket-new/internal/core"
 	"github.com/X1aSheng/shark-socket-new/internal/plugin"
+	"github.com/X1aSheng/shark-socket-new/internal/protocol/lwm2m"
 	"github.com/X1aSheng/shark-socket-new/internal/runtime"
 	"github.com/X1aSheng/shark-socket-new/internal/transport/coap"
 	transporthttp "github.com/X1aSheng/shark-socket-new/internal/transport/http"
@@ -35,6 +36,13 @@ type (
 	WebSocketOption     = websocket.Option
 	CoAPServer          = coap.Server
 	CoAPOption          = coap.Option
+	LwM2MServer         = lwm2m.Server
+	LwM2MServerOption   = lwm2m.ServerOption
+	LwM2MClient         = lwm2m.Client
+	LwM2MClientOption   = lwm2m.ClientOption
+	LwM2MObjectPath     = lwm2m.ObjectPath
+	LwM2MRegistration   = lwm2m.Registration
+	LwM2MResource       = lwm2m.Resource
 	BlacklistPlugin     = plugin.Blacklist
 	RateLimitPlugin     = plugin.RateLimit
 	Logger              = core.Logger
@@ -145,6 +153,18 @@ func WithCoAPAddr(addr string) CoAPOption {
 
 func WithCoAPHandler(handler Handler) CoAPOption {
 	return coap.WithHandler(handler)
+}
+
+func NewLwM2MServer(opts ...LwM2MServerOption) *LwM2MServer {
+	return lwm2m.NewServer(opts...)
+}
+
+func NewLwM2MClient(endpoint string, server *LwM2MServer, opts ...LwM2MClientOption) *LwM2MClient {
+	return lwm2m.NewClient(endpoint, server, opts...)
+}
+
+func ParseLwM2MPath(path string) (LwM2MObjectPath, error) {
+	return lwm2m.ParsePath(path)
 }
 
 func NewBlacklistPlugin(entries ...string) *BlacklistPlugin {
