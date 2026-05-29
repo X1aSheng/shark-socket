@@ -8,6 +8,7 @@ import (
 
 	"github.com/X1aSheng/shark-socket-new/internal/core"
 	"github.com/X1aSheng/shark-socket-new/internal/infra/observability"
+	"github.com/X1aSheng/shark-socket-new/internal/infra/pubsub"
 	"github.com/X1aSheng/shark-socket-new/internal/infra/store"
 	"github.com/X1aSheng/shark-socket-new/internal/plugin"
 	"github.com/X1aSheng/shark-socket-new/internal/protocol/lwm2m"
@@ -57,10 +58,12 @@ type (
 	BlacklistPlugin     = plugin.Blacklist
 	RateLimitPlugin     = plugin.RateLimit
 	AutoBanPlugin       = plugin.AutoBan
+	ClusterPlugin       = plugin.Cluster
 	HeartbeatPlugin     = plugin.Heartbeat
 	PersistencePlugin   = plugin.Persistence
 	SlowHandlerOption   = plugin.SlowHandlerOption
 	PrometheusMetrics   = observability.PrometheusMetrics
+	PubSub              = pubsub.PubSub
 	Logger              = core.Logger
 	Metrics             = core.Metrics
 	Tracer              = core.Tracer
@@ -241,6 +244,14 @@ func NewRateLimitPlugin(rate int, window time.Duration) *RateLimitPlugin {
 
 func NewAutoBanPlugin(threshold int) *AutoBanPlugin {
 	return plugin.NewAutoBan(threshold)
+}
+
+func NewClusterPlugin(nodeID string, bus *PubSub, manager SessionManager) *ClusterPlugin {
+	return plugin.NewCluster(nodeID, bus, manager)
+}
+
+func NewPubSub() *PubSub {
+	return pubsub.New()
 }
 
 func NewHeartbeatPlugin(manager SessionManager, timeout time.Duration) *HeartbeatPlugin {

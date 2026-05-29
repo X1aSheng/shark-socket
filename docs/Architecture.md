@@ -712,3 +712,25 @@ Result:
 - Verified counter, gauge, histogram count/sum, label escaping, value-only labels, and HTTP serving.
 - Fixed label double-escaping during focused validation.
 - Full validation script passed after API exposure.
+
+### Step 27: Cluster Pub/Sub Plugin
+
+Scope:
+
+- Cluster plugin publishes local messages into shared pub/sub with a node envelope.
+- Remote nodes subscribe and broadcast payloads to their local SessionManager.
+- The plugin ignores messages from its own node to prevent local loopback.
+- Public API facade exposes `NewPubSub` and `NewClusterPlugin`.
+
+Commands:
+
+```bash
+go test ./internal/plugin -count=1 -v
+powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1
+```
+
+Result:
+
+- Passed at 2026-05-29T13:53:26.916.
+- Verified remote node broadcast, own-node loopback suppression, nil bus no-op, and plugin conformance.
+- Full validation script passed after API exposure.
