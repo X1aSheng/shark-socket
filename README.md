@@ -26,7 +26,7 @@ runtime ownership, plugin execution, and graceful shutdown explicit.
 | QUIC | Implemented | TLS-required stream transport using quic-go |
 | gRPC-Web | Implemented | Direct HTTP mode and WebSocket mode |
 | Plugins | Implemented | Blacklist, RateLimit, Heartbeat, Persistence, AutoBan, SlowHandler, Cluster |
-| Infra | Partial | In-memory cache/store/pubsub/circuitbreaker/observability, Prometheus metrics exporter |
+| Infra | Implemented | In-memory cache/store/pubsub/circuitbreaker/observability, Prometheus metrics exporter |
 | Deploy | Baseline | Docker, docker-compose, K8s, Helm manifests |
 
 ## Run

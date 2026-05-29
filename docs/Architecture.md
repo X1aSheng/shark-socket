@@ -734,3 +734,25 @@ Result:
 - Passed at 2026-05-29T13:53:26.916.
 - Verified remote node broadcast, own-node loopback suppression, nil bus no-op, and plugin conformance.
 - Full validation script passed after API exposure.
+
+### Step 28: Final Scripted Release Sweep
+
+Scope:
+
+- Scripted all-mode validation after Prometheus exporter and cluster plugin additions.
+- Full race detector validation after all current planned release hardening.
+
+Commands:
+
+```bash
+go run scripts/run_tests.go -mode all -timeout 5m
+powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1 -Race
+```
+
+Result:
+
+- Passed at 2026-05-29T13:54:39.006.
+- Scripted unit report: 75 passed, 0 failed, 0 skipped.
+- Scripted integration report: 5 passed, 0 failed, 0 skipped.
+- Benchmark report regenerated for TCP framers and CoAP message parse/marshal.
+- Verified `go test -race ./... -count=1` with local `w64devkit` and `LLVM` paths.
