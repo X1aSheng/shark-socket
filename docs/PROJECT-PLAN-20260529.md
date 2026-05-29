@@ -1,6 +1,6 @@
 # Shark-Socket-New Project Plan
 
-Updated: 2026-05-29T13:54:39
+Updated: 2026-05-30T00:13:42
 
 ## Timestamp Format
 
@@ -46,7 +46,8 @@ This plan is based on the current repository state, not aspirational scope.
 | Plugins | Done | Core plugins, slow-handler logging adapter, and cluster pub/sub plugin exist |
 | Infra | Done | In-memory primitives and Prometheus metrics exporter exist; OpenTelemetry remains optional future work |
 | Deploy | Hardened | Static semantic tests pass; optional Docker/Kubectl/Helm rendering is logged when tools are available |
-| Release validation | Done | Unit/integration/race/vet/fuzz/benchmark/deploy validation pass; latest full race refresh passed |
+| Release validation | Done | Unit/integration/race/vet/fuzz/benchmark/deploy validation pass; latest normal validation passed |
+| Release notes | Done | `CHANGELOG.md` defines `v0.1.0-rc.1` release candidate scope, validation, and known scope |
 
 ## Completed Milestones
 
@@ -67,23 +68,24 @@ This plan is based on the current repository state, not aspirational scope.
 | 13 | Expanded plugin ecosystem | Done | 2026-05-29T10:17:00 | `57d22b2` | Plugin focused tests, full test sweep |
 | 14 | Observability test primitives | Done | 2026-05-29T10:18:00 | `2ba964d` | Observability focused tests, full test sweep |
 | 15 | Infra/cache/breaker/heartbeat hardening | Done | 2026-05-29T10:32:25 | `8d613f5` | Focused tests, full test sweep, race test |
-| 16 | Documentation alignment and validation script | Done | 2026-05-29T12:21:22 | Pending | README status matrix, `scripts/validate.ps1`, normal validation, race validation |
-| 17 | LwM2M over CoAP binding | Done | 2026-05-29T12:24:31 | Pending | CoAP + LwM2M integration test, full validation |
-| 18 | gRPC-Web WebSocket mode | Done | 2026-05-29T12:27:15 | Pending | gRPC-Web focused tests, full validation |
-| 19 | TCP/CoAP fuzz and benchmark baseline | Done | 2026-05-29T12:30:30 | Pending | TCP/CoAP focused tests, fuzz smoke, benchmark baseline, full validation |
-| 20 | shark-socket-style test logging | Done | 2026-05-29T12:49:05 | Pending | Test strategy doc, JSON/log parser, scripted runner, validation transcript |
-| 21 | Deploy validation depth | Done | 2026-05-29T12:58:24 | Pending | Static manifest semantics, optional Docker/Kubectl/Helm render validation, deploy transcript |
-| 22 | Final race refresh after deploy hardening | Done | 2026-05-29T12:58:54 | Pending | `validate.ps1 -Race`, full race sweep |
-| 23 | Slow handler logging adapter | Done | 2026-05-29T13:01:11 | Pending | Plugin focused tests, full validation |
-| 24 | Prometheus metrics exporter | Done | 2026-05-29T13:50:35 | Pending | Observability focused tests, full validation |
-| 25 | Cluster pub/sub plugin | Done | 2026-05-29T13:53:26 | Pending | Plugin focused tests, full validation |
-| 26 | Final scripted release sweep | Done | 2026-05-29T13:54:39 | Pending | `run_tests.go -mode all`, `validate.ps1 -Race` |
+| 16 | Documentation alignment and validation script | Done | 2026-05-29T12:21:22 | `4682c78` | README status matrix, `scripts/validate.ps1`, normal validation, race validation |
+| 17 | LwM2M over CoAP binding | Done | 2026-05-29T12:24:31 | `c624830` | CoAP + LwM2M integration test, full validation |
+| 18 | gRPC-Web WebSocket mode | Done | 2026-05-29T12:27:15 | `f5a3dd9` | gRPC-Web focused tests, full validation |
+| 19 | TCP/CoAP fuzz and benchmark baseline | Done | 2026-05-29T12:30:30 | `2863470` | TCP/CoAP focused tests, fuzz smoke, benchmark baseline, full validation |
+| 20 | shark-socket-style test logging | Done | 2026-05-29T12:49:05 | `7ec9e62` | Test strategy doc, JSON/log parser, scripted runner, validation transcript |
+| 21 | Deploy validation depth | Done | 2026-05-29T12:58:24 | `ee577ea` | Static manifest semantics, optional Docker/Kubectl/Helm render validation, deploy transcript |
+| 22 | Final race refresh after deploy hardening | Done | 2026-05-29T12:58:54 | `ee577ea` | `validate.ps1 -Race`, full race sweep |
+| 23 | Slow handler logging adapter | Done | 2026-05-29T13:01:11 | `a4ad2b8` | Plugin focused tests, full validation |
+| 24 | Prometheus metrics exporter | Done | 2026-05-29T13:50:35 | `e2de2ba` | Observability focused tests, full validation |
+| 25 | Cluster pub/sub plugin | Done | 2026-05-29T13:53:26 | `d2cf09e` | Plugin focused tests, full validation |
+| 26 | Final scripted release sweep | Done | 2026-05-29T13:54:39 | `7bd3c4d` | `run_tests.go -mode all`, `validate.ps1 -Race` |
+| 27 | Release candidate notes | Done | 2026-05-30T00:13:42 | This commit | `CHANGELOG.md`, README changelog link, normal validation |
 
 ## Active Improvement Plan
 
 | Priority | Workstream | Status | Target | Plan Basis |
 | --- | --- | --- | --- | --- |
-| P0 | Documentation accuracy | Done | Keep this plan, `Architecture.md`, and README aligned with implemented capability | README now describes current multi-protocol state |
+| P0 | Documentation accuracy | Done | Keep this plan, `Architecture.md`, README, and changelog aligned with implemented capability | README now describes current multi-protocol state and links release notes |
 | P0 | Release validation automation | Done | Add scripted validation command that runs test/vet/race with local toolchain PATH | `scripts/validate.ps1` supports normal and race validation |
 | P1 | LwM2M over CoAP binding | Done | Connect LwM2M lifecycle operations to CoAP request/response handlers | CoAP responder maps register/update/deregister/read/write payloads to LwM2M server operations |
 | P1 | gRPC-Web WebSocket mode | Done | Add WebSocket transport mode for gRPC-Web gateway | Direct HTTP and WebSocket modes now share runtime/plugin/session behavior |
@@ -95,9 +97,9 @@ This plan is based on the current repository state, not aspirational scope.
 
 ## Next Execution Steps
 
-1. Release checklist
-   - Decide release version and tag strategy.
-   - Add changelog/release notes before tagging.
+1. Tag release candidate after review.
+   - Recommended tag: `v0.1.0-rc.1`.
+   - Recommended command after the release commit is pushed: `git tag -a v0.1.0-rc.1 -m "shark-socket-new v0.1.0-rc.1"` then `git push origin v0.1.0-rc.1`.
 
 ## Acceptance Criteria
 
