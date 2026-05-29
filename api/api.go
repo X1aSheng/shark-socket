@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/X1aSheng/shark-socket-new/internal/core"
+	"github.com/X1aSheng/shark-socket-new/internal/infra/observability"
 	"github.com/X1aSheng/shark-socket-new/internal/infra/store"
 	"github.com/X1aSheng/shark-socket-new/internal/plugin"
 	"github.com/X1aSheng/shark-socket-new/internal/protocol/lwm2m"
@@ -59,6 +60,7 @@ type (
 	HeartbeatPlugin     = plugin.Heartbeat
 	PersistencePlugin   = plugin.Persistence
 	SlowHandlerOption   = plugin.SlowHandlerOption
+	PrometheusMetrics   = observability.PrometheusMetrics
 	Logger              = core.Logger
 	Metrics             = core.Metrics
 	Tracer              = core.Tracer
@@ -251,6 +253,10 @@ func NewPersistencePlugin(s store.Store, bucket string) *PersistencePlugin {
 
 func NewSlowHandler(logger Logger, threshold time.Duration, next Handler, opts ...SlowHandlerOption) Handler {
 	return plugin.NewSlowHandler(logger, threshold, next, opts...)
+}
+
+func NewPrometheusMetrics() *PrometheusMetrics {
+	return observability.NewPrometheusMetrics()
 }
 
 func AdaptTyped[M any](codec Codec[M], handler TypedHandler[M]) Handler {

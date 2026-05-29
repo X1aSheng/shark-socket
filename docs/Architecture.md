@@ -689,3 +689,26 @@ Result:
 - Passed at 2026-05-29T13:01:11.672.
 - Verified slow handler logs only over-threshold calls and preserves handler errors.
 - Full validation script passed after API exposure.
+
+### Step 26: Prometheus Metrics Exporter
+
+Scope:
+
+- Prometheus text-format metrics exporter behind the existing `core.Metrics` interface.
+- Supports counters, gauges, and summary-style histogram count/sum output.
+- Provides `ServeHTTP` for direct `/metrics` mounting.
+- Public API facade exposes `NewPrometheusMetrics`.
+
+Commands:
+
+```bash
+go test ./internal/infra/observability -count=1 -v
+powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1
+```
+
+Result:
+
+- Passed at 2026-05-29T13:50:35.220.
+- Verified counter, gauge, histogram count/sum, label escaping, value-only labels, and HTTP serving.
+- Fixed label double-escaping during focused validation.
+- Full validation script passed after API exposure.

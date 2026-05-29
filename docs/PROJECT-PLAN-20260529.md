@@ -1,6 +1,6 @@
 # Shark-Socket-New Project Plan
 
-Updated: 2026-05-29T13:01:11
+Updated: 2026-05-29T13:50:35
 
 ## Timestamp Format
 
@@ -14,7 +14,7 @@ This plan is based on the current repository state, not aspirational scope.
 
 - Module: `github.com/X1aSheng/shark-socket-new`, Go `1.26.1`.
 - Current branch: `shark-socket-new-main`.
-- Current design reference: `docs/Architecture.md`, including Step 1 through Step 25 validation records.
+- Current design reference: `docs/Architecture.md`, including Step 1 through Step 26 validation records.
 - Current test reference: `docs/TEST-STRATEGY-20260529.md`.
 - Current verified commands:
   - `go test ./... -count=1`
@@ -27,7 +27,7 @@ This plan is based on the current repository state, not aspirational scope.
   - `internal/transport`: TCP, UDP, HTTP, WebSocket, CoAP, QUIC, gRPC-Web direct and WebSocket modes.
   - `internal/protocol/lwm2m`: in-memory LwM2M lifecycle model with CoAP binding.
   - `internal/plugin`: blacklist, rate limit, heartbeat, persistence, autoban, slow handler logging adapter.
-  - `internal/infra`: cache, store, pubsub, circuit breaker, in-memory observability.
+  - `internal/infra`: cache, store, pubsub, circuit breaker, in-memory observability, Prometheus metrics exporter.
   - `deploy`: Docker, docker-compose, K8s, Helm baseline.
 
 ## Current Status Summary
@@ -44,7 +44,7 @@ This plan is based on the current repository state, not aspirational scope.
 | QUIC | Done | TLS requirement, stream echo, plugin transform, shutdown cleanup tests |
 | gRPC-Web | Done | Direct HTTP mode and WebSocket mode exist; protobuf framing depth is intentionally minimal |
 | Plugins | Partial | Core plugins and slow-handler logging adapter exist; cluster plugin is not yet implemented |
-| Infra | Partial | In-memory primitives exist; external adapters/exporters are not yet implemented |
+| Infra | Partial | In-memory primitives and Prometheus metrics exporter exist; OpenTelemetry tracing adapter is not yet implemented |
 | Deploy | Hardened | Static semantic tests pass; optional Docker/Kubectl/Helm rendering is logged when tools are available |
 | Release validation | Done | Unit/integration/race/vet/fuzz/benchmark/deploy validation pass; latest full race refresh passed |
 
@@ -75,6 +75,7 @@ This plan is based on the current repository state, not aspirational scope.
 | 21 | Deploy validation depth | Done | 2026-05-29T12:58:24 | Pending | Static manifest semantics, optional Docker/Kubectl/Helm render validation, deploy transcript |
 | 22 | Final race refresh after deploy hardening | Done | 2026-05-29T12:58:54 | Pending | `validate.ps1 -Race`, full race sweep |
 | 23 | Slow handler logging adapter | Done | 2026-05-29T13:01:11 | Pending | Plugin focused tests, full validation |
+| 24 | Prometheus metrics exporter | Done | 2026-05-29T13:50:35 | Pending | Observability focused tests, full validation |
 
 ## Active Improvement Plan
 
@@ -84,7 +85,7 @@ This plan is based on the current repository state, not aspirational scope.
 | P0 | Release validation automation | Done | Add scripted validation command that runs test/vet/race with local toolchain PATH | `scripts/validate.ps1` supports normal and race validation |
 | P1 | LwM2M over CoAP binding | Done | Connect LwM2M lifecycle operations to CoAP request/response handlers | CoAP responder maps register/update/deregister/read/write payloads to LwM2M server operations |
 | P1 | gRPC-Web WebSocket mode | Done | Add WebSocket transport mode for gRPC-Web gateway | Direct HTTP and WebSocket modes now share runtime/plugin/session behavior |
-| P1 | External observability adapters | Planned | Add Prometheus/OpenTelemetry adapters behind existing core interfaces | Core interfaces and memory adapters exist |
+| P1 | External observability adapters | In Progress | Add Prometheus/OpenTelemetry adapters behind existing core interfaces | Prometheus metrics exporter exists; OpenTelemetry tracing adapter remains |
 | P1 | Deploy validation depth | Done | Add Docker/Helm/K8s render checks when tools are available | Deploy tests assert manifest semantics and `validate_deploy.ps1` records optional tool rendering |
 | P1 | Test logging workflow | Done | Preserve raw JSON and readable reports for scripted validation | `scripts/run_tests.go`, `scripts/parse_test_log.go`, and `validate.ps1` write logs under `logs/` |
 | P2 | Benchmarks and fuzzing | Done | Add protocol benchmarks and fuzz tests for CoAP/TCP framing | TCP framer and CoAP parser fuzz smoke plus benchmark baselines are recorded |
@@ -93,7 +94,7 @@ This plan is based on the current repository state, not aspirational scope.
 ## Next Execution Steps
 
 1. External observability adapters
-   - Add Prometheus/OpenTelemetry adapters behind current core interfaces if production deployment requires external backends.
+   - Add OpenTelemetry tracing adapter behind current core interfaces if production deployment requires external tracing.
    - Validation: focused adapter tests plus full validation.
 
 2. Plugin completeness review
