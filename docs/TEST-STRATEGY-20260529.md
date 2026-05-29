@@ -1,6 +1,6 @@
 # Shark-Socket-New Test Strategy
 
-Updated: 2026-05-29T12:56:50
+Updated: 2026-05-30T00:43:33
 
 ## Basis
 
@@ -79,4 +79,19 @@ Next additions should follow the old project's proven structure:
 - Add `tests/defects/` when the first production defect regression is identified.
 - Add more `tests/integration/` scenarios for multi-protocol Gateway composition.
 - Extend benchmark packages beyond TCP/CoAP after protocol behavior stabilizes.
-- Add CI jobs that upload `logs/*.json` and `logs/*.log` as artifacts.
+- Extend CI matrix across Linux and Windows when external runner capacity is available.
+
+## CI Coverage
+
+GitHub Actions validation is defined in `.github/workflows/ci.yml`.
+
+Current CI gates:
+
+- `go run scripts/run_tests.go -mode all -timeout 5m`
+- `powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1`
+- `powershell -ExecutionPolicy Bypass -File .\scripts\validate_deploy.ps1`
+- Upload `logs/` as a workflow artifact.
+
+`tests/deploy` includes a static workflow semantics test so the CI entrypoint,
+Go version, validation scripts, and artifact upload step remain visible to
+normal test runs.

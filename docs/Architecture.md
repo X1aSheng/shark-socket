@@ -787,3 +787,34 @@ Result:
 - Verified deployment static semantics after security/probe/resource hardening.
 - Verified multi-protocol example compiles.
 - Verified full race validation after the production enhancement pass.
+
+### Step 30: Review-Driven Lifecycle And CI Fixes
+
+Scope:
+
+- Full repository review and current validation refresh.
+- Gateway restart lifecycle regression coverage.
+- SessionManager shutdown semantics changed to drain active sessions without permanently disabling future registration.
+- TCP, UDP, CoAP, WebSocket, gRPC-Web, and QUIC transports reset accept state on `Start`.
+- GitHub Actions CI added for scripted tests, validation, deploy checks, and validation-log artifacts.
+
+Commands:
+
+```bash
+go test ./internal/transport/tcp -run TestGatewayTCPRestartKeepsSessionManagerUsable -count=1 -v
+go test ./tests/deploy -count=1 -v
+go test ./... -count=1
+go vet ./...
+go run scripts/run_tests.go -mode all -timeout 5m
+powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1 -Race
+powershell -ExecutionPolicy Bypass -File .\scripts\validate_deploy.ps1
+```
+
+Result:
+
+- Passed at 2026-05-30T00:43:33.
+- Restart regression failed before the fix and passed after the lifecycle update.
+- GitHub Actions workflow semantics are covered by `tests/deploy`.
+- Docker, Kubectl, and Helm render checks were skipped locally because those tools are not installed.
+- Cloud-server build/deploy and local-to-cloud interaction remain blocked pending external access details.

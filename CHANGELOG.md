@@ -7,7 +7,9 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
-- No unreleased changes yet.
+- Fixed Gateway restart lifecycle after shutdown.
+- Added GitHub Actions CI for scripted tests, validation, deploy checks, and log artifacts.
+- Added project review report `docs/PROJECT-REVIEW-260530-004244.md`.
 
 ## v0.1.0-rc.1 - 2026-05-30
 

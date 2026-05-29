@@ -1,6 +1,6 @@
 # Shark-Socket-New Project Plan
 
-Updated: 2026-05-30T00:33:34
+Updated: 2026-05-30T00:43:33
 
 ## Timestamp Format
 
@@ -82,7 +82,9 @@ This plan is based on the current repository state, not aspirational scope.
 | 25 | Cluster pub/sub plugin | Done | 2026-05-29T13:53:26 | `d2cf09e` | Plugin focused tests, full validation |
 | 26 | Final scripted release sweep | Done | 2026-05-29T13:54:39 | `7bd3c4d` | `run_tests.go -mode all`, `validate.ps1 -Race` |
 | 27 | Release candidate notes | Done | 2026-05-30T00:13:42 | `9f58140` | `CHANGELOG.md`, README changelog link, normal validation |
-| 28 | Production enhancement pass | Done | 2026-05-30T00:33:34 | Pending | gRPC-Web focused tests, observability/API focused tests, deploy validation, examples compile, full validation, race validation |
+| 28 | Production enhancement pass | Done | 2026-05-30T00:33:34 | `c2b6464` | gRPC-Web focused tests, observability/API focused tests, deploy validation, examples compile, full validation, race validation |
+| 29 | Gateway restart lifecycle fix | Done | 2026-05-30T00:42:00 | `35b8428` | Restart regression test, full test sweep, vet |
+| 30 | GitHub Actions validation workflow | Done | 2026-05-30T00:43:15 | `c106bbf` | Deploy workflow semantics test, deploy validation, full test sweep, vet |
 
 ## Active Improvement Plan
 
@@ -97,10 +99,14 @@ This plan is based on the current repository state, not aspirational scope.
 | P1 | Test logging workflow | Done | Preserve raw JSON and readable reports for scripted validation | `scripts/run_tests.go`, `scripts/parse_test_log.go`, and `validate.ps1` write logs under `logs/` |
 | P2 | Benchmarks and fuzzing | Done | Add protocol benchmarks and fuzz tests for CoAP/TCP framing | TCP framer and CoAP parser fuzz smoke plus benchmark baselines are recorded |
 | P2 | Plugin completeness | Done | Add cluster plugin if production use requires it | Cluster pub/sub plugin now covers cross-node local broadcast behavior |
+| P2 | Gateway restart lifecycle | Done | Allow stop/start reuse of the same Gateway and shared SessionManager | TCP restart regression covers the bug found in review |
+| P2 | GitHub Actions CI | Done | Run scripted validation, deploy checks, and log artifact upload on push/PR | `.github/workflows/ci.yml` and deploy workflow semantics test exist |
 
 ## Next Execution Steps
 
-1. Tag release candidate after review.
+1. Complete external deployment validation when credentials and tools are available.
+   - Need cloud host/credentials, Docker, Kubectl, Helm, registry/image tag, Kubernetes context/namespace, and public endpoint.
+2. Tag release candidate after review.
    - Recommended tag: `v0.1.0-rc.1`.
    - Recommended command after the release commit is pushed: `git tag -a v0.1.0-rc.1 -m "shark-socket-new v0.1.0-rc.1"` then `git push origin v0.1.0-rc.1`.
 
