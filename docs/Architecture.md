@@ -326,3 +326,26 @@ Result:
 - Verified QUIC refuses to start without TLS config.
 - Verified QUIC echo with global plugin transform.
 - Verified Gateway shutdown clears QUIC runtime sessions.
+
+### Step 11: gRPC-Web Direct Runtime Slice
+
+Scope:
+
+- Direct HTTP gRPC-Web transport through Gateway runtime.
+- Max message size boundary.
+- Global plugin execution on request payloads.
+- Per-request session cleanup.
+
+Commands:
+
+```bash
+go test ./internal/transport/grpcweb -count=1 -v
+go test ./... -count=1
+```
+
+Result:
+
+- Passed.
+- Verified direct gRPC-Web echo with global plugin transform.
+- Verified oversized request returns 413.
+- Verified runtime sessions are cleaned after request completion.

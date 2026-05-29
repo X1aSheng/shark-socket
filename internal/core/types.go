@@ -6,13 +6,14 @@ import "fmt"
 type Protocol string
 
 const (
-	ProtocolTCP    Protocol = "tcp"
-	ProtocolUDP    Protocol = "udp"
-	ProtocolHTTP   Protocol = "http"
-	ProtocolWS     Protocol = "websocket"
-	ProtocolCoAP   Protocol = "coap"
-	ProtocolQUIC   Protocol = "quic"
-	ProtocolCustom Protocol = "custom"
+	ProtocolTCP     Protocol = "tcp"
+	ProtocolUDP     Protocol = "udp"
+	ProtocolHTTP    Protocol = "http"
+	ProtocolWS      Protocol = "websocket"
+	ProtocolCoAP    Protocol = "coap"
+	ProtocolQUIC    Protocol = "quic"
+	ProtocolGRPCWeb Protocol = "grpc-web"
+	ProtocolCustom  Protocol = "custom"
 )
 
 // SessionState is the runtime state of a session.

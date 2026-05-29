@@ -10,6 +10,7 @@ import (
 	"github.com/X1aSheng/shark-socket-new/internal/protocol/lwm2m"
 	"github.com/X1aSheng/shark-socket-new/internal/runtime"
 	"github.com/X1aSheng/shark-socket-new/internal/transport/coap"
+	"github.com/X1aSheng/shark-socket-new/internal/transport/grpcweb"
 	transporthttp "github.com/X1aSheng/shark-socket-new/internal/transport/http"
 	"github.com/X1aSheng/shark-socket-new/internal/transport/quic"
 	"github.com/X1aSheng/shark-socket-new/internal/transport/tcp"
@@ -47,6 +48,8 @@ type (
 	LwM2MResource       = lwm2m.Resource
 	QUICServer          = quic.Server
 	QUICOption          = quic.Option
+	GRPCWebServer       = grpcweb.Server
+	GRPCWebOption       = grpcweb.Option
 	BlacklistPlugin     = plugin.Blacklist
 	RateLimitPlugin     = plugin.RateLimit
 	Logger              = core.Logger
@@ -185,6 +188,22 @@ func WithQUICTLS(config *tls.Config) QUICOption {
 
 func WithQUICHandler(handler Handler) QUICOption {
 	return quic.WithHandler(handler)
+}
+
+func NewGRPCWebServer(opts ...GRPCWebOption) *GRPCWebServer {
+	return grpcweb.NewServer(opts...)
+}
+
+func WithGRPCWebAddr(addr string) GRPCWebOption {
+	return grpcweb.WithAddr(addr)
+}
+
+func WithGRPCWebHandler(handler Handler) GRPCWebOption {
+	return grpcweb.WithHandler(handler)
+}
+
+func WithGRPCWebMaxMessageBytes(max int64) GRPCWebOption {
+	return grpcweb.WithMaxMessageBytes(max)
 }
 
 func NewBlacklistPlugin(entries ...string) *BlacklistPlugin {
