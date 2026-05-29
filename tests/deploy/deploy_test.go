@@ -2,6 +2,8 @@ package deploy_test
 
 import (
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -33,4 +35,102 @@ func TestK8sAndHelmManifestsExist(t *testing.T) {
 			t.Fatalf("%s missing: %v", path, err)
 		}
 	}
+}
+
+func TestK8sManifestSemantics(t *testing.T) {
+	deployment := readFile(t, "../../deploy/k8s/deployment.yaml")
+	service := readFile(t, "../../deploy/k8s/service.yaml")
+	kustomization := readFile(t, "../../deploy/k8s/kustomization.yaml")
+
+	assertContains(t, deployment, "kind: Deployment")
+	assertContains(t, deployment, "name: shark-socket-new")
+	assertContains(t, deployment, "app: shark-socket-new")
+	assertContains(t, deployment, "containerPort: 18000")
+	assertContains(t, deployment, "readinessProbe:")
+
+	assertContains(t, service, "kind: Service")
+	assertContains(t, service, "app: shark-socket-new")
+	assertContains(t, service, "port: 18000")
+	assertContains(t, service, "targetPort: 18000")
+
+	assertContains(t, kustomization, "deployment.yaml")
+	assertContains(t, kustomization, "service.yaml")
+}
+
+func TestHelmChartSemantics(t *testing.T) {
+	chart := readFile(t, "../../deploy/helm/shark-socket-new/Chart.yaml")
+	values := readFile(t, "../../deploy/helm/shark-socket-new/values.yaml")
+	deployment := readFile(t, "../../deploy/helm/shark-socket-new/templates/deployment.yaml")
+	service := readFile(t, "../../deploy/helm/shark-socket-new/templates/service.yaml")
+
+	assertContains(t, chart, "apiVersion: v2")
+	assertContains(t, chart, "name: shark-socket-new")
+	assertContains(t, values, "repository: shark-socket-new")
+	assertContains(t, values, "port: 18000")
+	assertContains(t, deployment, "{{ .Values.replicaCount }}")
+	assertContains(t, deployment, "{{ .Values.image.repository }}:{{ .Values.image.tag }}")
+	assertContains(t, service, "{{ .Values.service.type }}")
+	assertContains(t, service, "{{ .Values.service.port }}")
+}
+
+func TestDeployToolRenderingWhenAvailable(t *testing.T) {
+	root := projectRoot(t)
+	if _, err := exec.LookPath("kubectl"); err == nil {
+		out := runCommand(t, root, "kubectl", "kustomize", "deploy/k8s")
+		assertContains(t, out, "kind: Deployment")
+		assertContains(t, out, "kind: Service")
+	} else {
+		t.Log("kubectl not found; skipping kustomize render validation")
+	}
+
+	if _, err := exec.LookPath("helm"); err == nil {
+		out := runCommand(t, root, "helm", "template", "shark-socket-new", "deploy/helm/shark-socket-new")
+		assertContains(t, out, "kind: Deployment")
+		assertContains(t, out, "kind: Service")
+	} else {
+		t.Log("helm not found; skipping helm template validation")
+	}
+
+	if _, err := exec.LookPath("docker"); err == nil {
+		out := runCommand(t, root, "docker", "compose", "-f", "deploy/docker/docker-compose.yml", "config")
+		assertContains(t, out, "shark-socket-new")
+	} else {
+		t.Log("docker not found; skipping docker compose config validation")
+	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func assertContains(t *testing.T, text, want string) {
+	t.Helper()
+	if !strings.Contains(text, want) {
+		t.Fatalf("expected %q in:\n%s", want, text)
+	}
+}
+
+func projectRoot(t *testing.T) string {
+	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Clean(filepath.Join(wd, "..", ".."))
+}
+
+func runCommand(t *testing.T, dir, name string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s %s failed: %v\n%s", name, strings.Join(args, " "), err, out)
+	}
+	return string(out)
 }

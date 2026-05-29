@@ -625,3 +625,46 @@ Result:
 - Passed at 2026-05-29T12:49:05.843.
 - Logging files use `YYYY-MM-DDTHH-mm-ss.xxx_<mode>.json`, `.log`, and `_validate.log`.
 - Verified parser tests, unit script mode, integration script mode, benchmark script mode, and full validate transcript.
+
+### Step 23: Deploy Validation Depth
+
+Scope:
+
+- Static deploy tests now assert K8s and Helm manifest semantics, not only file presence.
+- Optional deploy validation script records Docker Compose, Kubectl Kustomize, and Helm Template results when tools are installed.
+- Missing deploy tools are explicitly logged as `SKIP`.
+
+Commands:
+
+```bash
+go test ./tests/deploy -count=1 -v
+powershell -ExecutionPolicy Bypass -File .\scripts\validate_deploy.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1
+```
+
+Result:
+
+- Passed at 2026-05-29T12:58:24.359.
+- Static deploy tests passed.
+- `docker`, `kubectl`, and `helm` were not installed on this machine and were recorded as explicit `SKIP` entries in `logs\2026-05-29T12-58-14.009_deploy.log`.
+- Full validation script passed after deploy test hardening.
+
+### Step 24: Final Race Refresh After Deploy Hardening
+
+Scope:
+
+- Full validation with race detector after deploy validation changes.
+- Confirms deploy test additions do not introduce race-only failures.
+
+Commands:
+
+```bash
+powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1 -Race
+```
+
+Result:
+
+- Passed at 2026-05-29T12:58:54.421.
+- Verified `go test ./... -count=1`.
+- Verified `go vet ./...`.
+- Verified `go test -race ./... -count=1` using local `w64devkit` and `LLVM` paths.

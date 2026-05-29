@@ -1,6 +1,6 @@
 # Shark-Socket-New Test Strategy
 
-Updated: 2026-05-29T12:38:00
+Updated: 2026-05-29T12:56:50
 
 ## Basis
 
@@ -28,6 +28,7 @@ Borrowed practices:
 | Race | Full race detector sweep with local Windows toolchain | `go run scripts/run_tests.go -mode race` |
 | Coverage | Full package coverage smoke | `go run scripts/run_tests.go -mode cover` |
 | Validation | Fast full test + vet, optional race | `powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1 [-Race]` |
+| Deploy | Static deploy tests plus optional Docker/Kubectl/Helm rendering | `powershell -ExecutionPolicy Bypass -File .\scripts\validate_deploy.ps1` |
 
 ## Log Policy
 
@@ -42,6 +43,10 @@ All scripted test logs are written to `logs/`.
 
 - `<timestamp>_validate.log`: PowerShell transcript with step start/pass timestamps.
 
+`scripts/validate_deploy.ps1` writes:
+
+- `<timestamp>_deploy.log`: deploy validation transcript. Missing Docker, Kubectl, or Helm tools are recorded as `SKIP`, not hidden.
+
 Timestamp rules:
 
 - Filenames use `YYYY-MM-DDTHH-mm-ss.xxx`.
@@ -55,6 +60,7 @@ Required before each release candidate:
 ```powershell
 go run scripts/run_tests.go -mode all -timeout 5m
 powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1 -Race
+powershell -ExecutionPolicy Bypass -File .\scripts\validate_deploy.ps1
 go test ./internal/transport/tcp -run='^$' -fuzz=FuzzLengthPrefixFramer -fuzztime=2s
 go test ./internal/transport/tcp -run='^$' -fuzz=FuzzLineFramerRead -fuzztime=2s
 go test ./internal/transport/coap -run='^$' -fuzz=FuzzParseMessage -fuzztime=2s

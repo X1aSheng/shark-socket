@@ -82,6 +82,7 @@ go run scripts/run_tests.go -mode all
 go run scripts/run_tests.go -mode unit
 go run scripts/run_tests.go -mode integration
 go run scripts/run_tests.go -mode benchmark
+.\scripts\validate_deploy.ps1
 ```
 
 Raw JSON and readable reports are written to `logs/`.
