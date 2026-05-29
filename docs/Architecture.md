@@ -349,3 +349,27 @@ Result:
 - Verified direct gRPC-Web echo with global plugin transform.
 - Verified oversized request returns 413.
 - Verified runtime sessions are cleaned after request completion.
+
+### Step 12: Core Infra Primitives
+
+Scope:
+
+- In-memory cache with TTL.
+- In-memory store.
+- In-process pubsub.
+- Circuit breaker state transitions.
+
+Commands:
+
+```bash
+go test ./internal/infra/... -count=1 -v
+go test ./... -count=1
+```
+
+Result:
+
+- Passed.
+- Verified cache set/get/expiry.
+- Verified store save/load/delete.
+- Verified pubsub delivery.
+- Verified circuit breaker closed/open/half-open/closed flow.
