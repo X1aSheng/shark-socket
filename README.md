@@ -92,6 +92,7 @@ Raw JSON and readable reports are written to `logs/`.
 - Architecture: [docs/Architecture.md](docs/Architecture.md)
 - Project plan: [docs/PROJECT-PLAN-20260529.md](docs/PROJECT-PLAN-20260529.md)
 - Test strategy: [docs/TEST-STRATEGY-20260529.md](docs/TEST-STRATEGY-20260529.md)
+- Protocol test guide: [docs/PROTOCOL-TEST-GUIDE-20260530.md](docs/PROTOCOL-TEST-GUIDE-20260530.md)
 - Examples: [docs/EXAMPLES.md](docs/EXAMPLES.md)
 - Latest review: [docs/PROJECT-REVIEW-260530-004244.md](docs/PROJECT-REVIEW-260530-004244.md)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
