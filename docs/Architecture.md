@@ -421,3 +421,26 @@ Result:
 - `go test ./... -count=1`: passed.
 - `go vet ./...`: passed.
 - `go test -race ./... -count=1`: passed with `w64devkit`/`LLVM` on `%PATH%`.
+
+### Step 15: Expanded Plugin Ecosystem
+
+Scope:
+
+- Heartbeat plugin for sweeping idle sessions.
+- Persistence plugin for lifecycle event storage.
+- AutoBan plugin for threshold-based connection blocking.
+- Public API constructors for expanded plugins.
+
+Commands:
+
+```bash
+go test ./internal/plugin -count=1 -v
+go test ./... -count=1
+```
+
+Result:
+
+- Passed.
+- Verified heartbeat closes and unregisters idle sessions.
+- Verified persistence writes lifecycle events.
+- Verified AutoBan blocks remotes after threshold is reached.

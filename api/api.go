@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/X1aSheng/shark-socket-new/internal/core"
+	"github.com/X1aSheng/shark-socket-new/internal/infra/store"
 	"github.com/X1aSheng/shark-socket-new/internal/plugin"
 	"github.com/X1aSheng/shark-socket-new/internal/protocol/lwm2m"
 	"github.com/X1aSheng/shark-socket-new/internal/runtime"
@@ -21,6 +22,7 @@ import (
 type (
 	Protocol            = core.Protocol
 	Session             = core.Session
+	SessionManager      = core.SessionManager
 	Message             = core.Message
 	Handler             = core.Handler
 	Plugin              = core.Plugin
@@ -52,6 +54,9 @@ type (
 	GRPCWebOption       = grpcweb.Option
 	BlacklistPlugin     = plugin.Blacklist
 	RateLimitPlugin     = plugin.RateLimit
+	AutoBanPlugin       = plugin.AutoBan
+	HeartbeatPlugin     = plugin.Heartbeat
+	PersistencePlugin   = plugin.Persistence
 	Logger              = core.Logger
 	Metrics             = core.Metrics
 	Tracer              = core.Tracer
@@ -212,6 +217,18 @@ func NewBlacklistPlugin(entries ...string) *BlacklistPlugin {
 
 func NewRateLimitPlugin(rate int, window time.Duration) *RateLimitPlugin {
 	return plugin.NewRateLimit(rate, window)
+}
+
+func NewAutoBanPlugin(threshold int) *AutoBanPlugin {
+	return plugin.NewAutoBan(threshold)
+}
+
+func NewHeartbeatPlugin(manager SessionManager, timeout time.Duration) *HeartbeatPlugin {
+	return plugin.NewHeartbeat(manager, timeout)
+}
+
+func NewPersistencePlugin(s store.Store, bucket string) *PersistencePlugin {
+	return plugin.NewPersistence(s, bucket)
 }
 
 func AdaptTyped[M any](codec Codec[M], handler TypedHandler[M]) Handler {
