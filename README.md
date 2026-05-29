@@ -75,7 +75,19 @@ go test ./internal/transport/coap -run='^$' -fuzz=FuzzParseMessage -fuzztime=2s
 go test './internal/transport/tcp' './internal/transport/coap' '-run=^$' '-bench=.' '-benchmem'
 ```
 
+Scripted test reports:
+
+```powershell
+go run scripts/run_tests.go -mode all
+go run scripts/run_tests.go -mode unit
+go run scripts/run_tests.go -mode integration
+go run scripts/run_tests.go -mode benchmark
+```
+
+Raw JSON and readable reports are written to `logs/`.
+
 ## Documentation
 
 - Architecture: [docs/Architecture.md](docs/Architecture.md)
 - Project plan: [docs/PROJECT-PLAN-20260529.md](docs/PROJECT-PLAN-20260529.md)
+- Test strategy: [docs/TEST-STRATEGY-20260529.md](docs/TEST-STRATEGY-20260529.md)

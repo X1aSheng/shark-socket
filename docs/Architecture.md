@@ -602,3 +602,26 @@ Result:
 - Passed at 2026-05-29T12:30:30.148.
 - Verified fuzz smoke for TCP length-prefix, TCP line framing, and CoAP parse/marshal.
 - Verified full validation script after adding fuzz and benchmark tests.
+
+### Step 22: shark-socket-Style Test Logging
+
+Scope:
+
+- Test strategy documented from the mature `shark-socket` test approach.
+- Scripted runner added for unit, integration, benchmark, race, cover, and all modes.
+- Raw `go test -json` logs and readable parsed reports are written to `logs/`.
+- `validate.ps1` now records a transcript log with millisecond timestamps.
+
+Commands:
+
+```bash
+go test ./scripts -count=1 -v
+go run scripts/run_tests.go -mode unit -timeout 5m
+powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1
+```
+
+Result:
+
+- Passed at 2026-05-29T12:49:05.843.
+- Logging files use `YYYY-MM-DDTHH-mm-ss.xxx_<mode>.json`, `.log`, and `_validate.log`.
+- Verified parser tests, unit script mode, integration script mode, benchmark script mode, and full validate transcript.
