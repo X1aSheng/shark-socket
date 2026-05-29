@@ -1,6 +1,6 @@
 # Shark-Socket-New Project Plan
 
-Updated: 2026-05-29T12:58:54
+Updated: 2026-05-29T13:01:11
 
 ## Timestamp Format
 
@@ -14,7 +14,7 @@ This plan is based on the current repository state, not aspirational scope.
 
 - Module: `github.com/X1aSheng/shark-socket-new`, Go `1.26.1`.
 - Current branch: `shark-socket-new-main`.
-- Current design reference: `docs/Architecture.md`, including Step 1 through Step 24 validation records.
+- Current design reference: `docs/Architecture.md`, including Step 1 through Step 25 validation records.
 - Current test reference: `docs/TEST-STRATEGY-20260529.md`.
 - Current verified commands:
   - `go test ./... -count=1`
@@ -26,7 +26,7 @@ This plan is based on the current repository state, not aspirational scope.
   - `internal/runtime`: Gateway, plugin chain, shared SessionManager, lifecycle orchestration.
   - `internal/transport`: TCP, UDP, HTTP, WebSocket, CoAP, QUIC, gRPC-Web direct and WebSocket modes.
   - `internal/protocol/lwm2m`: in-memory LwM2M lifecycle model with CoAP binding.
-  - `internal/plugin`: blacklist, rate limit, heartbeat, persistence, autoban.
+  - `internal/plugin`: blacklist, rate limit, heartbeat, persistence, autoban, slow handler logging adapter.
   - `internal/infra`: cache, store, pubsub, circuit breaker, in-memory observability.
   - `deploy`: Docker, docker-compose, K8s, Helm baseline.
 
@@ -43,7 +43,7 @@ This plan is based on the current repository state, not aspirational scope.
 | LwM2M | Done | Lifecycle/resource model and CoAP text-command binding exist |
 | QUIC | Done | TLS requirement, stream echo, plugin transform, shutdown cleanup tests |
 | gRPC-Web | Done | Direct HTTP mode and WebSocket mode exist; protobuf framing depth is intentionally minimal |
-| Plugins | Partial | Core plugins exist; cluster and slow-query style plugins are not yet implemented |
+| Plugins | Partial | Core plugins and slow-handler logging adapter exist; cluster plugin is not yet implemented |
 | Infra | Partial | In-memory primitives exist; external adapters/exporters are not yet implemented |
 | Deploy | Hardened | Static semantic tests pass; optional Docker/Kubectl/Helm rendering is logged when tools are available |
 | Release validation | Done | Unit/integration/race/vet/fuzz/benchmark/deploy validation pass; latest full race refresh passed |
@@ -74,6 +74,7 @@ This plan is based on the current repository state, not aspirational scope.
 | 20 | shark-socket-style test logging | Done | 2026-05-29T12:49:05 | Pending | Test strategy doc, JSON/log parser, scripted runner, validation transcript |
 | 21 | Deploy validation depth | Done | 2026-05-29T12:58:24 | Pending | Static manifest semantics, optional Docker/Kubectl/Helm render validation, deploy transcript |
 | 22 | Final race refresh after deploy hardening | Done | 2026-05-29T12:58:54 | Pending | `validate.ps1 -Race`, full race sweep |
+| 23 | Slow handler logging adapter | Done | 2026-05-29T13:01:11 | Pending | Plugin focused tests, full validation |
 
 ## Active Improvement Plan
 
@@ -87,7 +88,7 @@ This plan is based on the current repository state, not aspirational scope.
 | P1 | Deploy validation depth | Done | Add Docker/Helm/K8s render checks when tools are available | Deploy tests assert manifest semantics and `validate_deploy.ps1` records optional tool rendering |
 | P1 | Test logging workflow | Done | Preserve raw JSON and readable reports for scripted validation | `scripts/run_tests.go`, `scripts/parse_test_log.go`, and `validate.ps1` write logs under `logs/` |
 | P2 | Benchmarks and fuzzing | Done | Add protocol benchmarks and fuzz tests for CoAP/TCP framing | TCP framer and CoAP parser fuzz smoke plus benchmark baselines are recorded |
-| P2 | Plugin completeness | Planned | Add cluster and slow-query style plugins if production use requires them | Current plugin set covers common local safety, not clustering |
+| P2 | Plugin completeness | In Progress | Add cluster plugin if production use requires it | Slow handler logging adapter now covers slow-query style local diagnostics |
 
 ## Next Execution Steps
 
@@ -96,7 +97,7 @@ This plan is based on the current repository state, not aspirational scope.
    - Validation: focused adapter tests plus full validation.
 
 2. Plugin completeness review
-   - Decide whether cluster and slow-query plugins are required in the new architecture release.
+   - Decide whether cluster plugin is required in the new architecture release.
    - Validation: behavior tests for any plugin added.
 
 ## Acceptance Criteria

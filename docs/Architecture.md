@@ -668,3 +668,24 @@ Result:
 - Verified `go test ./... -count=1`.
 - Verified `go vet ./...`.
 - Verified `go test -race ./... -count=1` using local `w64devkit` and `LLVM` paths.
+
+### Step 25: Slow Handler Logging Adapter
+
+Scope:
+
+- Slow-query style handler adapter for production diagnostics.
+- Logs session ID, protocol, duration in milliseconds, payload size, and handler error when processing exceeds threshold.
+- Public API facade exposes `NewSlowHandler`.
+
+Commands:
+
+```bash
+go test ./internal/plugin -count=1 -v
+powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1
+```
+
+Result:
+
+- Passed at 2026-05-29T13:01:11.672.
+- Verified slow handler logs only over-threshold calls and preserves handler errors.
+- Full validation script passed after API exposure.

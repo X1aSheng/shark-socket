@@ -58,6 +58,7 @@ type (
 	AutoBanPlugin       = plugin.AutoBan
 	HeartbeatPlugin     = plugin.Heartbeat
 	PersistencePlugin   = plugin.Persistence
+	SlowHandlerOption   = plugin.SlowHandlerOption
 	Logger              = core.Logger
 	Metrics             = core.Metrics
 	Tracer              = core.Tracer
@@ -246,6 +247,10 @@ func NewHeartbeatPlugin(manager SessionManager, timeout time.Duration) *Heartbea
 
 func NewPersistencePlugin(s store.Store, bucket string) *PersistencePlugin {
 	return plugin.NewPersistence(s, bucket)
+}
+
+func NewSlowHandler(logger Logger, threshold time.Duration, next Handler, opts ...SlowHandlerOption) Handler {
+	return plugin.NewSlowHandler(logger, threshold, next, opts...)
 }
 
 func AdaptTyped[M any](codec Codec[M], handler TypedHandler[M]) Handler {

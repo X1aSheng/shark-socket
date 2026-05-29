@@ -25,7 +25,7 @@ runtime ownership, plugin execution, and graceful shutdown explicit.
 | LwM2M | Implemented | In-memory lifecycle/resource model with CoAP text-command binding |
 | QUIC | Implemented | TLS-required stream transport using quic-go |
 | gRPC-Web | Implemented | Direct HTTP mode and WebSocket mode |
-| Plugins | Partial | Blacklist, RateLimit, Heartbeat, Persistence, AutoBan |
+| Plugins | Partial | Blacklist, RateLimit, Heartbeat, Persistence, AutoBan, SlowHandler |
 | Infra | Partial | In-memory cache/store/pubsub/circuitbreaker/observability |
 | Deploy | Baseline | Docker, docker-compose, K8s, Helm manifests |
 

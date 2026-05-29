@@ -2,11 +2,13 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"net"
 	"testing"
 	"time"
 
 	"github.com/X1aSheng/shark-socket-new/internal/core"
+	"github.com/X1aSheng/shark-socket-new/internal/infra/observability"
 	"github.com/X1aSheng/shark-socket-new/internal/infra/store"
 	"github.com/X1aSheng/shark-socket-new/internal/runtime"
 )
@@ -117,6 +119,64 @@ func TestHeartbeatStartStopIsIdempotent(t *testing.T) {
 	}
 	p.Stop()
 	t.Fatal("heartbeat loop did not sweep idle session")
+}
+
+func TestSlowHandlerLogsDurationAndReturnsError(t *testing.T) {
+	logger := observability.NewMemoryLogger()
+	now := time.Unix(0, 0)
+	handlerErr := errors.New("boom")
+	wrapped := NewSlowHandler(
+		logger,
+		time.Millisecond,
+		func(core.Session, core.Message) error {
+			now = now.Add(2 * time.Millisecond)
+			return handlerErr
+		},
+		WithSlowHandlerClock(func() time.Time { return now }),
+	)
+	msg := core.Message{SessionID: 1, Protocol: core.ProtocolTCP, Payload: []byte("hello")}
+	if err := wrapped(fakeSession{}, msg); !errors.Is(err, handlerErr) {
+		t.Fatalf("handler error = %v, want %v", err, handlerErr)
+	}
+	entries := logger.Entries()
+	if len(entries) != 1 {
+		t.Fatalf("entries = %d, want 1", len(entries))
+	}
+	if entries[0].Level != "warn" || entries[0].Msg != "slow handler" {
+		t.Fatalf("entry = %#v", entries[0])
+	}
+	if !attrsContain(entries[0].Attrs, "error", "boom") {
+		t.Fatalf("attrs missing error: %#v", entries[0].Attrs)
+	}
+}
+
+func TestSlowHandlerSkipsFastHandler(t *testing.T) {
+	logger := observability.NewMemoryLogger()
+	now := time.Unix(0, 0)
+	wrapped := NewSlowHandler(
+		logger,
+		time.Second,
+		func(core.Session, core.Message) error {
+			now = now.Add(time.Millisecond)
+			return nil
+		},
+		WithSlowHandlerClock(func() time.Time { return now }),
+	)
+	if err := wrapped(fakeSession{}, core.Message{SessionID: 1, Protocol: core.ProtocolTCP}); err != nil {
+		t.Fatal(err)
+	}
+	if entries := logger.Entries(); len(entries) != 0 {
+		t.Fatalf("entries = %#v, want none", entries)
+	}
+}
+
+func attrsContain(attrs []any, key string, value any) bool {
+	for i := 0; i+1 < len(attrs); i += 2 {
+		if attrs[i] == key && attrs[i+1] == value {
+			return true
+		}
+	}
+	return false
 }
 
 type heartbeatSession struct {
