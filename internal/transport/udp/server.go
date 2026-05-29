@@ -40,6 +40,7 @@ func (s *Server) Start(ctx context.Context) error {
 	if s.rt == nil {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
+	s.closed.Store(false)
 	addr, err := net.ResolveUDPAddr("udp", s.opts.Addr)
 	if err != nil {
 		return fmt.Errorf("udp resolve %s: %w", s.opts.Addr, err)

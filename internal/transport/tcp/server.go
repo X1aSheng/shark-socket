@@ -41,6 +41,7 @@ func (s *Server) Start(ctx context.Context) error {
 	if s.rt == nil {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
+	s.closed.Store(false)
 	s.pool = newWorkerPool(s.opts.Handler, s.opts.WorkerCount, s.opts.TaskQueueSize, s.opts.FullPolicy)
 	s.pool.start(s.opts.WorkerCount)
 	ln, err := net.Listen("tcp", s.opts.Addr)

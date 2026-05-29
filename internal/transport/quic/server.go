@@ -44,6 +44,7 @@ func (s *Server) Start(ctx context.Context) error {
 	if s.rt == nil {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
+	s.closed.Store(false)
 	ln, err := quicgo.ListenAddr(s.opts.Addr, s.opts.TLSConfig, nil)
 	if err != nil {
 		return fmt.Errorf("quic listen %s: %w", s.opts.Addr, err)

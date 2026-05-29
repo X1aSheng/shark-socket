@@ -43,6 +43,7 @@ func (s *Server) Start(context.Context) error {
 	if s.rt == nil {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
+	s.closed.Store(false)
 	mux := http.NewServeMux()
 	mux.HandleFunc(s.opts.Path, s.handleUpgrade)
 	s.server = &http.Server{Addr: s.opts.Addr, Handler: mux}

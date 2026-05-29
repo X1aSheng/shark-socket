@@ -12,7 +12,6 @@ type SessionManager struct {
 	mu       sync.RWMutex
 	nextID   atomic.Uint64
 	count    atomic.Int64
-	closed   atomic.Bool
 	max      int64
 	sessions map[uint64]core.Session
 }
@@ -38,9 +37,6 @@ func (m *SessionManager) NextID() uint64 {
 }
 
 func (m *SessionManager) Register(sess core.Session) error {
-	if m.closed.Load() {
-		return core.ErrClosed
-	}
 	if m.max > 0 && m.count.Load() >= m.max {
 		return core.ErrSessionCapacity
 	}
@@ -107,9 +103,6 @@ func (m *SessionManager) Broadcast(data []byte) error {
 }
 
 func (m *SessionManager) CloseAll(ctx context.Context) error {
-	if !m.closed.CompareAndSwap(false, true) {
-		return nil
-	}
 	var firstErr error
 	m.Range(func(sess core.Session) bool {
 		if err := sess.Close(ctx); err != nil && firstErr == nil {
