@@ -3,6 +3,8 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
+      args:
+        GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
     ports:
       - "18000:18000"
       - "18080:18080"

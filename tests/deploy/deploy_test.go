@@ -20,6 +20,7 @@ func TestDockerfileEntrypoint(t *testing.T) {
 	if !strings.Contains(text, "ENTRYPOINT") {
 		t.Fatal("Dockerfile missing ENTRYPOINT")
 	}
+	assertContains(t, text, "ARG GOPROXY=")
 	assertContains(t, text, "EXPOSE 18000 18080 18081")
 }
 
@@ -123,6 +124,7 @@ func TestDeployToolRenderingWhenAvailable(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err == nil {
 		out := runCommand(t, root, "docker", "compose", "-f", "deploy/docker/docker-compose.yml", "config")
 		assertContains(t, out, "shark-socket-new")
+		assertContains(t, out, "GOPROXY")
 	} else {
 		t.Log("docker not found; skipping docker compose config validation")
 	}
