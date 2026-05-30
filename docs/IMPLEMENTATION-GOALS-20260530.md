@@ -239,5 +239,9 @@ Expected evidence:
 - Cloud benchmark smoke, light, and selected medium stages passed on
   `120.76.44.233` for commit `d64a9db`; results are recorded in
   `docs/BENCHMARK-RESULT-260530-120000.md`.
+- Server-side cloud validation passed on `47.96.129.59` for commit `68e3123`,
+  including full tests, vet, scripted validation, medium benchmark, temporary
+  service run, and cross-host traffic from `120.76.44.233`; results are
+  recorded in `docs/BENCHMARK-RESULT-260530-120500-SERVER2.md`.
 - Certificate reload and finer protocol security defaults remain part of the
   security-baseline milestone.
