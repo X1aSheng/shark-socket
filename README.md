@@ -95,6 +95,7 @@ go run scripts/run_tests.go -mode all
 go run scripts/run_tests.go -mode unit
 go run scripts/run_tests.go -mode integration
 go run scripts/run_tests.go -mode benchmark
+go run scripts/run_benchmarks.go -profile local -stage light
 .\scripts\validate_deploy.ps1
 ```
 
@@ -115,6 +116,7 @@ Raw JSON and readable reports are written to `logs/`.
 - Configuration: [docs/CONFIGURATION-20260530.md](docs/CONFIGURATION-20260530.md)
 - Test strategy: [docs/TEST-STRATEGY-20260529.md](docs/TEST-STRATEGY-20260529.md)
 - Protocol test guide: [docs/PROTOCOL-TEST-GUIDE-20260530.md](docs/PROTOCOL-TEST-GUIDE-20260530.md)
+- Resource-limited benchmark flow: [docs/BENCHMARK-RESOURCE-LIMITED-TEST-FLOW-20260530.md](docs/BENCHMARK-RESOURCE-LIMITED-TEST-FLOW-20260530.md)
 - Examples: [docs/EXAMPLES.md](docs/EXAMPLES.md)
-- Latest review: [docs/PROJECT-REVIEW-260530-115500.md](docs/PROJECT-REVIEW-260530-115500.md)
+- Latest review: [docs/PROJECT-REVIEW-260530-115800.md](docs/PROJECT-REVIEW-260530-115800.md)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)

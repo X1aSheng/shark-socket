@@ -1,3 +1,2 @@
-logs/*.json
-logs/*.log
+logs/**
 coverage.out

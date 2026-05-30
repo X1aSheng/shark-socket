@@ -234,5 +234,7 @@ Expected evidence:
 - Benchmark coverage now includes runtime session manager, plugin chain, and
   TCP/UDP/WebSocket/HTTP echo smoke paths under `tests/benchmark`, and the
   scripted benchmark runner includes these packages.
+- Resource-limited benchmark execution now has a `scripts/run_benchmarks.go`
+  matrix runner for local and cloud smoke/light/medium stages.
 - Certificate reload and finer protocol security defaults remain part of the
   security-baseline milestone.
