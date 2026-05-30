@@ -85,7 +85,15 @@ func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 		var server api.Server
 		switch name {
 		case "tcp":
-			server = api.NewTCPServer(api.WithTCPAddr(proto.Addr), api.WithTCPHandler(echoHandler))
+			opts := []api.TCPOption{api.WithTCPAddr(proto.Addr), api.WithTCPHandler(echoHandler)}
+			if proto.TLSCertFile != "" || proto.TLSKeyFile != "" {
+				tlsConfig, err := loadServerTLSConfig(proto.TLSCertFile, proto.TLSKeyFile)
+				if err != nil {
+					return err
+				}
+				opts = append(opts, api.WithTCPTLS(tlsConfig))
+			}
+			server = api.NewTCPServer(opts...)
 		case "udp":
 			server = api.NewUDPServer(api.WithUDPAddr(proto.Addr), api.WithUDPHandler(echoHandler))
 		case "http":
@@ -112,7 +120,7 @@ func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 			}
 			server = api.NewGRPCWebServer(opts...)
 		case "quic":
-			tlsConfig, err := loadServerTLSConfig(proto.TLSCertFile, proto.TLSKeyFile)
+			tlsConfig, err := loadServerTLSConfig(proto.TLSCertFile, proto.TLSKeyFile, "shark-socket-new-quic")
 			if err != nil {
 				return err
 			}

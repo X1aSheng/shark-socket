@@ -121,6 +121,10 @@ func WithTCPHandler(handler Handler) TCPOption {
 	return tcp.WithHandler(handler)
 }
 
+func WithTCPTLS(config *tls.Config) TCPOption {
+	return tcp.WithTLS(config)
+}
+
 func NewTCPClient(addr string, opts ...TCPClientOption) *TCPClient {
 	return tcp.NewClient(addr, opts...)
 }

@@ -97,6 +97,12 @@ func (c Config) Validate() error {
 		if proto.MaxMessageBytes < 0 {
 			return fmt.Errorf("protocol %q max_message_bytes must not be negative", name)
 		}
+		if (proto.TLSCertFile == "") != (proto.TLSKeyFile == "") {
+			return fmt.Errorf("protocol %q tls_cert_file and tls_key_file must be supplied together", name)
+		}
+		if proto.TLSCertFile != "" && name != "tcp" && name != "quic" {
+			return fmt.Errorf("protocol %q does not support tls_cert_file", name)
+		}
 		if name == "quic" && (proto.TLSCertFile == "" || proto.TLSKeyFile == "") {
 			return fmt.Errorf("protocol %q tls_cert_file and tls_key_file are required", name)
 		}
@@ -127,8 +133,16 @@ func applyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 	if value, ok := lookup("SHARK_METRICS_ADDR"); ok {
 		cfg.MetricsAddr = value
 	}
-	if value, ok := lookup("SHARK_TCP_ADDR"); ok {
-		upsertProtocol(cfg, ProtocolConfig{Name: "tcp", Addr: value})
+	tcpAddr, hasTCPAddr := lookup("SHARK_TCP_ADDR")
+	tcpCertFile, hasTCPCertFile := lookup("SHARK_TCP_CERT_FILE")
+	tcpKeyFile, hasTCPKeyFile := lookup("SHARK_TCP_KEY_FILE")
+	if hasTCPAddr || hasTCPCertFile || hasTCPKeyFile {
+		upsertProtocol(cfg, ProtocolConfig{
+			Name:        "tcp",
+			Addr:        tcpAddr,
+			TLSCertFile: tcpCertFile,
+			TLSKeyFile:  tcpKeyFile,
+		})
 	}
 	if value, ok := lookup("SHARK_WS_ADDR"); ok {
 		upsertProtocol(cfg, ProtocolConfig{Name: "websocket", Addr: value, Path: envOrDefault(lookup, "SHARK_WS_PATH", "/ws")})
@@ -198,10 +212,10 @@ func mergeProtocol(base, override ProtocolConfig) ProtocolConfig {
 	return base
 }
 
-func loadServerTLSConfig(certFile string, keyFile string) (*tls.Config, error) {
+func loadServerTLSConfig(certFile string, keyFile string, nextProtos ...string) (*tls.Config, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, fmt.Errorf("load tls certificate: %w", err)
 	}
-	return &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"shark-socket-new-quic"}}, nil
+	return &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: nextProtos}, nil
 }

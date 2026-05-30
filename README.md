@@ -17,7 +17,7 @@ runtime ownership, plugin execution, and graceful shutdown explicit.
 | Area | Status | Notes |
 | --- | --- | --- |
 | Runtime/Gateway | Implemented | Runtime injection, shared SessionManager, plugin chain, staged stop |
-| TCP | Implemented | Length-prefix, line, fixed-size, raw framers, client, worker pool |
+| TCP | Implemented | Length-prefix, line, fixed-size, raw framers, TLS server/client, worker pool |
 | UDP | Implemented | Pseudo-sessions, TTL sweep, plugin path |
 | HTTP | Implemented | Mode A router and Mode B session/plugin/handler flow |
 | WebSocket | Implemented | Binary message path, origin check, ping loop |

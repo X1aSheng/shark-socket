@@ -824,7 +824,7 @@ Helm chart 用于参数化：
 后续必须补齐：
 
 1. TLS/mTLS 配置文件化。
-2. TCP TLS server 支持和证书热加载。
+2. TCP/QUIC 证书热加载。
 3. QUIC mTLS、证书轮换和热加载。
 4. CoAP DTLS 或 OSCORE 方案设计。
 5. HTTP/WebSocket CORS/Origin 策略配置化。
@@ -917,7 +917,7 @@ internal/protocol/grpcweb
 
 ### P1：生产配置
 
-1. TLS/mTLS 配置模型。
+1. mTLS 配置模型和证书热加载。
 2. QUIC mTLS、证书轮换和热加载。
 3. 插件配置文件化。
 4. HTTP/WebSocket/gRPC-Web 安全策略配置化。
@@ -929,7 +929,7 @@ internal/protocol/grpcweb
 2. CoAP block-wise 和 retransmit。
 3. LwM2M 标准路径、content-format、observe。
 4. gRPC-Web text/base64 和 method 路由。
-5. TCP TLS server。
+5. TCP TLS 已完成；后续补充 mTLS client-auth 和证书热加载。
 
 ### P2：性能与防御
 
@@ -1037,7 +1037,7 @@ internal/protocol/grpcweb
 当前未完成：
 
 - 外部生产 Kubernetes 集群接入；kind 集群实机 apply 与 Helm 安装已通过。
-- TLS/mTLS 配置模型。
+- TLS/mTLS 完整配置模型和证书热加载。
 - QUIC mTLS、证书轮换和热加载。
 - CoAP/LwM2M 完整标准特性。
 - 性能池化和分片 SessionManager。

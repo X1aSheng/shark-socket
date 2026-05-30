@@ -1,6 +1,7 @@
 package tcp
 
 import (
+	"crypto/tls"
 	"net"
 	"time"
 
@@ -17,6 +18,7 @@ type Options struct {
 	FullPolicy    FullPolicy
 	DrainTimeout  time.Duration
 	MaxFrameBytes int
+	TLSConfig     *tls.Config
 }
 
 type Option func(*Options)
@@ -49,6 +51,12 @@ func WithHostPort(host string, port string) Option {
 func WithHandler(handler core.Handler) Option {
 	return func(o *Options) {
 		o.Handler = handler
+	}
+}
+
+func WithTLS(config *tls.Config) Option {
+	return func(o *Options) {
+		o.TLSConfig = config
 	}
 }
 

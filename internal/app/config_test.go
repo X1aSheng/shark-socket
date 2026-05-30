@@ -86,6 +86,30 @@ func TestConfigRejectsNegativeMaxMessageBytes(t *testing.T) {
 	}
 }
 
+func TestConfigRejectsPartialTLSFiles(t *testing.T) {
+	cfg := Config{
+		ShutdownTimeout: "2s",
+		Protocols: []ProtocolConfig{
+			{Name: "tcp", Addr: "127.0.0.1:0", TLSCertFile: "server.crt"},
+		},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "must be supplied together") {
+		t.Fatalf("Validate error = %v, want paired tls file error", err)
+	}
+}
+
+func TestConfigRejectsTLSFilesOnUnsupportedProtocol(t *testing.T) {
+	cfg := Config{
+		ShutdownTimeout: "2s",
+		Protocols: []ProtocolConfig{
+			{Name: "udp", Addr: "127.0.0.1:0", TLSCertFile: "server.crt", TLSKeyFile: "server.key"},
+		},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "does not support tls_cert_file") {
+		t.Fatalf("Validate error = %v, want unsupported tls file error", err)
+	}
+}
+
 func TestConfigRejectsQUICWithoutTLSFiles(t *testing.T) {
 	cfg := Config{
 		ShutdownTimeout: "2s",
@@ -95,6 +119,23 @@ func TestConfigRejectsQUICWithoutTLSFiles(t *testing.T) {
 	}
 	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "tls_cert_file") {
 		t.Fatalf("Validate error = %v, want tls file error", err)
+	}
+}
+
+func TestNewRegistersConfiguredTCPWithTLSFiles(t *testing.T) {
+	certFile, keyFile := writeTestCertificate(t)
+	cfg := Config{
+		ShutdownTimeout: "2s",
+		Protocols: []ProtocolConfig{
+			{Name: "tcp", Addr: "127.0.0.1:0", TLSCertFile: certFile, TLSKeyFile: keyFile},
+		},
+	}
+	app, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := app.Protocols, []string{"tcp"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("protocols = %#v, want %#v", got, want)
 	}
 }
 
@@ -137,6 +178,55 @@ func TestConfigEnvOverrideQUIC(t *testing.T) {
 	}
 	if found.Addr != "127.0.0.1:19088" || found.TLSCertFile != "server.crt" || found.TLSKeyFile != "server.key" {
 		t.Fatalf("quic override = %#v", found)
+	}
+}
+
+func TestConfigEnvOverrideTCPTLS(t *testing.T) {
+	cfg := DefaultConfig()
+	if err := applyEnv(&cfg, func(key string) (string, bool) {
+		values := map[string]string{
+			"SHARK_TCP_ADDR":      "127.0.0.1:19000",
+			"SHARK_TCP_CERT_FILE": "server.crt",
+			"SHARK_TCP_KEY_FILE":  "server.key",
+		}
+		value, ok := values[key]
+		return value, ok
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var found ProtocolConfig
+	for _, proto := range cfg.Protocols {
+		if proto.Name == "tcp" {
+			found = proto
+			break
+		}
+	}
+	if found.Addr != "127.0.0.1:19000" || found.TLSCertFile != "server.crt" || found.TLSKeyFile != "server.key" {
+		t.Fatalf("tcp override = %#v", found)
+	}
+}
+
+func TestConfigEnvOverrideTCPTLSKeepsDefaultAddr(t *testing.T) {
+	cfg := DefaultConfig()
+	if err := applyEnv(&cfg, func(key string) (string, bool) {
+		values := map[string]string{
+			"SHARK_TCP_CERT_FILE": "server.crt",
+			"SHARK_TCP_KEY_FILE":  "server.key",
+		}
+		value, ok := values[key]
+		return value, ok
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var found ProtocolConfig
+	for _, proto := range cfg.Protocols {
+		if proto.Name == "tcp" {
+			found = proto
+			break
+		}
+	}
+	if found.Addr != "127.0.0.1:18000" || found.TLSCertFile != "server.crt" || found.TLSKeyFile != "server.key" {
+		t.Fatalf("tcp override = %#v", found)
 	}
 }
 

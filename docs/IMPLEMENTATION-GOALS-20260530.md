@@ -1,6 +1,6 @@
 # Shark-Socket-New Implementation Goals
 
-Updated: 2026-05-30T10:23:37
+Updated: 2026-05-30T10:32:00
 
 ## Purpose
 
@@ -149,7 +149,7 @@ Acceptance:
 | Priority | Workstream | Target Outcome |
 | --- | --- | --- |
 | P0 | External deployment validation | Prove Docker/Kubernetes/cloud runtime with real client traffic |
-| P0 | Configurable runtime entrypoint | Start multi-protocol gateway from config instead of source edits; QUIC supports certificate/key file configuration |
+| P0 | Configurable runtime entrypoint | Start multi-protocol gateway from config instead of source edits; TCP TLS and QUIC support certificate/key file configuration |
 | P0 | Security baseline | TLS/mTLS, origin policy, listener binding, and secret handling guidance |
 | P1 | MQTT planning and implementation | Add MQTT 3.1.1/5.0 path with conformance-oriented tests |
 | P1 | Protocol conformance depth | Expand edge tests and document compatibility limits |
@@ -213,7 +213,7 @@ The next recommended milestone is:
 Inputs needed:
 
 - Certificate material and operator-facing reload expectations.
-- TLS/mTLS defaults for server and client-auth modes.
+- mTLS defaults for server and client-auth modes.
 - Origin/CORS policy shape for HTTP, WebSocket, and gRPC-Web.
 - Timeout and overload policy defaults.
 
@@ -228,7 +228,7 @@ Expected evidence:
 
 - Configurable runtime entrypoint is complete for JSON config, environment
   overrides, health/readiness endpoints, metrics listener, container listener
-  environment, sample multi-protocol config, and QUIC certificate/key config.
-- General TLS/mTLS configuration, TCP TLS server support, certificate reload,
-  and HTTP/WebSocket/gRPC-Web policy configuration remain part of the
-  security-baseline milestone.
+  environment, sample multi-protocol config, TCP TLS config, and QUIC
+  certificate/key config.
+- mTLS configuration, certificate reload, and HTTP/WebSocket/gRPC-Web policy
+  configuration remain part of the security-baseline milestone.

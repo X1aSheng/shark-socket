@@ -2,6 +2,7 @@ package tcp
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net"
@@ -48,6 +49,9 @@ func (s *Server) Start(ctx context.Context) error {
 	if err != nil {
 		s.pool.stop()
 		return fmt.Errorf("tcp listen %s: %w", s.opts.Addr, err)
+	}
+	if s.opts.TLSConfig != nil {
+		ln = tls.NewListener(ln, s.opts.TLSConfig)
 	}
 	s.listener = ln
 

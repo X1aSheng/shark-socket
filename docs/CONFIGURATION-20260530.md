@@ -1,6 +1,6 @@
 # Configuration Guide
 
-Updated: 2026-05-30T10:23:37
+Updated: 2026-05-30T10:32:00
 
 ## Purpose
 
@@ -50,8 +50,8 @@ Protocol fields:
 | `path` | string | WebSocket path or gRPC-Web WebSocket path |
 | `mode` | string | CoAP mode; use `lwm2m` for LwM2M command binding |
 | `max_message_bytes` | integer | gRPC-Web max request/message size |
-| `tls_cert_file` | string | QUIC server certificate PEM path |
-| `tls_key_file` | string | QUIC server private key PEM path |
+| `tls_cert_file` | string | TCP TLS or QUIC server certificate PEM path |
+| `tls_key_file` | string | TCP TLS or QUIC server private key PEM path |
 
 Example:
 
@@ -67,11 +67,17 @@ Example:
 }
 ```
 
-QUIC requires TLS certificate material:
+TCP can enable TLS by supplying certificate material. QUIC always requires it:
 
 ```json
 {
   "protocols": [
+    {
+      "name": "tcp",
+      "addr": "127.0.0.1:18000",
+      "tls_cert_file": "certs/server.crt",
+      "tls_key_file": "certs/server.key"
+    },
     {
       "name": "quic",
       "addr": "127.0.0.1:18007",
@@ -93,6 +99,8 @@ Supported overrides:
 | `SHARK_HEALTH_ADDR` | Overrides health listener |
 | `SHARK_METRICS_ADDR` | Overrides metrics listener |
 | `SHARK_TCP_ADDR` | Adds or overrides TCP listener address |
+| `SHARK_TCP_CERT_FILE` | Enables/overrides TCP TLS server certificate path |
+| `SHARK_TCP_KEY_FILE` | Enables/overrides TCP TLS server private key path |
 | `SHARK_WS_ADDR` | Adds or overrides WebSocket listener address |
 | `SHARK_WS_PATH` | Overrides WebSocket path when `SHARK_WS_ADDR` is set |
 | `SHARK_QUIC_ADDR` | Adds or overrides QUIC listener address |
@@ -126,7 +134,7 @@ Metrics:
 
 ## Current Limits
 
-- QUIC is configurable when `tls_cert_file` and `tls_key_file` are supplied.
+- TCP TLS and QUIC are configurable when `tls_cert_file` and `tls_key_file` are supplied.
 - General TLS/mTLS configuration, certificate reload, and client certificate
   verification remain part of the security-baseline milestone.
 - File format is JSON only; YAML can be added later if operators need it.
