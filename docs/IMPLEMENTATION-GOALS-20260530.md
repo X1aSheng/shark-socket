@@ -243,5 +243,9 @@ Expected evidence:
   including full tests, vet, scripted validation, medium benchmark, temporary
   service run, and cross-host traffic from `120.76.44.233`; results are
   recorded in `docs/BENCHMARK-RESULT-260530-120500-SERVER2.md`.
+- Dual-cloud validation passed on `47.96.129.59` and `120.76.44.233` for
+  commit `a3d283f`, including server/client benchmarks, cross-host
+  multi-protocol traffic, and log/data statistics; results are recorded in
+  `docs/BENCHMARK-RESULT-260530-123500-DUAL-CLOUD.md`.
 - Certificate reload and finer protocol security defaults remain part of the
   security-baseline milestone.
