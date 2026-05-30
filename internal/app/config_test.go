@@ -110,6 +110,36 @@ func TestConfigRejectsTLSFilesOnUnsupportedProtocol(t *testing.T) {
 	}
 }
 
+func TestConfigRejectsClientCAWithoutTLS(t *testing.T) {
+	cfg := Config{
+		ShutdownTimeout: "2s",
+		Protocols: []ProtocolConfig{
+			{Name: "tcp", Addr: "127.0.0.1:0", TLSClientCAFile: "ca.crt"},
+		},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "tls_client_ca_file requires") {
+		t.Fatalf("Validate error = %v, want client ca requires tls error", err)
+	}
+}
+
+func TestConfigRejectsInvalidTLSClientAuth(t *testing.T) {
+	cfg := Config{
+		ShutdownTimeout: "2s",
+		Protocols: []ProtocolConfig{
+			{
+				Name:          "tcp",
+				Addr:          "127.0.0.1:0",
+				TLSCertFile:   "server.crt",
+				TLSKeyFile:    "server.key",
+				TLSClientAuth: "strict-ish",
+			},
+		},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "invalid tls_client_auth") {
+		t.Fatalf("Validate error = %v, want invalid tls_client_auth error", err)
+	}
+}
+
 func TestConfigRejectsQUICWithoutTLSFiles(t *testing.T) {
 	cfg := Config{
 		ShutdownTimeout: "2s",
@@ -128,6 +158,31 @@ func TestNewRegistersConfiguredTCPWithTLSFiles(t *testing.T) {
 		ShutdownTimeout: "2s",
 		Protocols: []ProtocolConfig{
 			{Name: "tcp", Addr: "127.0.0.1:0", TLSCertFile: certFile, TLSKeyFile: keyFile},
+		},
+	}
+	app, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := app.Protocols, []string{"tcp"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("protocols = %#v, want %#v", got, want)
+	}
+}
+
+func TestNewRegistersConfiguredTCPWithMTLS(t *testing.T) {
+	certFile, keyFile := writeTestCertificate(t)
+	caFile, _ := writeTestCertificate(t)
+	cfg := Config{
+		ShutdownTimeout: "2s",
+		Protocols: []ProtocolConfig{
+			{
+				Name:            "tcp",
+				Addr:            "127.0.0.1:0",
+				TLSCertFile:     certFile,
+				TLSKeyFile:      keyFile,
+				TLSClientCAFile: caFile,
+				TLSClientAuth:   "require_and_verify",
+			},
 		},
 	}
 	app, err := New(cfg)
@@ -203,6 +258,32 @@ func TestConfigEnvOverrideTCPTLS(t *testing.T) {
 	}
 	if found.Addr != "127.0.0.1:19000" || found.TLSCertFile != "server.crt" || found.TLSKeyFile != "server.key" {
 		t.Fatalf("tcp override = %#v", found)
+	}
+}
+
+func TestConfigEnvOverrideTCPMTLS(t *testing.T) {
+	cfg := DefaultConfig()
+	if err := applyEnv(&cfg, func(key string) (string, bool) {
+		values := map[string]string{
+			"SHARK_TCP_CERT_FILE":      "server.crt",
+			"SHARK_TCP_KEY_FILE":       "server.key",
+			"SHARK_TCP_CLIENT_CA_FILE": "ca.crt",
+			"SHARK_TCP_CLIENT_AUTH":    "require_and_verify",
+		}
+		value, ok := values[key]
+		return value, ok
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var found ProtocolConfig
+	for _, proto := range cfg.Protocols {
+		if proto.Name == "tcp" {
+			found = proto
+			break
+		}
+	}
+	if found.TLSClientCAFile != "ca.crt" || found.TLSClientAuth != "require_and_verify" {
+		t.Fatalf("tcp mtls override = %#v", found)
 	}
 }
 

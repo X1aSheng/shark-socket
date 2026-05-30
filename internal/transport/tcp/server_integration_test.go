@@ -174,6 +174,65 @@ func TestTCPServerTLSEcho(t *testing.T) {
 	}
 }
 
+func TestTCPServerMTLSRequiresVerifiedClientCertificate(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	serverTLS, clientTLS := testMutualTLSConfigs(t)
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithTLS(serverTLS),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer shutdownCancel()
+		_ = gateway.Stop(shutdownCtx)
+	}()
+
+	withoutCert := NewClient(server.Addr().String(), WithClientTLS(&tls.Config{InsecureSkipVerify: true}))
+	if err := withoutCert.Connect(ctx); err != nil {
+		_ = withoutCert.Close()
+	} else {
+		defer withoutCert.Close()
+		if err := withoutCert.Send([]byte("no-cert")); err == nil {
+			if conn, ok := withoutCert.conn.(interface{ SetReadDeadline(time.Time) error }); ok {
+				if err := conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got, err := withoutCert.Receive(); err == nil {
+				t.Fatalf("client without certificate completed frame exchange: %q", got)
+			}
+		}
+	}
+
+	withCert := NewClient(server.Addr().String(), WithClientTLS(clientTLS))
+	if err := withCert.Connect(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer withCert.Close()
+	if err := withCert.Send([]byte("mtls-hello")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := withCert.Receive()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "mtls-hello" {
+		t.Fatalf("echo = %q, want mtls-hello", got)
+	}
+}
+
 func TestGatewayTCPRestartKeepsSessionManagerUsable(t *testing.T) {
 	server := NewServer(
 		WithAddr("127.0.0.1:0"),
@@ -251,6 +310,84 @@ func testServerTLSConfig(t *testing.T) *tls.Config {
 		t.Fatal(err)
 	}
 	return &tls.Config{Certificates: []tls.Certificate{cert}}
+}
+
+func testMutualTLSConfigs(t *testing.T) (*tls.Config, *tls.Config) {
+	t.Helper()
+	caKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caTemplate := x509.Certificate{
+		SerialNumber:          big.NewInt(100),
+		Subject:               pkix.Name{CommonName: "test-ca"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, &caTemplate, &caTemplate, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	serverCert := signedTestCertificate(t, "localhost", x509.ExtKeyUsageServerAuth, caDER, &caTemplate, caKey)
+	clientCert := signedTestCertificate(t, "client", x509.ExtKeyUsageClientAuth, caDER, &caTemplate, caKey)
+	roots := x509.NewCertPool()
+	roots.AddCert(mustParseCert(t, caDER))
+
+	serverTLS := &tls.Config{
+		Certificates: []tls.Certificate{serverCert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    roots,
+	}
+	clientTLS := &tls.Config{
+		Certificates: []tls.Certificate{clientCert},
+		RootCAs:      roots,
+		ServerName:   "localhost",
+	}
+	return serverTLS, clientTLS
+}
+
+func signedTestCertificate(t *testing.T, commonName string, usage x509.ExtKeyUsage, caDER []byte, ca *x509.Certificate, caKey *rsa.PrivateKey) tls.Certificate {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		Subject:      pkix.Name{CommonName: commonName},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{usage},
+	}
+	if usage == x509.ExtKeyUsageServerAuth {
+		template.DNSNames = []string{commonName}
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, ca, &key.PublicKey, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert.Certificate = append(cert.Certificate, caDER)
+	return cert
+}
+
+func mustParseCert(t *testing.T, der []byte) *x509.Certificate {
+	t.Helper()
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cert
 }
 
 func TestGatewayTCPPluginDropSkipsHandlerAndKeepsConnection(t *testing.T) {

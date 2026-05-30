@@ -87,7 +87,7 @@ func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 		case "tcp":
 			opts := []api.TCPOption{api.WithTCPAddr(proto.Addr), api.WithTCPHandler(echoHandler)}
 			if proto.TLSCertFile != "" || proto.TLSKeyFile != "" {
-				tlsConfig, err := loadServerTLSConfig(proto.TLSCertFile, proto.TLSKeyFile)
+				tlsConfig, err := loadServerTLSConfig(proto)
 				if err != nil {
 					return err
 				}
@@ -131,7 +131,7 @@ func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 			}
 			server = api.NewGRPCWebServer(opts...)
 		case "quic":
-			tlsConfig, err := loadServerTLSConfig(proto.TLSCertFile, proto.TLSKeyFile, "shark-socket-new-quic")
+			tlsConfig, err := loadServerTLSConfig(proto, "shark-socket-new-quic")
 			if err != nil {
 				return err
 			}

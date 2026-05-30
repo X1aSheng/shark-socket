@@ -1,6 +1,6 @@
 # Shark-Socket-New Project Plan
 
-Updated: 2026-05-30T10:45:00
+Updated: 2026-05-30T11:20:00
 
 ## Timestamp Format
 
@@ -94,6 +94,7 @@ This plan is based on the current repository state, not aspirational scope.
 | 36 | TCP TLS server configuration | Done | 2026-05-30T10:32:00 | Pending | TCP TLS handshake regression test, app TLS config tests, focused tests |
 | 37 | WebSocket and gRPC-Web Origin allowlist config | Done | 2026-05-30T10:39:00 | Pending | App origin helper tests, env override tests, full validation pending |
 | 38 | HTTP CORS allowlist config | Done | 2026-05-30T10:45:00 | Pending | HTTP CORS integration test, app env override test, full validation pending |
+| 39 | TCP/QUIC mTLS configuration | Done | 2026-05-30T11:20:00 | Pending | App config rejection/env tests, TCP mTLS integration test, full test sweep, vet |
 
 ## Active Improvement Plan
 
@@ -101,7 +102,7 @@ This plan is based on the current repository state, not aspirational scope.
 | --- | --- | --- | --- | --- |
 | P0 | Documentation accuracy | Done | Keep this plan, `Architecture.md`, README, and changelog aligned with implemented capability | README now describes current multi-protocol state and links release notes |
 | P0 | Release validation automation | Done | Add scripted validation command that runs test/vet/race with local toolchain PATH | `scripts/validate.ps1` supports normal and race validation |
-| P0 | Configurable runtime entrypoint | Done | Start multi-protocol gateway from config instead of source edits | JSON config, env overrides, health/readiness, metrics, container listener env, TCP TLS config, QUIC certificate/key config, HTTP CORS, and WebSocket/gRPC-Web Origin allowlists exist; mTLS/reload remains a security-baseline workstream |
+| P0 | Configurable runtime entrypoint | Done | Start multi-protocol gateway from config instead of source edits | JSON config, env overrides, health/readiness, metrics, container listener env, TCP TLS config, QUIC certificate/key config, TCP/QUIC mTLS policy, HTTP CORS, and WebSocket/gRPC-Web Origin allowlists exist; certificate reload remains a security-baseline workstream |
 | P1 | LwM2M over CoAP binding | Done | Connect LwM2M lifecycle operations to CoAP request/response handlers | CoAP responder maps register/update/deregister/read/write payloads to LwM2M server operations |
 | P1 | gRPC-Web WebSocket mode | Done | Add WebSocket transport mode for gRPC-Web gateway | Direct HTTP and WebSocket modes now share runtime/plugin/session behavior |
 | P1 | External observability adapters | Done | Add Prometheus/OpenTelemetry adapters behind existing core interfaces | Prometheus metrics exporter and OpenTelemetry tracer adapter exist |
@@ -116,8 +117,8 @@ This plan is based on the current repository state, not aspirational scope.
 
 ## Next Execution Steps
 
-1. Complete the security-baseline configuration workstream.
-   - mTLS config model, certificate reload, and finer protocol security defaults remain.
+1. Continue the security-baseline configuration workstream.
+   - Certificate reload and finer protocol security defaults remain.
 2. Complete external production Kubernetes validation when a production cluster context is available.
    - Docker build/compose, kind K8s apply, Helm install, and cross-host protocol traffic have been verified on cloud servers.
    - Remaining input: production Kubernetes cluster context/namespace and service exposure method.

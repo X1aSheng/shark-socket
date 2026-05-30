@@ -1,6 +1,6 @@
 # Shark-Socket-New Implementation Goals
 
-Updated: 2026-05-30T10:45:00
+Updated: 2026-05-30T11:20:00
 
 ## Purpose
 
@@ -229,6 +229,7 @@ Expected evidence:
 - Configurable runtime entrypoint is complete for JSON config, environment
   overrides, health/readiness endpoints, metrics listener, container listener
   environment, sample multi-protocol config, TCP TLS config, QUIC
-  certificate/key config, HTTP CORS, and WebSocket/gRPC-Web Origin allowlists.
-- mTLS configuration, certificate reload, and finer protocol security defaults
-  remain part of the security-baseline milestone.
+  certificate/key config, HTTP CORS, WebSocket/gRPC-Web Origin allowlists,
+  TCP/QUIC client CA config, and client certificate verification policy.
+- Certificate reload and finer protocol security defaults remain part of the
+  security-baseline milestone.

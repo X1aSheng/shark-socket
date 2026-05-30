@@ -2,6 +2,7 @@ package app
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -26,6 +27,8 @@ type ProtocolConfig struct {
 	MaxMessageBytes int64    `json:"max_message_bytes,omitempty"`
 	TLSCertFile     string   `json:"tls_cert_file,omitempty"`
 	TLSKeyFile      string   `json:"tls_key_file,omitempty"`
+	TLSClientCAFile string   `json:"tls_client_ca_file,omitempty"`
+	TLSClientAuth   string   `json:"tls_client_auth,omitempty"`
 	AllowedOrigins  []string `json:"allowed_origins,omitempty"`
 }
 
@@ -104,6 +107,23 @@ func (c Config) Validate() error {
 		if proto.TLSCertFile != "" && name != "tcp" && name != "quic" {
 			return fmt.Errorf("protocol %q does not support tls_cert_file", name)
 		}
+		if proto.TLSClientCAFile != "" && name != "tcp" && name != "quic" {
+			return fmt.Errorf("protocol %q does not support tls_client_ca_file", name)
+		}
+		if proto.TLSClientAuth != "" && name != "tcp" && name != "quic" {
+			return fmt.Errorf("protocol %q does not support tls_client_auth", name)
+		}
+		if proto.TLSClientCAFile != "" && proto.TLSCertFile == "" {
+			return fmt.Errorf("protocol %q tls_client_ca_file requires tls_cert_file and tls_key_file", name)
+		}
+		if proto.TLSClientAuth != "" {
+			if _, err := parseTLSClientAuth(proto.TLSClientAuth); err != nil {
+				return fmt.Errorf("protocol %q %w", name, err)
+			}
+			if proto.TLSCertFile == "" {
+				return fmt.Errorf("protocol %q tls_client_auth requires tls_cert_file and tls_key_file", name)
+			}
+		}
 		if name == "quic" && (proto.TLSCertFile == "" || proto.TLSKeyFile == "") {
 			return fmt.Errorf("protocol %q tls_cert_file and tls_key_file are required", name)
 		}
@@ -146,12 +166,16 @@ func applyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 	tcpAddr, hasTCPAddr := lookup("SHARK_TCP_ADDR")
 	tcpCertFile, hasTCPCertFile := lookup("SHARK_TCP_CERT_FILE")
 	tcpKeyFile, hasTCPKeyFile := lookup("SHARK_TCP_KEY_FILE")
-	if hasTCPAddr || hasTCPCertFile || hasTCPKeyFile {
+	tcpClientCAFile, hasTCPClientCAFile := lookup("SHARK_TCP_CLIENT_CA_FILE")
+	tcpClientAuth, hasTCPClientAuth := lookup("SHARK_TCP_CLIENT_AUTH")
+	if hasTCPAddr || hasTCPCertFile || hasTCPKeyFile || hasTCPClientCAFile || hasTCPClientAuth {
 		upsertProtocol(cfg, ProtocolConfig{
-			Name:        "tcp",
-			Addr:        tcpAddr,
-			TLSCertFile: tcpCertFile,
-			TLSKeyFile:  tcpKeyFile,
+			Name:            "tcp",
+			Addr:            tcpAddr,
+			TLSCertFile:     tcpCertFile,
+			TLSKeyFile:      tcpKeyFile,
+			TLSClientCAFile: tcpClientCAFile,
+			TLSClientAuth:   tcpClientAuth,
 		})
 	}
 	if value, ok := lookup("SHARK_WS_ADDR"); ok {
@@ -180,10 +204,12 @@ func applyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 	}
 	if value, ok := lookup("SHARK_QUIC_ADDR"); ok {
 		upsertProtocol(cfg, ProtocolConfig{
-			Name:        "quic",
-			Addr:        value,
-			TLSCertFile: envOrDefault(lookup, "SHARK_QUIC_CERT_FILE", ""),
-			TLSKeyFile:  envOrDefault(lookup, "SHARK_QUIC_KEY_FILE", ""),
+			Name:            "quic",
+			Addr:            value,
+			TLSCertFile:     envOrDefault(lookup, "SHARK_QUIC_CERT_FILE", ""),
+			TLSKeyFile:      envOrDefault(lookup, "SHARK_QUIC_KEY_FILE", ""),
+			TLSClientCAFile: envOrDefault(lookup, "SHARK_QUIC_CLIENT_CA_FILE", ""),
+			TLSClientAuth:   envOrDefault(lookup, "SHARK_QUIC_CLIENT_AUTH", ""),
 		})
 	}
 	return nil
@@ -245,16 +271,60 @@ func mergeProtocol(base, override ProtocolConfig) ProtocolConfig {
 	if override.TLSKeyFile != "" {
 		base.TLSKeyFile = override.TLSKeyFile
 	}
+	if override.TLSClientCAFile != "" {
+		base.TLSClientCAFile = override.TLSClientCAFile
+	}
+	if override.TLSClientAuth != "" {
+		base.TLSClientAuth = override.TLSClientAuth
+	}
 	if override.AllowedOrigins != nil {
 		base.AllowedOrigins = append([]string(nil), override.AllowedOrigins...)
 	}
 	return base
 }
 
-func loadServerTLSConfig(certFile string, keyFile string, nextProtos ...string) (*tls.Config, error) {
+func loadServerTLSConfig(proto ProtocolConfig, nextProtos ...string) (*tls.Config, error) {
+	certFile := proto.TLSCertFile
+	keyFile := proto.TLSKeyFile
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, fmt.Errorf("load tls certificate: %w", err)
 	}
-	return &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: nextProtos}, nil
+	cfg := &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: nextProtos}
+	if proto.TLSClientAuth != "" {
+		clientAuth, err := parseTLSClientAuth(proto.TLSClientAuth)
+		if err != nil {
+			return nil, err
+		}
+		cfg.ClientAuth = clientAuth
+	}
+	if proto.TLSClientCAFile != "" {
+		data, err := os.ReadFile(proto.TLSClientCAFile)
+		if err != nil {
+			return nil, fmt.Errorf("read tls client ca file: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(data) {
+			return nil, fmt.Errorf("parse tls client ca file %q: no certificates found", proto.TLSClientCAFile)
+		}
+		cfg.ClientCAs = pool
+	}
+	return cfg, nil
+}
+
+func parseTLSClientAuth(value string) (tls.ClientAuthType, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "none", "no_client_cert":
+		return tls.NoClientCert, nil
+	case "request", "request_client_cert":
+		return tls.RequestClientCert, nil
+	case "require_any", "require_any_client_cert":
+		return tls.RequireAnyClientCert, nil
+	case "verify_if_given", "verify_client_cert_if_given":
+		return tls.VerifyClientCertIfGiven, nil
+	case "require_and_verify", "require_and_verify_client_cert":
+		return tls.RequireAndVerifyClientCert, nil
+	default:
+		return tls.NoClientCert, fmt.Errorf("invalid tls_client_auth %q", value)
+	}
 }

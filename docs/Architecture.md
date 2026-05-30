@@ -2,7 +2,7 @@
 
 > `shark-socket-new` 是对 `shark-socket` 的重新设计版本。目标不是简单搬运旧项目，而是在吸收旧项目多协议、插件化、可观测、部署化经验的基础上，先建立一个边界清晰、生命周期正确、可测试可演进的服务端网络框架。
 
-更新时间：2026-05-30T09:10:00
+更新时间：2026-05-30T11:20:00
 
 最新审查参考：`docs/PROJECT-REVIEW-260530-094810.md`
 
@@ -608,6 +608,10 @@ read <endpoint> <resource-path>
 | `path` | WebSocket 或 gRPC-Web WebSocket path |
 | `mode` | CoAP 使用 `lwm2m` 时接入 LwM2M responder |
 | `max_message_bytes` | gRPC-Web 最大消息大小，必须非负 |
+| `tls_cert_file` | TCP/QUIC 服务端证书路径 |
+| `tls_key_file` | TCP/QUIC 服务端私钥路径 |
+| `tls_client_ca_file` | TCP/QUIC mTLS 客户端 CA bundle 路径 |
+| `tls_client_auth` | TCP/QUIC 客户端证书校验策略 |
 
 ### 8.3 健康与指标
 
@@ -825,7 +829,7 @@ Helm chart 用于参数化：
 
 1. TLS/mTLS 配置文件化。
 2. TCP/QUIC 证书热加载。
-3. QUIC mTLS、证书轮换和热加载。
+3. QUIC 证书轮换和热加载。
 4. CoAP DTLS 或 OSCORE 方案设计。
 5. HTTP CORS 与 WebSocket/gRPC-Web Origin allowlist 已接入；后续补充更细粒度策略。
 6. 请求级 deadline 和 idle timeout。
@@ -917,8 +921,8 @@ internal/protocol/grpcweb
 
 ### P1：生产配置
 
-1. mTLS 配置模型和证书热加载。
-2. QUIC mTLS、证书轮换和热加载。
+1. 证书热加载。
+2. QUIC 证书轮换和热加载。
 3. 插件配置文件化。
 4. HTTP CORS 与 WebSocket/gRPC-Web Origin allowlist 已完成；后续补充更细粒度策略。
 5. 统一 shutdown stage timeout 配置。
@@ -929,7 +933,7 @@ internal/protocol/grpcweb
 2. CoAP block-wise 和 retransmit。
 3. LwM2M 标准路径、content-format、observe。
 4. gRPC-Web text/base64 和 method 路由。
-5. TCP TLS 已完成；后续补充 mTLS client-auth 和证书热加载。
+5. TCP/QUIC TLS 与 mTLS client-auth 已完成；后续补充证书热加载。
 
 ### P2：性能与防御
 
@@ -1037,8 +1041,8 @@ internal/protocol/grpcweb
 当前未完成：
 
 - 外部生产 Kubernetes 集群接入；kind 集群实机 apply 与 Helm 安装已通过。
-- TLS/mTLS 完整配置模型和证书热加载。
-- QUIC mTLS、证书轮换和热加载。
+- TLS/mTLS 配置模型。
+- TLS/QUIC 证书轮换和热加载。
 - CoAP/LwM2M 完整标准特性。
 - 性能池化和分片 SessionManager。
 - 完整防御体系。

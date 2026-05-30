@@ -1,6 +1,6 @@
 # Configuration Guide
 
-Updated: 2026-05-30T10:45:00
+Updated: 2026-05-30T11:20:00
 
 ## Purpose
 
@@ -52,6 +52,8 @@ Protocol fields:
 | `max_message_bytes` | integer | gRPC-Web max request/message size |
 | `tls_cert_file` | string | TCP TLS or QUIC server certificate PEM path |
 | `tls_key_file` | string | TCP TLS or QUIC server private key PEM path |
+| `tls_client_ca_file` | string | TCP or QUIC client CA bundle PEM path for mTLS |
+| `tls_client_auth` | string | TCP or QUIC client certificate policy |
 | `allowed_origins` | string array | WebSocket or gRPC-Web allowed Origin values; `*` allows all |
 
 Example:
@@ -94,6 +96,34 @@ TCP can enable TLS by supplying certificate material. QUIC always requires it:
 }
 ```
 
+TCP and QUIC can require client certificates with `tls_client_auth` and
+`tls_client_ca_file`:
+
+```json
+{
+  "protocols": [
+    {
+      "name": "tcp",
+      "addr": "127.0.0.1:18000",
+      "tls_cert_file": "certs/server.crt",
+      "tls_key_file": "certs/server.key",
+      "tls_client_ca_file": "certs/client-ca.crt",
+      "tls_client_auth": "require_and_verify"
+    }
+  ]
+}
+```
+
+Supported `tls_client_auth` values:
+
+| Value | Go TLS behavior |
+| --- | --- |
+| `none` | Do not request a client certificate |
+| `request` | Request a client certificate without requiring one |
+| `require_any` | Require any client certificate |
+| `verify_if_given` | Verify a client certificate when supplied |
+| `require_and_verify` | Require and verify a client certificate against `tls_client_ca_file` |
+
 ## Environment Overrides
 
 Supported overrides:
@@ -109,12 +139,16 @@ Supported overrides:
 | `SHARK_TCP_ADDR` | Adds or overrides TCP listener address |
 | `SHARK_TCP_CERT_FILE` | Enables/overrides TCP TLS server certificate path |
 | `SHARK_TCP_KEY_FILE` | Enables/overrides TCP TLS server private key path |
+| `SHARK_TCP_CLIENT_CA_FILE` | Enables/overrides TCP mTLS client CA bundle path |
+| `SHARK_TCP_CLIENT_AUTH` | Overrides TCP client certificate policy |
 | `SHARK_WS_ADDR` | Adds or overrides WebSocket listener address |
 | `SHARK_WS_PATH` | Overrides WebSocket path when `SHARK_WS_ADDR` is set |
 | `SHARK_WS_ALLOWED_ORIGINS` | Comma-separated WebSocket allowed origins |
 | `SHARK_QUIC_ADDR` | Adds or overrides QUIC listener address |
 | `SHARK_QUIC_CERT_FILE` | Overrides QUIC server certificate path |
 | `SHARK_QUIC_KEY_FILE` | Overrides QUIC server private key path |
+| `SHARK_QUIC_CLIENT_CA_FILE` | Overrides QUIC mTLS client CA bundle path |
+| `SHARK_QUIC_CLIENT_AUTH` | Overrides QUIC client certificate policy |
 | `SHARK_GRPCWEB_ADDR` | Adds or overrides gRPC-Web listener address |
 | `SHARK_GRPCWEB_PATH` | Enables gRPC-Web WebSocket mode path when `SHARK_GRPCWEB_ADDR` is set |
 | `SHARK_GRPCWEB_ALLOWED_ORIGINS` | Comma-separated gRPC-Web WebSocket allowed origins |
@@ -144,8 +178,8 @@ Metrics:
 
 ## Current Limits
 
-- TCP TLS and QUIC are configurable when `tls_cert_file` and `tls_key_file` are supplied.
-- General TLS/mTLS configuration, certificate reload, and client certificate
-  verification remain part of the security-baseline milestone.
+- TCP TLS, QUIC TLS, and client certificate verification are configurable.
+- Certificate reload and finer per-protocol TLS defaults remain part of the
+  security-baseline milestone.
 - HTTP CORS and WebSocket/gRPC-Web Origin allowlists are configurable.
 - File format is JSON only; YAML can be added later if operators need it.
