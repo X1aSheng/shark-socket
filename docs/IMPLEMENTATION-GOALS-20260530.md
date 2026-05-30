@@ -236,5 +236,8 @@ Expected evidence:
   scripted benchmark runner includes these packages.
 - Resource-limited benchmark execution now has a `scripts/run_benchmarks.go`
   matrix runner for local and cloud smoke/light/medium stages.
+- Cloud benchmark smoke, light, and selected medium stages passed on
+  `120.76.44.233` for commit `d64a9db`; results are recorded in
+  `docs/BENCHMARK-RESULT-260530-120000.md`.
 - Certificate reload and finer protocol security defaults remain part of the
   security-baseline milestone.

@@ -117,6 +117,7 @@ Raw JSON and readable reports are written to `logs/`.
 - Test strategy: [docs/TEST-STRATEGY-20260529.md](docs/TEST-STRATEGY-20260529.md)
 - Protocol test guide: [docs/PROTOCOL-TEST-GUIDE-20260530.md](docs/PROTOCOL-TEST-GUIDE-20260530.md)
 - Resource-limited benchmark flow: [docs/BENCHMARK-RESOURCE-LIMITED-TEST-FLOW-20260530.md](docs/BENCHMARK-RESOURCE-LIMITED-TEST-FLOW-20260530.md)
+- Latest cloud benchmark: [docs/BENCHMARK-RESULT-260530-120000.md](docs/BENCHMARK-RESULT-260530-120000.md)
 - Examples: [docs/EXAMPLES.md](docs/EXAMPLES.md)
-- Latest review: [docs/PROJECT-REVIEW-260530-115800.md](docs/PROJECT-REVIEW-260530-115800.md)
+- Latest review: [docs/PROJECT-REVIEW-260530-120100.md](docs/PROJECT-REVIEW-260530-120100.md)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
