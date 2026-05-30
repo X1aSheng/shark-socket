@@ -827,7 +827,7 @@ Helm chart 用于参数化：
 2. TCP/QUIC 证书热加载。
 3. QUIC mTLS、证书轮换和热加载。
 4. CoAP DTLS 或 OSCORE 方案设计。
-5. HTTP CORS 策略配置化；WebSocket/gRPC-Web Origin allowlist 已接入。
+5. HTTP CORS 与 WebSocket/gRPC-Web Origin allowlist 已接入；后续补充更细粒度策略。
 6. 请求级 deadline 和 idle timeout。
 7. 慢连接、空连接、异常帧防御。
 8. OverloadProtector 和 backpressure。
@@ -920,7 +920,7 @@ internal/protocol/grpcweb
 1. mTLS 配置模型和证书热加载。
 2. QUIC mTLS、证书轮换和热加载。
 3. 插件配置文件化。
-4. HTTP CORS 策略配置化；WebSocket/gRPC-Web Origin allowlist 已完成。
+4. HTTP CORS 与 WebSocket/gRPC-Web Origin allowlist 已完成；后续补充更细粒度策略。
 5. 统一 shutdown stage timeout 配置。
 
 ### P1：协议增强

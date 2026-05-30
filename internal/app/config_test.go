@@ -234,6 +234,8 @@ func TestConfigEnvOverrideAllowedOrigins(t *testing.T) {
 	cfg := DefaultConfig()
 	if err := applyEnv(&cfg, func(key string) (string, bool) {
 		values := map[string]string{
+			"SHARK_HTTP_ADDR":                 "127.0.0.1:19003",
+			"SHARK_HTTP_ALLOWED_ORIGINS":      "https://api.example",
 			"SHARK_WS_ADDR":                   "127.0.0.1:19004",
 			"SHARK_WS_ALLOWED_ORIGINS":        "https://console.example, https://ops.example",
 			"SHARK_GRPCWEB_ADDR":              "127.0.0.1:19009",
@@ -245,14 +247,19 @@ func TestConfigEnvOverrideAllowedOrigins(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	var ws, grpcweb ProtocolConfig
+	var http, ws, grpcweb ProtocolConfig
 	for _, proto := range cfg.Protocols {
 		switch proto.Name {
+		case "http":
+			http = proto
 		case "websocket":
 			ws = proto
 		case "grpc-web":
 			grpcweb = proto
 		}
+	}
+	if got, want := strings.Join(http.AllowedOrigins, ","), "https://api.example"; got != want {
+		t.Fatalf("http allowed origins = %q, want %q", got, want)
 	}
 	if got, want := strings.Join(ws.AllowedOrigins, ","), "https://console.example,https://ops.example"; got != want {
 		t.Fatalf("websocket allowed origins = %q, want %q", got, want)

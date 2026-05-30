@@ -97,7 +97,11 @@ func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 		case "udp":
 			server = api.NewUDPServer(api.WithUDPAddr(proto.Addr), api.WithUDPHandler(echoHandler))
 		case "http":
-			server = api.NewHTTPServer(api.WithHTTPAddr(proto.Addr), api.WithHTTPHandler(echoHandler))
+			opts := []api.HTTPOption{api.WithHTTPAddr(proto.Addr), api.WithHTTPHandler(echoHandler)}
+			if len(proto.AllowedOrigins) > 0 {
+				opts = append(opts, api.WithHTTPCORSAllowedOrigins(proto.AllowedOrigins))
+			}
+			server = api.NewHTTPServer(opts...)
 		case "websocket":
 			path := proto.Path
 			if path == "" {

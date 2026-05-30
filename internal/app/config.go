@@ -134,6 +134,15 @@ func applyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 	if value, ok := lookup("SHARK_METRICS_ADDR"); ok {
 		cfg.MetricsAddr = value
 	}
+	httpAddr, hasHTTPAddr := lookup("SHARK_HTTP_ADDR")
+	httpOrigins := splitCSVEnv(lookup, "SHARK_HTTP_ALLOWED_ORIGINS")
+	if hasHTTPAddr || httpOrigins != nil {
+		upsertProtocol(cfg, ProtocolConfig{
+			Name:           "http",
+			Addr:           httpAddr,
+			AllowedOrigins: httpOrigins,
+		})
+	}
 	tcpAddr, hasTCPAddr := lookup("SHARK_TCP_ADDR")
 	tcpCertFile, hasTCPCertFile := lookup("SHARK_TCP_CERT_FILE")
 	tcpKeyFile, hasTCPKeyFile := lookup("SHARK_TCP_KEY_FILE")

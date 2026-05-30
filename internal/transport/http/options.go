@@ -15,6 +15,7 @@ type Options struct {
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 	IdleTimeout  time.Duration
+	CORSOrigins  []string
 }
 
 type Option func(*Options)
@@ -45,5 +46,11 @@ func WithHandler(handler core.Handler) Option {
 func WithMaxBodyBytes(max int64) Option {
 	return func(o *Options) {
 		o.MaxBodyBytes = max
+	}
+}
+
+func WithCORSAllowedOrigins(origins []string) Option {
+	return func(o *Options) {
+		o.CORSOrigins = append([]string(nil), origins...)
 	}
 }

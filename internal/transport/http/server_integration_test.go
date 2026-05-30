@@ -54,6 +54,41 @@ func TestHTTPModeAPlainRouter(t *testing.T) {
 	}
 }
 
+func TestHTTPCORSAllowedOrigins(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithCORSAllowedOrigins([]string{"https://console.example"}),
+	)
+	server.HandleFunc("/hello", func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
+		_, _ = w.Write([]byte("world"))
+	})
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer stopGateway(t, gateway)
+
+	req, err := stdhttp.NewRequest(stdhttp.MethodOptions, "http://"+server.Addr().String()+"/hello", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Origin", "https://console.example")
+	resp, err := stdhttp.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != stdhttp.StatusNoContent {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, stdhttp.StatusNoContent)
+	}
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "https://console.example" {
+		t.Fatalf("Access-Control-Allow-Origin = %q", got)
+	}
+}
+
 func TestHTTPModeBPluginHandlerAndCleanup(t *testing.T) {
 	server := NewServer(
 		WithAddr("127.0.0.1:0"),

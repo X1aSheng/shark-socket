@@ -7,6 +7,7 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+- Added configurable HTTP CORS allowlists through JSON config and environment overrides.
 - Added configurable WebSocket and gRPC-Web Origin allowlists through JSON config and environment overrides.
 - Added TCP TLS server support through API options, JSON config, and `SHARK_TCP_*` environment overrides.
 - Added QUIC runtime configuration with `tls_cert_file`, `tls_key_file`, and `SHARK_QUIC_*` environment overrides.

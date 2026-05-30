@@ -1,6 +1,6 @@
 # Configuration Guide
 
-Updated: 2026-05-30T10:39:00
+Updated: 2026-05-30T10:45:00
 
 ## Purpose
 
@@ -104,6 +104,8 @@ Supported overrides:
 | `SHARK_SHUTDOWN_TIMEOUT` | Overrides `shutdown_timeout` |
 | `SHARK_HEALTH_ADDR` | Overrides health listener |
 | `SHARK_METRICS_ADDR` | Overrides metrics listener |
+| `SHARK_HTTP_ADDR` | Adds or overrides HTTP listener address |
+| `SHARK_HTTP_ALLOWED_ORIGINS` | Comma-separated HTTP CORS allowed origins |
 | `SHARK_TCP_ADDR` | Adds or overrides TCP listener address |
 | `SHARK_TCP_CERT_FILE` | Enables/overrides TCP TLS server certificate path |
 | `SHARK_TCP_KEY_FILE` | Enables/overrides TCP TLS server private key path |
@@ -145,6 +147,5 @@ Metrics:
 - TCP TLS and QUIC are configurable when `tls_cert_file` and `tls_key_file` are supplied.
 - General TLS/mTLS configuration, certificate reload, and client certificate
   verification remain part of the security-baseline milestone.
-- HTTP CORS configuration is not yet exposed; WebSocket and gRPC-Web Origin
-  allowlists are configurable.
+- HTTP CORS and WebSocket/gRPC-Web Origin allowlists are configurable.
 - File format is JSON only; YAML can be added later if operators need it.

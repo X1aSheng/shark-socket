@@ -153,6 +153,10 @@ func WithHTTPHandler(handler Handler) HTTPOption {
 	return transporthttp.WithHandler(handler)
 }
 
+func WithHTTPCORSAllowedOrigins(origins []string) HTTPOption {
+	return transporthttp.WithCORSAllowedOrigins(origins)
+}
+
 func NewWebSocketServer(opts ...WebSocketOption) *WebSocketServer {
 	return websocket.NewServer(opts...)
 }

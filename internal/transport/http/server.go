@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	stdhttp "net/http"
+	"strings"
 	"sync/atomic"
 
 	"github.com/X1aSheng/shark-socket-new/internal/core"
@@ -51,6 +52,9 @@ func (s *Server) Start(context.Context) error {
 	if s.opts.Handler != nil {
 		handler = stdhttp.HandlerFunc(s.handleWithSession)
 	}
+	if len(s.opts.CORSOrigins) > 0 {
+		handler = corsHandler(handler, s.opts.CORSOrigins)
+	}
 	s.server = &stdhttp.Server{
 		Addr:         s.opts.Addr,
 		Handler:      handler,
@@ -69,6 +73,42 @@ func (s *Server) Start(context.Context) error {
 		}
 	}()
 	return nil
+}
+
+func corsHandler(next stdhttp.Handler, origins []string) stdhttp.Handler {
+	allowed := make(map[string]struct{}, len(origins))
+	allowAll := false
+	for _, origin := range origins {
+		origin = strings.TrimSpace(origin)
+		if origin == "" {
+			continue
+		}
+		if origin == "*" {
+			allowAll = true
+			continue
+		}
+		allowed[origin] = struct{}{}
+	}
+	return stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			if allowAll {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			} else if _, ok := allowed[origin]; ok {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Add("Vary", "Origin")
+			}
+			if w.Header().Get("Access-Control-Allow-Origin") != "" {
+				w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type,Authorization")
+			}
+		}
+		if r.Method == stdhttp.MethodOptions && w.Header().Get("Access-Control-Allow-Origin") != "" {
+			w.WriteHeader(stdhttp.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) Stop(ctx context.Context) error {
