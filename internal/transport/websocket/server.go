@@ -179,7 +179,9 @@ func (s *Server) pingLoop(sess *session) {
 }
 
 func (s *Server) closeSession(ctx context.Context, id uint64, sess *session) {
-	s.sessions.Delete(id)
+	if _, loaded := s.sessions.LoadAndDelete(id); !loaded {
+		return
+	}
 	s.rt.Sessions().Unregister(id)
 	_ = sess.Close(ctx)
 	s.rt.Plugins().OnClose(sess)

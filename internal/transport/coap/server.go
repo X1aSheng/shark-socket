@@ -225,7 +225,9 @@ func (s *Server) sendACK(sess *session, req Message, code byte, payload []byte) 
 }
 
 func (s *Server) closeSession(ctx context.Context, key string, sess *session) {
-	s.sessions.Delete(key)
+	if _, loaded := s.sessions.LoadAndDelete(key); !loaded {
+		return
+	}
 	s.rt.Sessions().Unregister(sess.ID())
 	_ = sess.Close(ctx)
 	s.rt.Plugins().OnClose(sess)

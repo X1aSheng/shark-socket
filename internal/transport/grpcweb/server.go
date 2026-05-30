@@ -220,7 +220,9 @@ func (s *Server) readWebSocketLoop(sess *webSocketSession) {
 }
 
 func (s *Server) closeWebSocketSession(ctx context.Context, id uint64, sess *webSocketSession) {
-	s.sessions.Delete(id)
+	if _, loaded := s.sessions.LoadAndDelete(id); !loaded {
+		return
+	}
 	s.rt.Sessions().Unregister(id)
 	_ = sess.Close(ctx)
 	s.rt.Plugins().OnClose(sess)
