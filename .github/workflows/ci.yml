@@ -12,8 +12,14 @@ permissions:
 
 jobs:
   validate:
-    name: Validate
-    runs-on: windows-latest
+    name: Validate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -42,5 +48,5 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v5
         with:
-          name: validation-logs
+          name: validation-logs-${{ matrix.os }}
           path: logs/
