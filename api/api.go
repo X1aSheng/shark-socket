@@ -169,6 +169,10 @@ func WithWebSocketHandler(handler Handler) WebSocketOption {
 	return websocket.WithHandler(handler)
 }
 
+func WithWebSocketCheckOrigin(fn func(*http.Request) bool) WebSocketOption {
+	return websocket.WithCheckOrigin(fn)
+}
+
 func NewCoAPServer(opts ...CoAPOption) *CoAPServer {
 	return coap.NewServer(opts...)
 }

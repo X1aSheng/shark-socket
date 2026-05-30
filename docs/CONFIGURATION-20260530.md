@@ -1,6 +1,6 @@
 # Configuration Guide
 
-Updated: 2026-05-30T10:32:00
+Updated: 2026-05-30T10:39:00
 
 ## Purpose
 
@@ -52,6 +52,7 @@ Protocol fields:
 | `max_message_bytes` | integer | gRPC-Web max request/message size |
 | `tls_cert_file` | string | TCP TLS or QUIC server certificate PEM path |
 | `tls_key_file` | string | TCP TLS or QUIC server private key PEM path |
+| `allowed_origins` | string array | WebSocket or gRPC-Web allowed Origin values; `*` allows all |
 
 Example:
 
@@ -62,7 +63,12 @@ Example:
   "metrics_addr": "127.0.0.1:18080",
   "protocols": [
     { "name": "tcp", "addr": "127.0.0.1:18000" },
-    { "name": "websocket", "addr": "127.0.0.1:18004", "path": "/ws" }
+    {
+      "name": "websocket",
+      "addr": "127.0.0.1:18004",
+      "path": "/ws",
+      "allowed_origins": ["https://console.example"]
+    }
   ]
 }
 ```
@@ -103,11 +109,13 @@ Supported overrides:
 | `SHARK_TCP_KEY_FILE` | Enables/overrides TCP TLS server private key path |
 | `SHARK_WS_ADDR` | Adds or overrides WebSocket listener address |
 | `SHARK_WS_PATH` | Overrides WebSocket path when `SHARK_WS_ADDR` is set |
+| `SHARK_WS_ALLOWED_ORIGINS` | Comma-separated WebSocket allowed origins |
 | `SHARK_QUIC_ADDR` | Adds or overrides QUIC listener address |
 | `SHARK_QUIC_CERT_FILE` | Overrides QUIC server certificate path |
 | `SHARK_QUIC_KEY_FILE` | Overrides QUIC server private key path |
 | `SHARK_GRPCWEB_ADDR` | Adds or overrides gRPC-Web listener address |
 | `SHARK_GRPCWEB_PATH` | Enables gRPC-Web WebSocket mode path when `SHARK_GRPCWEB_ADDR` is set |
+| `SHARK_GRPCWEB_ALLOWED_ORIGINS` | Comma-separated gRPC-Web WebSocket allowed origins |
 | `SHARK_GRPCWEB_MAX_MESSAGE_BYTES` | Overrides gRPC-Web max message size |
 
 `SHARK_GRPCWEB_MAX_MESSAGE_BYTES` must be a valid non-negative integer. Invalid
@@ -137,4 +145,6 @@ Metrics:
 - TCP TLS and QUIC are configurable when `tls_cert_file` and `tls_key_file` are supplied.
 - General TLS/mTLS configuration, certificate reload, and client certificate
   verification remain part of the security-baseline milestone.
+- HTTP CORS configuration is not yet exposed; WebSocket and gRPC-Web Origin
+  allowlists are configurable.
 - File format is JSON only; YAML can be added later if operators need it.

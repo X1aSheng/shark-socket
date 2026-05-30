@@ -103,7 +103,11 @@ func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 			if path == "" {
 				path = "/ws"
 			}
-			server = api.NewWebSocketServer(api.WithWebSocketAddr(proto.Addr), api.WithWebSocketPath(path), api.WithWebSocketHandler(echoHandler))
+			opts := []api.WebSocketOption{api.WithWebSocketAddr(proto.Addr), api.WithWebSocketPath(path), api.WithWebSocketHandler(echoHandler)}
+			if len(proto.AllowedOrigins) > 0 {
+				opts = append(opts, api.WithWebSocketCheckOrigin(allowedOriginChecker(proto.AllowedOrigins)))
+			}
+			server = api.NewWebSocketServer(opts...)
 		case "coap":
 			if strings.EqualFold(proto.Mode, "lwm2m") {
 				server = api.NewCoAPServer(api.WithCoAPAddr(proto.Addr), api.WithCoAPResponder(api.NewLwM2MCoAPResponder(lwm2mServer)))
@@ -117,6 +121,9 @@ func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 			}
 			if proto.Path != "" {
 				opts = append(opts, api.WithGRPCWebWebSocketMode(proto.Path))
+			}
+			if len(proto.AllowedOrigins) > 0 {
+				opts = append(opts, api.WithGRPCWebCheckOrigin(allowedOriginChecker(proto.AllowedOrigins)))
 			}
 			server = api.NewGRPCWebServer(opts...)
 		case "quic":
@@ -134,6 +141,30 @@ func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 		a.Protocols = append(a.Protocols, name)
 	}
 	return nil
+}
+
+func allowedOriginChecker(allowed []string) func(*http.Request) bool {
+	set := make(map[string]struct{}, len(allowed))
+	allowAll := false
+	for _, origin := range allowed {
+		origin = strings.TrimSpace(origin)
+		if origin == "" {
+			continue
+		}
+		if origin == "*" {
+			allowAll = true
+			continue
+		}
+		set[origin] = struct{}{}
+	}
+	return func(r *http.Request) bool {
+		if allowAll {
+			return true
+		}
+		origin := r.Header.Get("Origin")
+		_, ok := set[origin]
+		return ok
+	}
 }
 
 func healthHandler(gateway *api.Gateway) http.Handler {

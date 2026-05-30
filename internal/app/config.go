@@ -18,14 +18,15 @@ type Config struct {
 }
 
 type ProtocolConfig struct {
-	Name            string `json:"name"`
-	Enabled         *bool  `json:"enabled,omitempty"`
-	Addr            string `json:"addr"`
-	Path            string `json:"path,omitempty"`
-	Mode            string `json:"mode,omitempty"`
-	MaxMessageBytes int64  `json:"max_message_bytes,omitempty"`
-	TLSCertFile     string `json:"tls_cert_file,omitempty"`
-	TLSKeyFile      string `json:"tls_key_file,omitempty"`
+	Name            string   `json:"name"`
+	Enabled         *bool    `json:"enabled,omitempty"`
+	Addr            string   `json:"addr"`
+	Path            string   `json:"path,omitempty"`
+	Mode            string   `json:"mode,omitempty"`
+	MaxMessageBytes int64    `json:"max_message_bytes,omitempty"`
+	TLSCertFile     string   `json:"tls_cert_file,omitempty"`
+	TLSKeyFile      string   `json:"tls_key_file,omitempty"`
+	AllowedOrigins  []string `json:"allowed_origins,omitempty"`
 }
 
 func DefaultConfig() Config {
@@ -145,10 +146,20 @@ func applyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 		})
 	}
 	if value, ok := lookup("SHARK_WS_ADDR"); ok {
-		upsertProtocol(cfg, ProtocolConfig{Name: "websocket", Addr: value, Path: envOrDefault(lookup, "SHARK_WS_PATH", "/ws")})
+		upsertProtocol(cfg, ProtocolConfig{
+			Name:           "websocket",
+			Addr:           value,
+			Path:           envOrDefault(lookup, "SHARK_WS_PATH", "/ws"),
+			AllowedOrigins: splitCSVEnv(lookup, "SHARK_WS_ALLOWED_ORIGINS"),
+		})
 	}
 	if value, ok := lookup("SHARK_GRPCWEB_ADDR"); ok {
-		proto := ProtocolConfig{Name: "grpc-web", Addr: value, Path: envOrDefault(lookup, "SHARK_GRPCWEB_PATH", "/grpc")}
+		proto := ProtocolConfig{
+			Name:           "grpc-web",
+			Addr:           value,
+			Path:           envOrDefault(lookup, "SHARK_GRPCWEB_PATH", "/grpc"),
+			AllowedOrigins: splitCSVEnv(lookup, "SHARK_GRPCWEB_ALLOWED_ORIGINS"),
+		}
 		if max, found := lookup("SHARK_GRPCWEB_MAX_MESSAGE_BYTES"); found {
 			parsed, err := strconv.ParseInt(max, 10, 64)
 			if err != nil {
@@ -174,6 +185,22 @@ func envOrDefault(lookup func(string) (string, bool), key string, fallback strin
 		return value
 	}
 	return fallback
+}
+
+func splitCSVEnv(lookup func(string) (string, bool), key string) []string {
+	value, ok := lookup(key)
+	if !ok {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	items := make([]string, 0, len(parts))
+	for _, part := range parts {
+		item := strings.TrimSpace(part)
+		if item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
 }
 
 func upsertProtocol(cfg *Config, proto ProtocolConfig) {
@@ -208,6 +235,9 @@ func mergeProtocol(base, override ProtocolConfig) ProtocolConfig {
 	}
 	if override.TLSKeyFile != "" {
 		base.TLSKeyFile = override.TLSKeyFile
+	}
+	if override.AllowedOrigins != nil {
+		base.AllowedOrigins = append([]string(nil), override.AllowedOrigins...)
 	}
 	return base
 }

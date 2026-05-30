@@ -230,6 +230,54 @@ func TestConfigEnvOverrideTCPTLSKeepsDefaultAddr(t *testing.T) {
 	}
 }
 
+func TestConfigEnvOverrideAllowedOrigins(t *testing.T) {
+	cfg := DefaultConfig()
+	if err := applyEnv(&cfg, func(key string) (string, bool) {
+		values := map[string]string{
+			"SHARK_WS_ADDR":                   "127.0.0.1:19004",
+			"SHARK_WS_ALLOWED_ORIGINS":        "https://console.example, https://ops.example",
+			"SHARK_GRPCWEB_ADDR":              "127.0.0.1:19009",
+			"SHARK_GRPCWEB_ALLOWED_ORIGINS":   "https://grpc.example",
+			"SHARK_GRPCWEB_MAX_MESSAGE_BYTES": "1024",
+		}
+		value, ok := values[key]
+		return value, ok
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var ws, grpcweb ProtocolConfig
+	for _, proto := range cfg.Protocols {
+		switch proto.Name {
+		case "websocket":
+			ws = proto
+		case "grpc-web":
+			grpcweb = proto
+		}
+	}
+	if got, want := strings.Join(ws.AllowedOrigins, ","), "https://console.example,https://ops.example"; got != want {
+		t.Fatalf("websocket allowed origins = %q, want %q", got, want)
+	}
+	if got, want := strings.Join(grpcweb.AllowedOrigins, ","), "https://grpc.example"; got != want {
+		t.Fatalf("grpc-web allowed origins = %q, want %q", got, want)
+	}
+}
+
+func TestAllowedOriginChecker(t *testing.T) {
+	check := allowedOriginChecker([]string{"https://console.example"})
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	req.Header.Set("Origin", "https://console.example")
+	if !check(req) {
+		t.Fatal("allowed origin was rejected")
+	}
+	req.Header.Set("Origin", "https://evil.example")
+	if check(req) {
+		t.Fatal("unexpected origin was allowed")
+	}
+	if !allowedOriginChecker([]string{"*"})(req) {
+		t.Fatal("wildcard origin should be allowed")
+	}
+}
+
 func TestLoadConfigRejectsInvalidGRPCWebMaxMessageBytesEnv(t *testing.T) {
 	t.Setenv("SHARK_GRPCWEB_ADDR", "127.0.0.1:0")
 	t.Setenv("SHARK_GRPCWEB_MAX_MESSAGE_BYTES", "not-a-number")

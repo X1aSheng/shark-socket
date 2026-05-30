@@ -7,6 +7,7 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+- Added configurable WebSocket and gRPC-Web Origin allowlists through JSON config and environment overrides.
 - Added TCP TLS server support through API options, JSON config, and `SHARK_TCP_*` environment overrides.
 - Added QUIC runtime configuration with `tls_cert_file`, `tls_key_file`, and `SHARK_QUIC_*` environment overrides.
 - Completed two-node China cloud validation, including cross-host protocol tests, Docker Compose, kind Kubernetes, and Helm deployment; see `docs/PROJECT-REVIEW-260530-094810.md`.
