@@ -1,6 +1,6 @@
 # Shark-Socket-New Project Plan
 
-Updated: 2026-05-30T08:51:09
+Updated: 2026-05-30T10:23:37
 
 ## Timestamp Format
 
@@ -90,6 +90,7 @@ This plan is based on the current repository state, not aspirational scope.
 | 32 | Protocol edge coverage expansion | Done | 2026-05-30T00:56:21 | `b00d46a` | Focused protocol tests, full test sweep, vet, scripted all-mode validation, race validation |
 | 33 | Configurable runtime entrypoint | Done | 2026-05-30T01:12:39 | Pending | App config tests, deploy tests, full test sweep, vet, build, deploy validation, race validation |
 | 34 | Review hardening and cloud Docker validation | Done | 2026-05-30T08:51:09 | `6025e5a`, `7a47db6`, `f9c26c6`, `8edc9eb` | Local tests/race/coverage/deploy checks; cloud Go tests; Docker build/compose; K8s and Helm render; local-to-cloud TCP echo |
+| 35 | QUIC configuration with TLS material | Done | 2026-05-30T10:23:37 | Pending | QUIC config regression tests, `go test ./...`, `go vet ./...`, `go run scripts/run_tests.go -mode all -timeout 5m` |
 
 ## Active Improvement Plan
 
@@ -97,7 +98,7 @@ This plan is based on the current repository state, not aspirational scope.
 | --- | --- | --- | --- | --- |
 | P0 | Documentation accuracy | Done | Keep this plan, `Architecture.md`, README, and changelog aligned with implemented capability | README now describes current multi-protocol state and links release notes |
 | P0 | Release validation automation | Done | Add scripted validation command that runs test/vet/race with local toolchain PATH | `scripts/validate.ps1` supports normal and race validation |
-| P0 | Configurable runtime entrypoint | Partial | Start multi-protocol gateway from config instead of source edits | JSON config, env overrides, health/readiness, metrics, and container listener env exist; TLS/QUIC config remains pending |
+| P0 | Configurable runtime entrypoint | Done | Start multi-protocol gateway from config instead of source edits | JSON config, env overrides, health/readiness, metrics, container listener env, and QUIC certificate/key config exist; general TLS/mTLS remains a security-baseline workstream |
 | P1 | LwM2M over CoAP binding | Done | Connect LwM2M lifecycle operations to CoAP request/response handlers | CoAP responder maps register/update/deregister/read/write payloads to LwM2M server operations |
 | P1 | gRPC-Web WebSocket mode | Done | Add WebSocket transport mode for gRPC-Web gateway | Direct HTTP and WebSocket modes now share runtime/plugin/session behavior |
 | P1 | External observability adapters | Done | Add Prometheus/OpenTelemetry adapters behind existing core interfaces | Prometheus metrics exporter and OpenTelemetry tracer adapter exist |
@@ -112,10 +113,12 @@ This plan is based on the current repository state, not aspirational scope.
 
 ## Next Execution Steps
 
-1. Complete live Kubernetes deployment validation when a cluster context is available.
-   - Docker build/compose, K8s render, Helm render, and local-to-cloud TCP echo have been verified on the cloud server.
-   - Remaining input: Kubernetes cluster context/namespace and service exposure method.
-2. Tag release candidate after review.
+1. Complete the security-baseline configuration workstream.
+   - TLS/mTLS config model, TCP TLS server, certificate reload, and HTTP/WebSocket/gRPC-Web origin/CORS policy config remain.
+2. Complete external production Kubernetes validation when a production cluster context is available.
+   - Docker build/compose, kind K8s apply, Helm install, and cross-host protocol traffic have been verified on cloud servers.
+   - Remaining input: production Kubernetes cluster context/namespace and service exposure method.
+3. Tag release candidate after review.
    - Recommended tag: `v0.1.0-rc.1`.
    - Recommended command after the release commit is pushed: `git tag -a v0.1.0-rc.1 -m "shark-socket-new v0.1.0-rc.1"` then `git push origin v0.1.0-rc.1`.
 

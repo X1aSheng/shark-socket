@@ -1,6 +1,6 @@
 # Configuration Guide
 
-Updated: 2026-05-30T08:51:09
+Updated: 2026-05-30T10:23:37
 
 ## Purpose
 
@@ -44,12 +44,14 @@ Protocol fields:
 
 | Field | Type | Purpose |
 | --- | --- | --- |
-| `name` | string | `tcp`, `udp`, `http`, `websocket`, `coap`, or `grpc-web` |
+| `name` | string | `tcp`, `udp`, `http`, `websocket`, `coap`, `quic`, or `grpc-web` |
 | `enabled` | bool | Optional; defaults to `true` |
 | `addr` | string | Listener address |
 | `path` | string | WebSocket path or gRPC-Web WebSocket path |
 | `mode` | string | CoAP mode; use `lwm2m` for LwM2M command binding |
 | `max_message_bytes` | integer | gRPC-Web max request/message size |
+| `tls_cert_file` | string | QUIC server certificate PEM path |
+| `tls_key_file` | string | QUIC server private key PEM path |
 
 Example:
 
@@ -61,6 +63,21 @@ Example:
   "protocols": [
     { "name": "tcp", "addr": "127.0.0.1:18000" },
     { "name": "websocket", "addr": "127.0.0.1:18004", "path": "/ws" }
+  ]
+}
+```
+
+QUIC requires TLS certificate material:
+
+```json
+{
+  "protocols": [
+    {
+      "name": "quic",
+      "addr": "127.0.0.1:18007",
+      "tls_cert_file": "certs/server.crt",
+      "tls_key_file": "certs/server.key"
+    }
   ]
 }
 ```
@@ -78,6 +95,9 @@ Supported overrides:
 | `SHARK_TCP_ADDR` | Adds or overrides TCP listener address |
 | `SHARK_WS_ADDR` | Adds or overrides WebSocket listener address |
 | `SHARK_WS_PATH` | Overrides WebSocket path when `SHARK_WS_ADDR` is set |
+| `SHARK_QUIC_ADDR` | Adds or overrides QUIC listener address |
+| `SHARK_QUIC_CERT_FILE` | Overrides QUIC server certificate path |
+| `SHARK_QUIC_KEY_FILE` | Overrides QUIC server private key path |
 | `SHARK_GRPCWEB_ADDR` | Adds or overrides gRPC-Web listener address |
 | `SHARK_GRPCWEB_PATH` | Enables gRPC-Web WebSocket mode path when `SHARK_GRPCWEB_ADDR` is set |
 | `SHARK_GRPCWEB_MAX_MESSAGE_BYTES` | Overrides gRPC-Web max message size |
@@ -106,6 +126,7 @@ Metrics:
 
 ## Current Limits
 
-- QUIC is not yet exposed through config because it requires TLS material.
-- TLS/mTLS configuration is planned as a security-baseline milestone.
+- QUIC is configurable when `tls_cert_file` and `tls_key_file` are supplied.
+- General TLS/mTLS configuration, certificate reload, and client certificate
+  verification remain part of the security-baseline milestone.
 - File format is JSON only; YAML can be added later if operators need it.

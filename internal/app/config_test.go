@@ -1,13 +1,20 @@
 package app
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDefaultConfigIsValid(t *testing.T) {
@@ -79,6 +86,60 @@ func TestConfigRejectsNegativeMaxMessageBytes(t *testing.T) {
 	}
 }
 
+func TestConfigRejectsQUICWithoutTLSFiles(t *testing.T) {
+	cfg := Config{
+		ShutdownTimeout: "2s",
+		Protocols: []ProtocolConfig{
+			{Name: "quic", Addr: "127.0.0.1:0"},
+		},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "tls_cert_file") {
+		t.Fatalf("Validate error = %v, want tls file error", err)
+	}
+}
+
+func TestNewRegistersConfiguredQUICWithTLSFiles(t *testing.T) {
+	certFile, keyFile := writeTestCertificate(t)
+	cfg := Config{
+		ShutdownTimeout: "2s",
+		Protocols: []ProtocolConfig{
+			{Name: "quic", Addr: "127.0.0.1:0", TLSCertFile: certFile, TLSKeyFile: keyFile},
+		},
+	}
+	app, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := app.Protocols, []string{"quic"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("protocols = %#v, want %#v", got, want)
+	}
+}
+
+func TestConfigEnvOverrideQUIC(t *testing.T) {
+	cfg := DefaultConfig()
+	if err := applyEnv(&cfg, func(key string) (string, bool) {
+		values := map[string]string{
+			"SHARK_QUIC_ADDR":      "127.0.0.1:19088",
+			"SHARK_QUIC_CERT_FILE": "server.crt",
+			"SHARK_QUIC_KEY_FILE":  "server.key",
+		}
+		value, ok := values[key]
+		return value, ok
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var found ProtocolConfig
+	for _, proto := range cfg.Protocols {
+		if proto.Name == "quic" {
+			found = proto
+			break
+		}
+	}
+	if found.Addr != "127.0.0.1:19088" || found.TLSCertFile != "server.crt" || found.TLSKeyFile != "server.key" {
+		t.Fatalf("quic override = %#v", found)
+	}
+}
+
 func TestLoadConfigRejectsInvalidGRPCWebMaxMessageBytesEnv(t *testing.T) {
 	t.Setenv("SHARK_GRPCWEB_ADDR", "127.0.0.1:0")
 	t.Setenv("SHARK_GRPCWEB_MAX_MESSAGE_BYTES", "not-a-number")
@@ -105,6 +166,38 @@ func TestNewRegistersConfiguredProtocols(t *testing.T) {
 	if got, want := app.Protocols, []string{"tcp", "udp", "websocket", "grpc-web"}; len(got) != len(want) {
 		t.Fatalf("protocols = %#v, want %#v", got, want)
 	}
+}
+
+func writeTestCertificate(t *testing.T) (string, string) {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "localhost"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "server.crt")
+	keyFile := filepath.Join(dir, "server.key")
+	if err := os.WriteFile(certFile, certPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyFile, keyPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return certFile, keyFile
 }
 
 func TestHealthHandlerReadiness(t *testing.T) {

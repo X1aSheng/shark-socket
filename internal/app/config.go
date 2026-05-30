@@ -1,6 +1,7 @@
 package app
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -23,6 +24,8 @@ type ProtocolConfig struct {
 	Path            string `json:"path,omitempty"`
 	Mode            string `json:"mode,omitempty"`
 	MaxMessageBytes int64  `json:"max_message_bytes,omitempty"`
+	TLSCertFile     string `json:"tls_cert_file,omitempty"`
+	TLSKeyFile      string `json:"tls_key_file,omitempty"`
 }
 
 func DefaultConfig() Config {
@@ -94,8 +97,11 @@ func (c Config) Validate() error {
 		if proto.MaxMessageBytes < 0 {
 			return fmt.Errorf("protocol %q max_message_bytes must not be negative", name)
 		}
+		if name == "quic" && (proto.TLSCertFile == "" || proto.TLSKeyFile == "") {
+			return fmt.Errorf("protocol %q tls_cert_file and tls_key_file are required", name)
+		}
 		switch name {
-		case "tcp", "udp", "http", "websocket", "coap", "grpc-web":
+		case "tcp", "udp", "http", "websocket", "coap", "grpc-web", "quic":
 		default:
 			return fmt.Errorf("unsupported protocol %q", proto.Name)
 		}
@@ -138,6 +144,14 @@ func applyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 		}
 		upsertProtocol(cfg, proto)
 	}
+	if value, ok := lookup("SHARK_QUIC_ADDR"); ok {
+		upsertProtocol(cfg, ProtocolConfig{
+			Name:        "quic",
+			Addr:        value,
+			TLSCertFile: envOrDefault(lookup, "SHARK_QUIC_CERT_FILE", ""),
+			TLSKeyFile:  envOrDefault(lookup, "SHARK_QUIC_KEY_FILE", ""),
+		})
+	}
 	return nil
 }
 
@@ -175,5 +189,19 @@ func mergeProtocol(base, override ProtocolConfig) ProtocolConfig {
 	if override.MaxMessageBytes > 0 {
 		base.MaxMessageBytes = override.MaxMessageBytes
 	}
+	if override.TLSCertFile != "" {
+		base.TLSCertFile = override.TLSCertFile
+	}
+	if override.TLSKeyFile != "" {
+		base.TLSKeyFile = override.TLSKeyFile
+	}
 	return base
+}
+
+func loadServerTLSConfig(certFile string, keyFile string) (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("load tls certificate: %w", err)
+	}
+	return &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"shark-socket-new-quic"}}, nil
 }

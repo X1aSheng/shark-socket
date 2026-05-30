@@ -111,6 +111,12 @@ func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 				opts = append(opts, api.WithGRPCWebWebSocketMode(proto.Path))
 			}
 			server = api.NewGRPCWebServer(opts...)
+		case "quic":
+			tlsConfig, err := loadServerTLSConfig(proto.TLSCertFile, proto.TLSKeyFile)
+			if err != nil {
+				return err
+			}
+			server = api.NewQUICServer(api.WithQUICAddr(proto.Addr), api.WithQUICTLS(tlsConfig), api.WithQUICHandler(echoHandler))
 		default:
 			return fmt.Errorf("unsupported protocol %q", proto.Name)
 		}

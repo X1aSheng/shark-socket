@@ -1,6 +1,6 @@
 # Shark-Socket-New Implementation Goals
 
-Updated: 2026-05-30T01:25:00
+Updated: 2026-05-30T10:23:37
 
 ## Purpose
 
@@ -149,7 +149,7 @@ Acceptance:
 | Priority | Workstream | Target Outcome |
 | --- | --- | --- |
 | P0 | External deployment validation | Prove Docker/Kubernetes/cloud runtime with real client traffic |
-| P0 | Configurable runtime entrypoint | Start multi-protocol gateway from config instead of source edits |
+| P0 | Configurable runtime entrypoint | Start multi-protocol gateway from config instead of source edits; QUIC supports certificate/key file configuration |
 | P0 | Security baseline | TLS/mTLS, origin policy, listener binding, and secret handling guidance |
 | P1 | MQTT planning and implementation | Add MQTT 3.1.1/5.0 path with conformance-oriented tests |
 | P1 | Protocol conformance depth | Expand edge tests and document compatibility limits |
@@ -208,28 +208,27 @@ A milestone is complete only when:
 
 The next recommended milestone is:
 
-### External Deployment Validation
+### Security Baseline Configuration
 
 Inputs needed:
 
-- Cloud host and SSH access or a cloud CI runner.
-- Docker installed on the validation host.
-- Kubectl and Helm installed if Kubernetes validation is required.
-- Kubernetes context, namespace, service exposure method, and image registry policy.
-- Public endpoint for local-client to remote-server protocol tests.
+- Certificate material and operator-facing reload expectations.
+- TLS/mTLS defaults for server and client-auth modes.
+- Origin/CORS policy shape for HTTP, WebSocket, and gRPC-Web.
+- Timeout and overload policy defaults.
 
 Expected evidence:
 
-- Build log.
-- Docker image or Compose validation log.
-- Kubernetes or Helm render/apply log.
-- Local client request/response transcript.
+- Focused configuration rejection tests.
+- TCP TLS integration test.
+- Policy tests for HTTP, WebSocket, and gRPC-Web.
 - Updated documentation with exact commands and results.
 
 ## Current Progress Notes
 
-- Configurable runtime entrypoint is partially complete: JSON config,
-  environment overrides, health/readiness endpoints, metrics listener, container
-  listener environment, and sample multi-protocol config exist.
-- TLS/mTLS configuration remains part of the security-baseline milestone.
-- QUIC config remains pending because it requires TLS material handling.
+- Configurable runtime entrypoint is complete for JSON config, environment
+  overrides, health/readiness endpoints, metrics listener, container listener
+  environment, sample multi-protocol config, and QUIC certificate/key config.
+- General TLS/mTLS configuration, TCP TLS server support, certificate reload,
+  and HTTP/WebSocket/gRPC-Web policy configuration remain part of the
+  security-baseline milestone.

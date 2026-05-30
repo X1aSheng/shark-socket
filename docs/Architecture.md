@@ -41,15 +41,17 @@
 7. 类型化消息放在协议原始字节层之上，通过 Codec 适配，而不是污染核心 Session。
 8. 测试、脚本、部署清单和文档保持同步。
 
-### 2.2 非目标
+### 2.2 当前阶段非目标与转换条件
 
 当前阶段不追求一次性实现旧项目全部复杂能力：
 
-- 不把泛型 Session 作为核心接口。
-- 不先引入复杂 BufferPool、时间轮、分片 LRU、全量防御体系。
-- 不在 Gateway 中耦合具体数据库、Redis、消息队列或外部注册中心。
-- 不把 MQTT Broker 内建进本项目；MQTT 可通过外部 Broker 或适配层接入。
-- 不把每个协议都设计成完整标准实现；先保留清晰扩展位。
+| 当前非目标 | 转换为目标的阶段 | 转换条件 |
+| --- | --- | --- |
+| 泛型 Session 作为核心接口 | v1.0 API 稳定前评估 | 现有 `core.Session` 无法承载至少两个真实业务协议的类型安全需求 |
+| 复杂 BufferPool、时间轮、分片 LRU、全量防御体系 | P2 性能与防御 | 已有基准压测证明分配、超时扫描或 Session 锁竞争成为瓶颈 |
+| Gateway 直接耦合数据库、Redis、消息队列或注册中心 | P2/P3 集群与持久化 | 外部 adapter 接口稳定，并完成至少一种真实后端集成测试 |
+| 内建完整 MQTT Broker | P1/P2 MQTT 专项 | 明确选择内建 Broker 而不是外部 Broker 适配，并建立 MQTT 3.1.1/5.0 合规测试 |
+| 每个协议一次性实现完整标准 | 按协议专项推进 | 当前 smoke/边界测试稳定，且已有明确互操作目标或生产场景 |
 
 ---
 
@@ -823,7 +825,7 @@ Helm chart 用于参数化：
 
 1. TLS/mTLS 配置文件化。
 2. TCP TLS server 支持和证书热加载。
-3. QUIC TLS 证书材料配置。
+3. QUIC mTLS、证书轮换和热加载。
 4. CoAP DTLS 或 OSCORE 方案设计。
 5. HTTP/WebSocket CORS/Origin 策略配置化。
 6. 请求级 deadline 和 idle timeout。
@@ -916,7 +918,7 @@ internal/protocol/grpcweb
 ### P1：生产配置
 
 1. TLS/mTLS 配置模型。
-2. QUIC 配置接入。
+2. QUIC mTLS、证书轮换和热加载。
 3. 插件配置文件化。
 4. HTTP/WebSocket/gRPC-Web 安全策略配置化。
 5. 统一 shutdown stage timeout 配置。
@@ -1034,9 +1036,9 @@ internal/protocol/grpcweb
 
 当前未完成：
 
-- Kubernetes live apply，因为云服务器没有可用 cluster context。
+- 外部生产 Kubernetes 集群接入；kind 集群实机 apply 与 Helm 安装已通过。
 - TLS/mTLS 配置模型。
-- QUIC 配置文件化。
+- QUIC mTLS、证书轮换和热加载。
 - CoAP/LwM2M 完整标准特性。
 - 性能池化和分片 SessionManager。
 - 完整防御体系。
