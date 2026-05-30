@@ -1,6 +1,6 @@
 # Shark-Socket-New Project Plan
 
-Updated: 2026-05-30T01:25:00
+Updated: 2026-05-30T08:51:09
 
 ## Timestamp Format
 
@@ -89,6 +89,7 @@ This plan is based on the current repository state, not aspirational scope.
 | 31 | Protocol test guide | Done | 2026-05-30T00:50:00 | `777f6ae` | Independent protocol testing guide and README link |
 | 32 | Protocol edge coverage expansion | Done | 2026-05-30T00:56:21 | `b00d46a` | Focused protocol tests, full test sweep, vet, scripted all-mode validation, race validation |
 | 33 | Configurable runtime entrypoint | Done | 2026-05-30T01:12:39 | Pending | App config tests, deploy tests, full test sweep, vet, build, deploy validation, race validation |
+| 34 | Review hardening and cloud Docker validation | Done | 2026-05-30T08:51:09 | `6025e5a`, `7a47db6`, `f9c26c6`, `8edc9eb` | Local tests/race/coverage/deploy checks; cloud Go tests; Docker build/compose; K8s and Helm render; local-to-cloud TCP echo |
 
 ## Active Improvement Plan
 
@@ -105,14 +106,15 @@ This plan is based on the current repository state, not aspirational scope.
 | P2 | Benchmarks and fuzzing | Done | Add protocol benchmarks and fuzz tests for CoAP/TCP framing | TCP framer and CoAP parser fuzz smoke plus benchmark baselines are recorded |
 | P2 | Plugin completeness | Done | Add cluster plugin if production use requires it | Cluster pub/sub plugin now covers cross-node local broadcast behavior |
 | P2 | Gateway restart lifecycle | Done | Allow stop/start reuse of the same Gateway and shared SessionManager | TCP restart regression covers the bug found in review |
-| P2 | GitHub Actions CI | Done | Run scripted validation, deploy checks, and log artifact upload on push/PR | `.github/workflows/ci.yml` and deploy workflow semantics test exist |
+| P2 | GitHub Actions CI | Done | Run scripted validation, deploy checks, and log artifact upload on push/PR | `.github/workflows/ci.yml` runs Windows and Ubuntu matrix jobs and deploy workflow semantics test exists |
 | P2 | Protocol test methodology | Done | Document protocol-specific test strategy and required edge cases | `docs/PROTOCOL-TEST-GUIDE-20260530.md` |
 | P2 | Protocol edge regressions | Done | Add targeted edge tests across TCP, UDP, HTTP, WebSocket, CoAP, LwM2M, QUIC, and gRPC-Web | Scripted unit count increased to 88 passed |
 
 ## Next Execution Steps
 
-1. Complete external deployment validation when credentials and tools are available.
-   - Need cloud host/credentials, Docker, Kubectl, Helm, registry/image tag, Kubernetes context/namespace, and public endpoint.
+1. Complete live Kubernetes deployment validation when a cluster context is available.
+   - Docker build/compose, K8s render, Helm render, and local-to-cloud TCP echo have been verified on the cloud server.
+   - Remaining input: Kubernetes cluster context/namespace and service exposure method.
 2. Tag release candidate after review.
    - Recommended tag: `v0.1.0-rc.1`.
    - Recommended command after the release commit is pushed: `git tag -a v0.1.0-rc.1 -m "shark-socket-new v0.1.0-rc.1"` then `git push origin v0.1.0-rc.1`.

@@ -96,6 +96,13 @@ go run scripts/run_tests.go -mode benchmark
 .\scripts\validate_deploy.ps1
 ```
 
+Docker builds support a configurable module proxy:
+
+```powershell
+$env:GOPROXY='https://goproxy.cn,direct'
+docker compose -f deploy/docker/docker-compose.yml up -d --build
+```
+
 Raw JSON and readable reports are written to `logs/`.
 
 ## Documentation
@@ -107,5 +114,5 @@ Raw JSON and readable reports are written to `logs/`.
 - Test strategy: [docs/TEST-STRATEGY-20260529.md](docs/TEST-STRATEGY-20260529.md)
 - Protocol test guide: [docs/PROTOCOL-TEST-GUIDE-20260530.md](docs/PROTOCOL-TEST-GUIDE-20260530.md)
 - Examples: [docs/EXAMPLES.md](docs/EXAMPLES.md)
-- Latest review: [docs/PROJECT-REVIEW-260530-004244.md](docs/PROJECT-REVIEW-260530-004244.md)
+- Latest review: [docs/PROJECT-REVIEW-260530-085109.md](docs/PROJECT-REVIEW-260530-085109.md)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)

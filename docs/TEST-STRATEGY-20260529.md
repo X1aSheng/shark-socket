@@ -1,6 +1,6 @@
 # Shark-Socket-New Test Strategy
 
-Updated: 2026-05-30T00:56:21
+Updated: 2026-05-30T08:51:09
 
 ## Basis
 
@@ -79,13 +79,13 @@ Next additions should follow the old project's proven structure:
 - Add `tests/defects/` when the first production defect regression is identified.
 - Add more `tests/integration/` scenarios for multi-protocol Gateway composition.
 - Extend benchmark packages beyond TCP/CoAP after protocol behavior stabilizes.
-- Extend CI matrix across Linux and Windows when external runner capacity is available.
+- Add live Kubernetes apply/rollout validation once a target cluster context is configured.
 
 ## CI Coverage
 
 GitHub Actions validation is defined in `.github/workflows/ci.yml`.
 
-Current CI gates:
+Current CI gates run on `windows-latest` and `ubuntu-latest`:
 
 - `go run scripts/run_tests.go -mode all -timeout 5m`
 - `powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1`
@@ -111,3 +111,4 @@ Latest protocol expansion added focused regressions for:
 - LwM2M invalid CoAP command non-mutation.
 - QUIC oversized stream suppression.
 - gRPC-Web strict malformed frame rejection.
+- WebSocket shutdown invokes plugin `OnClose` once per session.

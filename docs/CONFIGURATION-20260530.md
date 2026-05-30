@@ -1,6 +1,6 @@
 # Configuration Guide
 
-Updated: 2026-05-30T01:25:00
+Updated: 2026-05-30T08:51:09
 
 ## Purpose
 
@@ -82,8 +82,16 @@ Supported overrides:
 | `SHARK_GRPCWEB_PATH` | Enables gRPC-Web WebSocket mode path when `SHARK_GRPCWEB_ADDR` is set |
 | `SHARK_GRPCWEB_MAX_MESSAGE_BYTES` | Overrides gRPC-Web max message size |
 
+`SHARK_GRPCWEB_MAX_MESSAGE_BYTES` must be a valid non-negative integer. Invalid
+values fail startup instead of silently falling back.
+
 Container deployments set listener addresses to `0.0.0.0` so services can
 receive traffic from outside the container.
+
+Docker builds also support `GOPROXY` through the Dockerfile and compose build
+args. The compose default is `https://goproxy.cn,direct`, which keeps cloud
+builds usable in network environments where `proxy.golang.org` is slow or
+blocked.
 
 ## Health And Metrics
 

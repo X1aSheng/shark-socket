@@ -17,6 +17,8 @@ The redesign focuses on runtime correctness before feature breadth.
 - Test and validation logs that need precision use `YYYY-MM-DDTHH:mm:ss.xxx`.
 - Timezone suffixes are intentionally omitted from project documents.
 
+Latest review reference: `docs/PROJECT-REVIEW-260530-085109.md`.
+
 ## Layers
 
 ```text
@@ -62,6 +64,11 @@ management become real execution behavior, not just configuration fields.
 Gateway owns the shared `SessionManager`. Transports register and unregister
 sessions, but do not close the global manager. This prevents one protocol server
 from shutting down the whole gateway session index.
+
+Transport session cleanup is idempotent: shutdown paths must remove a session
+from the transport registry before unregistering it and invoking plugin
+`OnClose`. This keeps WebSocket-style read-loop cleanup and Gateway shutdown
+from emitting duplicate lifecycle events.
 
 ### Staged Shutdown
 

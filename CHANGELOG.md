@@ -7,6 +7,11 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+- Fixed duplicate transport `OnClose` callbacks during WebSocket-style shutdown.
+- Added strict gRPC-Web max message size configuration validation.
+- Expanded GitHub Actions validation to Windows and Ubuntu runners.
+- Made Docker builds proxy-configurable for cloud environments.
+- Added project review report `docs/PROJECT-REVIEW-260530-085109.md` with cloud Docker, K8s/Helm render, and local-to-cloud TCP validation notes.
 - Fixed Gateway restart lifecycle after shutdown.
 - Added GitHub Actions CI for scripted tests, validation, deploy checks, and log artifacts.
 - Added project review report `docs/PROJECT-REVIEW-260530-004244.md`.
