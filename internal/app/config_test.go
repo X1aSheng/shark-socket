@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -47,7 +48,7 @@ func TestLoadConfigFromJSON(t *testing.T) {
 
 func TestConfigEnvOverride(t *testing.T) {
 	cfg := DefaultConfig()
-	applyEnv(&cfg, func(key string) (string, bool) {
+	if err := applyEnv(&cfg, func(key string) (string, bool) {
 		values := map[string]string{
 			"SHARK_TCP_ADDR":     "127.0.0.1:19000",
 			"SHARK_HEALTH_ADDR":  "127.0.0.1:19081",
@@ -55,12 +56,34 @@ func TestConfigEnvOverride(t *testing.T) {
 		}
 		value, ok := values[key]
 		return value, ok
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if cfg.Protocols[0].Addr != "127.0.0.1:19000" {
 		t.Fatalf("tcp addr = %q", cfg.Protocols[0].Addr)
 	}
 	if cfg.HealthAddr != "127.0.0.1:19081" || cfg.MetricsAddr != "127.0.0.1:19080" {
 		t.Fatalf("health=%q metrics=%q", cfg.HealthAddr, cfg.MetricsAddr)
+	}
+}
+
+func TestConfigRejectsNegativeMaxMessageBytes(t *testing.T) {
+	cfg := Config{
+		ShutdownTimeout: "2s",
+		Protocols: []ProtocolConfig{
+			{Name: "grpc-web", Addr: "127.0.0.1:0", MaxMessageBytes: -1},
+		},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "max_message_bytes") {
+		t.Fatalf("Validate error = %v, want max_message_bytes error", err)
+	}
+}
+
+func TestLoadConfigRejectsInvalidGRPCWebMaxMessageBytesEnv(t *testing.T) {
+	t.Setenv("SHARK_GRPCWEB_ADDR", "127.0.0.1:0")
+	t.Setenv("SHARK_GRPCWEB_MAX_MESSAGE_BYTES", "not-a-number")
+	if _, err := LoadConfig(""); err == nil || !strings.Contains(err.Error(), "SHARK_GRPCWEB_MAX_MESSAGE_BYTES") {
+		t.Fatalf("LoadConfig error = %v, want env parse error", err)
 	}
 }
 

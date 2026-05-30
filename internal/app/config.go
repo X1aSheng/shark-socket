@@ -47,7 +47,9 @@ func LoadConfig(path string) (Config, error) {
 			return Config{}, fmt.Errorf("parse config %s: %w", path, err)
 		}
 	}
-	applyEnv(&cfg, os.LookupEnv)
+	if err := applyEnv(&cfg, os.LookupEnv); err != nil {
+		return Config{}, err
+	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -89,6 +91,9 @@ func (c Config) Validate() error {
 		if proto.Addr == "" {
 			return fmt.Errorf("protocol %q addr is required", name)
 		}
+		if proto.MaxMessageBytes < 0 {
+			return fmt.Errorf("protocol %q max_message_bytes must not be negative", name)
+		}
 		switch name {
 		case "tcp", "udp", "http", "websocket", "coap", "grpc-web":
 		default:
@@ -106,7 +111,7 @@ func (p ProtocolConfig) IsEnabled() bool {
 	return p.Enabled == nil || *p.Enabled
 }
 
-func applyEnv(cfg *Config, lookup func(string) (string, bool)) {
+func applyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 	if value, ok := lookup("SHARK_SHUTDOWN_TIMEOUT"); ok {
 		cfg.ShutdownTimeout = value
 	}
@@ -125,12 +130,15 @@ func applyEnv(cfg *Config, lookup func(string) (string, bool)) {
 	if value, ok := lookup("SHARK_GRPCWEB_ADDR"); ok {
 		proto := ProtocolConfig{Name: "grpc-web", Addr: value, Path: envOrDefault(lookup, "SHARK_GRPCWEB_PATH", "/grpc")}
 		if max, found := lookup("SHARK_GRPCWEB_MAX_MESSAGE_BYTES"); found {
-			if parsed, err := strconv.ParseInt(max, 10, 64); err == nil {
-				proto.MaxMessageBytes = parsed
+			parsed, err := strconv.ParseInt(max, 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid SHARK_GRPCWEB_MAX_MESSAGE_BYTES %q: %w", max, err)
 			}
+			proto.MaxMessageBytes = parsed
 		}
 		upsertProtocol(cfg, proto)
 	}
+	return nil
 }
 
 func envOrDefault(lookup func(string) (string, bool), key string, fallback string) string {
