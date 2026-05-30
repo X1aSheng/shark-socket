@@ -231,5 +231,8 @@ Expected evidence:
   environment, sample multi-protocol config, TCP TLS config, QUIC
   certificate/key config, HTTP CORS, WebSocket/gRPC-Web Origin allowlists,
   TCP/QUIC client CA config, and client certificate verification policy.
+- Benchmark coverage now includes runtime session manager, plugin chain, and
+  TCP/UDP/WebSocket/HTTP echo smoke paths under `tests/benchmark`, and the
+  scripted benchmark runner includes these packages.
 - Certificate reload and finer protocol security defaults remain part of the
   security-baseline milestone.

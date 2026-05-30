@@ -70,7 +70,7 @@ func runGoTest(root, logs, ts, mode string, timeout time.Duration, packages ...s
 func runBenchmark(root, logs, ts string, timeout time.Duration) error {
 	jsonFile := filepath.Join(logs, ts+"_benchmark.json")
 	logFile := filepath.Join(logs, ts+"_benchmark.log")
-	args := []string{"test", "-json", "-run=^$", "-bench=.", "-benchmem", "-count=1", "-timeout=" + timeout.String(), "./internal/transport/tcp", "./internal/transport/coap"}
+	args := []string{"test", "-json", "-run=^$", "-bench=.", "-benchmem", "-count=1", "-timeout=" + timeout.String(), "./internal/transport/tcp", "./internal/transport/coap", "./tests/benchmark"}
 	fmt.Printf("[%s] %s -> %s\n", time.Now().Format("2006-01-02T15:04:05.000"), strings.Join(append([]string{"go"}, args...), " "), jsonFile)
 	err := capture(root, jsonFile, "go", args...)
 	writeReport(root, jsonFile, logFile)
