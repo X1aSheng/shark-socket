@@ -7,6 +7,7 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+- Completed two-node China cloud validation, including cross-host protocol tests, Docker Compose, kind Kubernetes, and Helm deployment; see `docs/PROJECT-REVIEW-260530-094810.md`.
 - Fixed duplicate transport `OnClose` callbacks during WebSocket-style shutdown.
 - Added strict gRPC-Web max message size configuration validation.
 - Expanded GitHub Actions validation to Windows and Ubuntu runners.

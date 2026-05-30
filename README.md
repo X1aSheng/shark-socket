@@ -114,5 +114,5 @@ Raw JSON and readable reports are written to `logs/`.
 - Test strategy: [docs/TEST-STRATEGY-20260529.md](docs/TEST-STRATEGY-20260529.md)
 - Protocol test guide: [docs/PROTOCOL-TEST-GUIDE-20260530.md](docs/PROTOCOL-TEST-GUIDE-20260530.md)
 - Examples: [docs/EXAMPLES.md](docs/EXAMPLES.md)
-- Latest review: [docs/PROJECT-REVIEW-260530-085109.md](docs/PROJECT-REVIEW-260530-085109.md)
+- Latest review: [docs/PROJECT-REVIEW-260530-094810.md](docs/PROJECT-REVIEW-260530-094810.md)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
