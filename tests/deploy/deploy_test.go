@@ -133,16 +133,21 @@ func TestDeployToolRenderingWhenAvailable(t *testing.T) {
 func TestGitHubActionsWorkflowSemantics(t *testing.T) {
 	workflow := readFile(t, "../../.github/workflows/ci.yml")
 
+	assertContains(t, workflow, "actions/checkout@v6")
 	assertContains(t, workflow, "actions/setup-go@v6")
 	assertContains(t, workflow, `go-version: "1.26.1"`)
 	assertContains(t, workflow, "matrix:")
 	assertContains(t, workflow, "windows-latest")
 	assertContains(t, workflow, "ubuntu-latest")
 	assertContains(t, workflow, "go run scripts/run_tests.go -mode all -timeout 5m")
+	assertContains(t, workflow, "go run scripts/run_tests.go -mode race -timeout 5m")
+	assertContains(t, workflow, "go run scripts/run_tests.go -mode cover -timeout 5m")
 	assertContains(t, workflow, `.\scripts\validate.ps1`)
 	assertContains(t, workflow, `.\scripts\validate_deploy.ps1`)
-	assertContains(t, workflow, "actions/upload-artifact@v5")
+	assertContains(t, workflow, "actions/upload-artifact@v7")
 	assertContains(t, workflow, "validation-logs-${{ matrix.os }}")
+	assertContains(t, workflow, "race-logs-ubuntu-latest")
+	assertContains(t, workflow, "coverage-logs-ubuntu-latest")
 }
 
 func readFile(t *testing.T, path string) string {

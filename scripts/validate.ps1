@@ -37,8 +37,17 @@ try {
 
     if ($Race) {
         Run-Step "go test -race" {
-            $env:PATH = "D:\Programs\w64devkit\bin;D:\Programs\LLVM\bin;" + $env:PATH
             $env:CGO_ENABLED = "1"
+            if ($IsWindows) {
+                $racePaths = @(
+                    "D:\Programs\w64devkit\bin",
+                    "D:\Programs\LLVM\bin"
+                ) | Where-Object { Test-Path $_ }
+                if ($racePaths.Count -gt 0) {
+                    $separator = [string][IO.Path]::PathSeparator
+                    $env:PATH = ($racePaths -join $separator) + $separator + $env:PATH
+                }
+            }
             go test -race ./... -count=1
         }
     }

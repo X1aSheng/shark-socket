@@ -1,6 +1,6 @@
 # Shark-Socket-New Project Plan
 
-Updated: 2026-05-30T11:20:00
+Updated: 2026-05-30T11:35:00
 
 ## Timestamp Format
 
@@ -94,7 +94,8 @@ This plan is based on the current repository state, not aspirational scope.
 | 36 | TCP TLS server configuration | Done | 2026-05-30T10:32:00 | Pending | TCP TLS handshake regression test, app TLS config tests, focused tests |
 | 37 | WebSocket and gRPC-Web Origin allowlist config | Done | 2026-05-30T10:39:00 | Pending | App origin helper tests, env override tests, full validation pending |
 | 38 | HTTP CORS allowlist config | Done | 2026-05-30T10:45:00 | Pending | HTTP CORS integration test, app env override test, full validation pending |
-| 39 | TCP/QUIC mTLS configuration | Done | 2026-05-30T11:20:00 | Pending | App config rejection/env tests, TCP mTLS integration test, full test sweep, vet |
+| 39 | TCP/QUIC mTLS configuration | Done | 2026-05-30T11:20:00 | `f49b126` | App config rejection/env tests, TCP mTLS integration test, full test sweep, vet |
+| 40 | CI validation hardening | Done | 2026-05-30T11:35:00 | This commit | Workflow semantic test, scripted all-mode validation, deploy validation, full test sweep, vet |
 
 ## Active Improvement Plan
 
@@ -111,7 +112,7 @@ This plan is based on the current repository state, not aspirational scope.
 | P2 | Benchmarks and fuzzing | Done | Add protocol benchmarks and fuzz tests for CoAP/TCP framing | TCP framer and CoAP parser fuzz smoke plus benchmark baselines are recorded |
 | P2 | Plugin completeness | Done | Add cluster plugin if production use requires it | Cluster pub/sub plugin now covers cross-node local broadcast behavior |
 | P2 | Gateway restart lifecycle | Done | Allow stop/start reuse of the same Gateway and shared SessionManager | TCP restart regression covers the bug found in review |
-| P2 | GitHub Actions CI | Done | Run scripted validation, deploy checks, and log artifact upload on push/PR | `.github/workflows/ci.yml` runs Windows and Ubuntu matrix jobs and deploy workflow semantics test exists |
+| P2 | GitHub Actions CI | Done | Run scripted validation, race, coverage, deploy checks, and log artifact upload on push/PR | `.github/workflows/ci.yml` runs Windows and Ubuntu matrix jobs, Ubuntu race/coverage jobs, and deploy workflow semantics test exists |
 | P2 | Protocol test methodology | Done | Document protocol-specific test strategy and required edge cases | `docs/PROTOCOL-TEST-GUIDE-20260530.md` |
 | P2 | Protocol edge regressions | Done | Add targeted edge tests across TCP, UDP, HTTP, WebSocket, CoAP, LwM2M, QUIC, and gRPC-Web | Scripted unit count increased to 88 passed |
 

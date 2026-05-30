@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -80,14 +81,30 @@ func runRace(root, logs, ts string, timeout time.Duration) error {
 	jsonFile := filepath.Join(logs, ts+"_race.json")
 	logFile := filepath.Join(logs, ts+"_race.log")
 	args := []string{"test", "-json", "-race", "-v", "-count=1", "-timeout=" + timeout.String(), "./..."}
-	env := append(os.Environ(),
-		"CGO_ENABLED=1",
-		"PATH=D:\\Programs\\w64devkit\\bin;D:\\Programs\\LLVM\\bin;"+os.Getenv("PATH"),
-	)
+	env := raceEnv()
 	fmt.Printf("[%s] %s -> %s\n", time.Now().Format("2006-01-02T15:04:05.000"), strings.Join(append([]string{"go"}, args...), " "), jsonFile)
 	err := captureEnv(root, jsonFile, env, "go", args...)
 	writeReport(root, jsonFile, logFile)
 	return err
+}
+
+func raceEnv() []string {
+	env := append([]string{}, os.Environ()...)
+	env = append(env, "CGO_ENABLED=1")
+	if runtime.GOOS != "windows" {
+		return env
+	}
+	paths := []string{}
+	for _, path := range []string{`D:\Programs\w64devkit\bin`, `D:\Programs\LLVM\bin`} {
+		if info, err := os.Stat(path); err == nil && info.IsDir() {
+			paths = append(paths, path)
+		}
+	}
+	if len(paths) > 0 {
+		paths = append(paths, os.Getenv("PATH"))
+		env = append(env, "PATH="+strings.Join(paths, string(os.PathListSeparator)))
+	}
+	return env
 }
 
 func runCover(root, logs, ts string, timeout time.Duration) error {

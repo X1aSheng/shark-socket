@@ -67,6 +67,8 @@ The race mode expects these compiler toolchains to be available:
 - `D:\Programs\w64devkit\bin`
 - `D:\Programs\LLVM\bin`
 
+On Linux runners, race validation uses the runner C toolchain directly.
+
 Equivalent manual commands:
 
 ```powershell
@@ -114,5 +116,5 @@ Raw JSON and readable reports are written to `logs/`.
 - Test strategy: [docs/TEST-STRATEGY-20260529.md](docs/TEST-STRATEGY-20260529.md)
 - Protocol test guide: [docs/PROTOCOL-TEST-GUIDE-20260530.md](docs/PROTOCOL-TEST-GUIDE-20260530.md)
 - Examples: [docs/EXAMPLES.md](docs/EXAMPLES.md)
-- Latest review: [docs/PROJECT-REVIEW-260530-094810.md](docs/PROJECT-REVIEW-260530-094810.md)
+- Latest review: [docs/PROJECT-REVIEW-260530-115000.md](docs/PROJECT-REVIEW-260530-115000.md)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
