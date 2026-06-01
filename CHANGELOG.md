@@ -1,29 +1,50 @@
 # Changelog
 
-All notable changes for `shark-socket-new` are recorded here.
+All notable changes for `shark-socket` are recorded here.
 
 This project uses semantic versioning. Pre-release tags use the form
 `vMAJOR.MINOR.PATCH-rc.N`.
 
 ## Unreleased
 
-- Added configurable HTTP CORS allowlists through JSON config and environment overrides.
-- Added configurable WebSocket and gRPC-Web Origin allowlists through JSON config and environment overrides.
-- Added TCP TLS server support through API options, JSON config, and `SHARK_TCP_*` environment overrides.
-- Added QUIC runtime configuration with `tls_cert_file`, `tls_key_file`, and `SHARK_QUIC_*` environment overrides.
-- Completed two-node China cloud validation, including cross-host protocol tests, Docker Compose, kind Kubernetes, and Helm deployment; see `docs/PROJECT-REVIEW-260530-094810.md`.
-- Fixed duplicate transport `OnClose` callbacks during WebSocket-style shutdown.
-- Added strict gRPC-Web max message size configuration validation.
-- Expanded GitHub Actions validation to Windows and Ubuntu runners.
-- Made Docker builds proxy-configurable for cloud environments.
-- Added project review report `docs/PROJECT-REVIEW-260530-085109.md` with cloud Docker, K8s/Helm render, and local-to-cloud TCP validation notes.
-- Fixed Gateway restart lifecycle after shutdown.
-- Added GitHub Actions CI for scripted tests, validation, deploy checks, and log artifacts.
-- Added project review report `docs/PROJECT-REVIEW-260530-004244.md`.
-- Added protocol testing guide and expanded edge-case coverage across TCP, UDP, HTTP, WebSocket, CoAP, LwM2M, QUIC, and gRPC-Web.
-- Added JSON/environment configurable runtime entrypoint with health, readiness, metrics, sample config, and container listener defaults.
+### Security (Phase 1)
+- Added TLS certificate hot-reload via file watcher and `GetCertificate` callback.
+- Added DTLS support for UDP transport using pion/dtls v3.
+- Wired CoAP DTLS and UDP DTLS from JSON config and environment overrides.
+- Fixed TCP sentinel error to use `core.ErrWriteQueueFull` instead of raw `errors.New`.
 
-## v0.1.0-rc.1 - 2026-05-30
+### Resilience (Phase 2)
+- Added configurable write deadlines on TCP (30s default), QUIC (30s default), and WebSocket (30s default).
+- Added token-bucket accept rate limiter with atomic max-connections counter (TCP, QUIC, WebSocket).
+- Changed TCP worker pool default full-policy from `PolicyBlock` to `PolicyDrop`.
+- Added write buffer high-water-mark threshold configuration on TCP.
+
+### IoT Protocol Depth (Phase 3)
+- Expanded LwM2M object model with `ResourceType`, `OperationMask`, `ObjectDefinition`, `ResourceDefinition`, and `DeviceInfo`.
+- Added OMA LwM2M TLV binary codec (`[type][id(2B)][length(2B)][value]`) with encode/decode/round-trip support.
+- Added LwM2M object registry with operation validation in `Write()`.
+- Added `discover` command to LwM2M CoAP responder.
+- Added CoAP option delta encoding/decoding per RFC 7252.
+- Added CoAP Observe (RFC 7641) — `ObserverRegistry` with Register/Remove/Notify/RemoveBySession, wired to LwM2M `OnWrite` callback.
+
+### Durable Persistence (Phase 4)
+- Added `StoreV2` interface with error-returning `SaveV2`/`LoadV2`/`DeleteV2`/`List`/`Close`.
+- Added BoltDB-backed `BoltStore` implementing `StoreV2`.
+- Added `MessageLog` — durable append-only message log with auto-incrementing sequence numbers, replay, and prune.
+- Added `PersistenceV2` plugin using `StoreV2` with `OnMessage` hook appending to `MessageLog`.
+- Added `SessionStore` — JSON session snapshot save/load/list/delete for restart recovery.
+
+### Defect Fixes (2026-06-02 Review)
+- Fixed CI branch trigger list to include `shark-socket-new-main`.
+- Replaced CoAP `encodeOptionHeader` panic with proper error return and extended format support.
+- Fixed `parseUint64` to use `strconv.ParseUint` instead of silent character-dropping.
+- Expanded `.gitignore` with IDE files, binaries, and worktree entries.
+- Exported `StoreV2`, `BoltStore`, `MessageLog`, `SessionStore`, `PersistenceV2` in public API.
+- Added test coverage for `SessionStore` (5 tests) and `PersistenceV2` (2 tests).
+- Updated README feature matrix with all Phase 1-4 additions.
+- Added project review report `docs/PROJECT-REVIEW-260602-064500.md`.
+
+## v0.1.0 - 2026-05-30
 
 Release candidate for the redesigned Shark-Socket runtime gateway.
 

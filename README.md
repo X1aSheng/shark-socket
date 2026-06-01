@@ -1,6 +1,6 @@
-# shark-socket-new
+# shark-socket
 
-`shark-socket-new` is a redesigned multi-protocol runtime gateway for
+`shark-socket` is a redesigned multi-protocol runtime gateway for
 Shark-Socket. It keeps the useful ideas from the original project while making
 runtime ownership, plugin execution, and graceful shutdown explicit.
 
@@ -17,22 +17,24 @@ runtime ownership, plugin execution, and graceful shutdown explicit.
 | Area | Status | Notes |
 | --- | --- | --- |
 | Runtime/Gateway | Implemented | Runtime injection, shared SessionManager, plugin chain, staged stop |
-| TCP | Implemented | Length-prefix, line, fixed-size, raw framers, TLS server/client, worker pool |
-| UDP | Implemented | Pseudo-sessions, TTL sweep, plugin path |
+| TCP | Implemented | Length-prefix, line, fixed-size, raw framers, TLS server/client, worker pool, accept rate limiting, write deadlines |
+| UDP | Implemented | Pseudo-sessions, TTL sweep, DTLS support, plugin path |
 | HTTP | Implemented | Mode A router and Mode B session/plugin/handler flow |
-| WebSocket | Implemented | Binary message path, origin check, ping loop |
-| CoAP | Implemented | Message parse/marshal, CON ACK, pseudo-sessions |
-| LwM2M | Implemented | In-memory lifecycle/resource model with CoAP text-command binding |
-| QUIC | Implemented | TLS-required stream transport using quic-go |
+| WebSocket | Implemented | Binary message path, origin check, ping loop, write deadlines, accept rate limiting |
+| CoAP | Implemented | Message parse/marshal, CON ACK, pseudo-sessions, DTLS, option encoding (RFC 7252), Observe (RFC 7641) |
+| LwM2M | Implemented | Object/resource model with operation masks, TLV binary codec, discover/register/update/deregister/write/read, Observer notifications |
+| QUIC | Implemented | TLS-required stream transport using quic-go, write deadlines, accept rate limiting |
 | gRPC-Web | Implemented | Direct HTTP mode, binary framing/trailers, and WebSocket mode |
-| Plugins | Implemented | Blacklist, RateLimit, Heartbeat, Persistence, AutoBan, SlowHandler, Cluster |
-| Infra | Implemented | In-memory cache/store/pubsub/circuitbreaker/observability, Prometheus metrics exporter, OpenTelemetry tracer adapter |
+| Plugins | Implemented | Blacklist, RateLimit, Heartbeat, Persistence V1+V2, AutoBan, SlowHandler, Cluster |
+| Security | Implemented | TLS cert hot-reload via file watcher, mTLS client auth, DTLS for UDP/CoAP |
+| Persistence | Implemented | StoreV2 interface, BoltDB backend, durable message log with sequence numbers, session snapshots |
+| Infra | Implemented | In-memory cache/store/pubsub/circuitbreaker/observability, Prometheus metrics exporter, OpenTelemetry tracer adapter, TLS cert cache |
 | Deploy | Hardened | Docker, docker-compose, K8s, Helm manifests with security, probe, and resource defaults |
 
 ## Run
 
 ```bash
-go run ./cmd/shark-socket-new
+go run ./cmd/shark-socket
 ```
 
 The example starts a TCP echo server on `127.0.0.1:18000`.
@@ -40,7 +42,7 @@ The example starts a TCP echo server on `127.0.0.1:18000`.
 Run with a configuration file:
 
 ```powershell
-go run ./cmd/shark-socket-new -config .\examples\config\multi-protocol.json
+go run ./cmd/shark-socket -config .\examples\config\multi-protocol.json
 ```
 
 Health and readiness endpoints are available when `health_addr` is configured:
