@@ -17,7 +17,7 @@ go test ./... -count=1
 go vet ./...
 go run scripts/run_tests.go -mode all -timeout 5m
 go run scripts/run_benchmarks.go -profile cloud -stage medium -logdir logs/dual-server-bench
-go build -o /tmp/shark-socket-new-dual-server-a3d283f/shark-socket-new ./cmd/shark-socket-new
+go build -o /tmp/shark-socket-dual-server-a3d283f/shark-socket ./cmd/shark-socket
 ```
 
 Server1 `120.76.44.233`:
@@ -52,8 +52,8 @@ Cross-host checks from server1 to server2 passed for:
 
 Remote logs remain available at:
 
-- `/tmp/shark-socket-new-dual-server-a3d283f/logs`
-- `/tmp/shark-socket-new-dual-client-a3d283f/logs`
+- `/tmp/shark-socket-dual-server-a3d283f/logs`
+- `/tmp/shark-socket-dual-client-a3d283f/logs`
 
 Detailed benchmark data and log sizes are recorded in
 `docs/BENCHMARK-RESULT-260530-123500-DUAL-CLOUD.md`.

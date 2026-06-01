@@ -17,7 +17,7 @@ go test ./... -count=1
 go vet ./...
 go run scripts/run_tests.go -mode all -timeout 5m
 go run scripts/run_benchmarks.go -profile cloud -stage medium -logdir logs/server2-bench
-go build -o /tmp/shark-socket-new-server2-68e3123 ./cmd/shark-socket-new
+go build -o /tmp/shark-socket-server2-68e3123 ./cmd/shark-socket
 ```
 
 Results:

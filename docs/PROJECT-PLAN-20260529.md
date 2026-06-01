@@ -12,8 +12,8 @@ Updated: 2026-05-30T11:35:00
 
 This plan is based on the current repository state, not aspirational scope.
 
-- Module: `github.com/X1aSheng/shark-socket-new`, Go `1.26.1`.
-- Current branch: `shark-socket-new-main`.
+- Module: `github.com/X1aSheng/shark-socket`, Go `1.26.1`.
+- Current branch: `shark-socket-main`.
 - Current design reference: `docs/Architecture.md`, including Step 1 through Step 28 validation records.
 - Forward implementation guide: `docs/IMPLEMENTATION-GOALS-20260530.md`.
 - Current test reference: `docs/TEST-STRATEGY-20260529.md`.
@@ -50,7 +50,7 @@ This plan is based on the current repository state, not aspirational scope.
 | Deploy | Hardened | Security contexts, resource requests/limits, probes, static semantic tests, and optional Docker/Kubectl/Helm rendering exist |
 | Examples | Done | Multi-protocol example and examples guide cover TCP, WebSocket, CoAP/LwM2M, metrics, and tracing |
 | Release validation | Done | Unit/integration/race/vet/fuzz/benchmark/deploy validation pass; latest normal validation passed |
-| Release notes | Done | `CHANGELOG.md` defines `v0.1.0-rc.1` release candidate scope, validation, and known scope |
+| Release notes | Done | `CHANGELOG.md` defines `v0.1.0` release candidate scope, validation, and known scope |
 
 ## Completed Milestones
 
@@ -124,8 +124,8 @@ This plan is based on the current repository state, not aspirational scope.
    - Docker build/compose, kind K8s apply, Helm install, and cross-host protocol traffic have been verified on cloud servers.
    - Remaining input: production Kubernetes cluster context/namespace and service exposure method.
 3. Tag release candidate after review.
-   - Recommended tag: `v0.1.0-rc.1`.
-   - Recommended command after the release commit is pushed: `git tag -a v0.1.0-rc.1 -m "shark-socket-new v0.1.0-rc.1"` then `git push origin v0.1.0-rc.1`.
+   - Recommended tag: `v0.1.0`.
+   - Recommended command after the release commit is pushed: `git tag -a v0.1.0 -m "shark-socket v0.1.0"` then `git push origin v0.1.0`.
 
 ## Acceptance Criteria
 

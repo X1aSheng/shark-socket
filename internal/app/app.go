@@ -8,16 +8,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/X1aSheng/shark-socket-new/api"
+	"github.com/X1aSheng/shark-socket/api"
+	"github.com/X1aSheng/shark-socket/internal/infra/tlsutil"
 )
 
 type App struct {
-	Config      Config
-	Gateway     *api.Gateway
-	Metrics     *api.PrometheusMetrics
-	Health      *http.Server
-	MetricsHTTP *http.Server
-	Protocols   []string
+	Config       Config
+	Gateway      *api.Gateway
+	Metrics      *api.PrometheusMetrics
+	Health       *http.Server
+	MetricsHTTP  *http.Server
+	Protocols    []string
+	certCaches   []*tlsutil.CertCache
+	certWatchers []context.CancelFunc
 }
 
 func New(cfg Config) (*App, error) {
@@ -58,6 +61,9 @@ func (a *App) Start(ctx context.Context) error {
 }
 
 func (a *App) Stop(ctx context.Context) error {
+	for _, cancel := range a.certWatchers {
+		cancel()
+	}
 	var firstErr error
 	if err := a.Gateway.Stop(ctx); err != nil && firstErr == nil {
 		firstErr = err
@@ -87,15 +93,25 @@ func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 		case "tcp":
 			opts := []api.TCPOption{api.WithTCPAddr(proto.Addr), api.WithTCPHandler(echoHandler)}
 			if proto.TLSCertFile != "" || proto.TLSKeyFile != "" {
-				tlsConfig, err := loadServerTLSConfig(proto)
+				tlsConfig, cache, err := loadServerTLSConfig(proto)
 				if err != nil {
 					return err
 				}
 				opts = append(opts, api.WithTCPTLS(tlsConfig))
+				a.certCaches = append(a.certCaches, cache)
 			}
 			server = api.NewTCPServer(opts...)
 		case "udp":
-			server = api.NewUDPServer(api.WithUDPAddr(proto.Addr), api.WithUDPHandler(echoHandler))
+			opts := []api.UDPOption{api.WithUDPAddr(proto.Addr), api.WithUDPHandler(echoHandler)}
+			if proto.TLSCertFile != "" || proto.TLSKeyFile != "" {
+				tlsConfig, cache, err := loadServerTLSConfig(proto)
+				if err != nil {
+					return err
+				}
+				opts = append(opts, api.WithUDPDTLS(tlsConfig))
+				a.certCaches = append(a.certCaches, cache)
+			}
+			server = api.NewUDPServer(opts...)
 		case "http":
 			opts := []api.HTTPOption{api.WithHTTPAddr(proto.Addr), api.WithHTTPHandler(echoHandler)}
 			if len(proto.AllowedOrigins) > 0 {
@@ -113,11 +129,25 @@ func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 			}
 			server = api.NewWebSocketServer(opts...)
 		case "coap":
-			if strings.EqualFold(proto.Mode, "lwm2m") {
-				server = api.NewCoAPServer(api.WithCoAPAddr(proto.Addr), api.WithCoAPResponder(api.NewLwM2MCoAPResponder(lwm2mServer)))
-			} else {
-				server = api.NewCoAPServer(api.WithCoAPAddr(proto.Addr), api.WithCoAPHandler(echoHandler))
+			coapOpts := []api.CoAPOption{api.WithCoAPAddr(proto.Addr)}
+			if proto.TLSCertFile != "" || proto.TLSKeyFile != "" {
+				tlsConfig, cache, err := loadServerTLSConfig(proto)
+				if err != nil {
+					return err
+				}
+				coapOpts = append(coapOpts, api.WithCoAPDTLS(tlsConfig))
+				a.certCaches = append(a.certCaches, cache)
 			}
+			if strings.EqualFold(proto.Mode, "lwm2m") {
+				coapOpts = append(coapOpts, api.WithCoAPResponder(api.NewLwM2MCoAPResponder(lwm2mServer)))
+			} else {
+				coapOpts = append(coapOpts, api.WithCoAPHandler(echoHandler))
+			}
+			coapSrv := api.NewCoAPServer(coapOpts...)
+			if strings.EqualFold(proto.Mode, "lwm2m") {
+				lwm2mServer.OnWrite = coapSrv.NotifyObservers
+			}
+			server = coapSrv
 		case "grpc-web":
 			opts := []api.GRPCWebOption{api.WithGRPCWebAddr(proto.Addr), api.WithGRPCWebHandler(echoHandler)}
 			if proto.MaxMessageBytes > 0 {
@@ -131,11 +161,12 @@ func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 			}
 			server = api.NewGRPCWebServer(opts...)
 		case "quic":
-			tlsConfig, err := loadServerTLSConfig(proto, "shark-socket-new-quic")
+			tlsConfig, cache, err := loadServerTLSConfig(proto, "shark-socket-quic")
 			if err != nil {
 				return err
 			}
 			server = api.NewQUICServer(api.WithQUICAddr(proto.Addr), api.WithQUICTLS(tlsConfig), api.WithQUICHandler(echoHandler))
+			a.certCaches = append(a.certCaches, cache)
 		default:
 			return fmt.Errorf("unsupported protocol %q", proto.Name)
 		}
@@ -144,6 +175,20 @@ func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 		}
 		a.Protocols = append(a.Protocols, name)
 	}
+
+	// Start cert file watchers for hot-reload
+	for _, cache := range a.certCaches {
+		c := cache
+		cancel := tlsutil.WatchFiles(context.Background(), 30*time.Second, func() {
+			if err := c.Load(); err != nil {
+				log.Printf("cert reload failed: %v", err)
+			} else {
+				log.Printf("cert reload successful")
+			}
+		}, c.Files()...)
+		a.certWatchers = append(a.certWatchers, cancel)
+	}
+
 	return nil
 }
 
@@ -197,3 +242,4 @@ func serveHTTP(name string, server *http.Server) {
 		log.Printf("%s server failed: %v", name, err)
 	}
 }
+

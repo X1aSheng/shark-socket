@@ -16,7 +16,7 @@ Result:
 - Cross-host client checks from `120.76.44.233` to `47.96.129.59`: PASS
 
 The source tree was uploaded as a temporary archive to
-`/tmp/shark-socket-new-server2-68e3123` so existing server directories were not
+`/tmp/shark-socket-server2-68e3123` so existing server directories were not
 modified.
 
 ## Environment
@@ -29,7 +29,7 @@ modified.
 | CPU | 8 cores |
 | RAM | 16 GB class |
 | Go | `go1.26.3 linux/amd64` |
-| Working directory | `/tmp/shark-socket-new-server2-68e3123` |
+| Working directory | `/tmp/shark-socket-server2-68e3123` |
 | Go proxy | `GOPROXY=https://goproxy.cn,direct` |
 | Sum DB | `GOSUMDB=sum.golang.google.cn` |
 
@@ -45,7 +45,7 @@ go test ./... -count=1
 go vet ./...
 go run scripts/run_tests.go -mode all -timeout 5m
 go run scripts/run_benchmarks.go -profile cloud -stage medium -logdir logs/server2-bench
-go build -o /tmp/shark-socket-new-server2-68e3123 ./cmd/shark-socket-new
+go build -o /tmp/shark-socket-server2-68e3123 ./cmd/shark-socket
 ```
 
 Scripted validation result:
@@ -125,4 +125,4 @@ Cross-host checks from `120.76.44.233` to `47.96.129.59` passed:
 - gRPC-Web direct echo: `grpc-cross-server2`
 
 The temporary server process was stopped after validation. Logs remain under
-`/tmp/shark-socket-new-server2-68e3123`.
+`/tmp/shark-socket-server2-68e3123`.

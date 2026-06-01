@@ -2,8 +2,9 @@ package quic
 
 import (
 	"crypto/tls"
+	"time"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/core"
 )
 
 type Options struct {
@@ -11,7 +12,10 @@ type Options struct {
 	TLSConfig      *tls.Config
 	Handler        core.Handler
 	WriteQueueSize int
+	WriteTimeout   time.Duration
 	MaxMessageSize int
+	MaxConnections int64
+	AcceptRate     float64
 }
 
 type Option func(*Options)
@@ -20,6 +24,7 @@ func defaultOptions() Options {
 	return Options{
 		Addr:           "127.0.0.1:18800",
 		WriteQueueSize: 128,
+		WriteTimeout:   30 * time.Second,
 		MaxMessageSize: 1024 * 1024,
 	}
 }

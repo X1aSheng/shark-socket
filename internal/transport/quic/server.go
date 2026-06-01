@@ -9,8 +9,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
-	"github.com/X1aSheng/shark-socket-new/internal/runtime"
+	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/runtime"
+	"github.com/X1aSheng/shark-socket/internal/transport/shared"
 	quicgo "github.com/quic-go/quic-go"
 )
 
@@ -18,6 +19,7 @@ type Server struct {
 	opts     Options
 	rt       core.Runtime
 	listener *quicgo.Listener
+	acceptor *shared.Acceptor
 	closed   atomic.Bool
 	wg       sync.WaitGroup
 	sessions sync.Map
@@ -45,6 +47,7 @@ func (s *Server) Start(ctx context.Context) error {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
 	s.closed.Store(false)
+	s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate)
 	ln, err := quicgo.ListenAddr(s.opts.Addr, s.opts.TLSConfig, nil)
 	if err != nil {
 		return fmt.Errorf("quic listen %s: %w", s.opts.Addr, err)
@@ -110,9 +113,14 @@ func (s *Server) acceptLoop(ctx context.Context) {
 			}
 			continue
 		}
+		if s.acceptor != nil && !s.acceptor.TryAccept() {
+			conn.CloseWithError(0, "server busy")
+			continue
+		}
 		s.wg.Add(1)
 		go func(conn *quicgo.Conn) {
 			defer s.wg.Done()
+			defer s.acceptor.Done()
 			s.handleConn(conn)
 		}(conn)
 	}
@@ -120,7 +128,7 @@ func (s *Server) acceptLoop(ctx context.Context) {
 
 func (s *Server) handleConn(conn *quicgo.Conn) {
 	id := s.rt.Sessions().NextID()
-	sess := newSession(id, conn, s.opts.WriteQueueSize)
+	sess := newSession(id, conn, s.opts.WriteQueueSize, s.opts.WriteTimeout)
 	s.sessions.Store(id, sess)
 	if err := s.rt.Sessions().Register(sess); err != nil {
 		s.closeSession(context.Background(), id, sess)
@@ -170,7 +178,7 @@ func (s *Server) closeSession(ctx context.Context, id uint64, sess *session) {
 }
 
 func ClientTLSConfig(insecure bool) *tls.Config {
-	return &tls.Config{InsecureSkipVerify: insecure, NextProtos: []string{"shark-socket-new-quic"}}
+	return &tls.Config{InsecureSkipVerify: insecure, NextProtos: []string{"shark-socket-quic"}}
 }
 
 var (

@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/core"
 )
 
 type session struct {

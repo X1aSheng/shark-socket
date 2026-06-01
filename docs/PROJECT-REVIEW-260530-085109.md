@@ -20,11 +20,11 @@ Reviewed at: 2026-05-30T08:51:09
 | `go run scripts/run_tests.go -mode cover -timeout 5m` | Passed locally; package coverage smoke generated |
 | `powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1` | Passed locally |
 | `powershell -ExecutionPolicy Bypass -File .\scripts\validate_deploy.ps1` | Passed static deploy tests locally; Docker/Kubectl/Helm optional checks skipped locally because tools are not installed |
-| Cloud `docker build -t shark-socket-new:latest -f deploy/docker/Dockerfile .` | Initially failed on `proxy.golang.org` timeout; passed after configurable `GOPROXY` fix |
+| Cloud `docker build -t shark-socket:latest -f deploy/docker/Dockerfile .` | Initially failed on `proxy.golang.org` timeout; passed after configurable `GOPROXY` fix |
 | Cloud `docker compose -f deploy/docker/docker-compose.yml up -d --build` | Passed after stopping an older container already bound to port 18000 |
 | Cloud health/readiness | `GET /healthz` returned `ok`; `GET /readyz` returned `ready` |
 | Cloud `kubectl kustomize deploy/k8s` | Rendered 82 lines successfully |
-| Cloud `helm template shark-socket-new deploy/helm/shark-socket-new` | Rendered successfully |
+| Cloud `helm template shark-socket deploy/helm/shark-socket` | Rendered successfully |
 | Cloud `kubectl cluster-info` | Failed because no reachable Kubernetes cluster context is configured on the server |
 | Local TCP client to cloud | Sent length-prefix payload `codex-cloud-echo` to `120.76.44.233:18000`; received `codex-cloud-echo` |
 

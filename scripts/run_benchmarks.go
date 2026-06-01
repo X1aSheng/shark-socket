@@ -1,6 +1,6 @@
 //go:build ignore
 
-// shark-socket-new resource-aware benchmark runner.
+// shark-socket resource-aware benchmark runner.
 //
 // Examples:
 //   go run scripts/run_benchmarks.go -profile local -stage smoke
@@ -57,7 +57,7 @@ func main() {
 	must(os.MkdirAll(logs, 0o755))
 	ts := time.Now().Format("2006-01-02T15-04-05.000")
 
-	fmt.Printf("shark-socket-new benchmark matrix\n")
+	fmt.Printf("shark-socket benchmark matrix\n")
 	fmt.Printf("profile=%s stage=%s root=%s\n", *profile, *stage, root)
 	fmt.Printf("go=%s os=%s arch=%s\n\n", goVersion(root), runtime.GOOS, runtime.GOARCH)
 

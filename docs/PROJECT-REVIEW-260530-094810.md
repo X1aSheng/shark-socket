@@ -32,11 +32,11 @@ Network optimization applied:
 | `go test ./... -count=1` | Passed |
 | `go vet ./...` | Passed |
 | `go run scripts/run_tests.go -mode all -timeout 5m` | Passed |
-| `go build -o /tmp/shark-socket-new ./cmd/shark-socket-new` | Passed |
-| `docker build -t shark-socket-new:cloud -f deploy/docker/Dockerfile .` | Passed with legacy builder compatible flags |
+| `go build -o /tmp/shark-socket ./cmd/shark-socket` | Passed |
+| `docker build -t shark-socket:cloud -f deploy/docker/Dockerfile .` | Passed with legacy builder compatible flags |
 | `docker compose -f deploy/docker/docker-compose.yml config` | Rendered successfully |
 | `kubectl kustomize deploy/k8s` | Rendered successfully |
-| `helm template shark-socket-new deploy/helm/shark-socket-new` | Rendered successfully |
+| `helm template shark-socket deploy/helm/shark-socket` | Rendered successfully |
 
 Scripted test report:
 
@@ -46,7 +46,7 @@ Scripted test report:
 
 ## Binary Multi-Protocol Run
 
-The server node ran `/tmp/shark-socket-new` with a cloud config binding to `0.0.0.0`:
+The server node ran `/tmp/shark-socket` with a cloud config binding to `0.0.0.0`:
 
 | Protocol | Address |
 | --- | --- |
@@ -92,7 +92,7 @@ docker compose -f deploy/docker/docker-compose.yml up -d --build
 
 Results:
 
-- Container `docker-shark-socket-new-1` started.
+- Container `docker-shark-socket-1` started.
 - Ports exposed: `18000`, `18080`, `18081`.
 - `GET /healthz`: `ok`.
 - `GET /readyz`: `ready`.
@@ -104,9 +104,9 @@ Because the server node had no preconfigured cluster, a local kind cluster was c
 
 ```bash
 kind create cluster --name shark-test --wait 180s
-kind load docker-image shark-socket-new:latest --name shark-test
+kind load docker-image shark-socket:latest --name shark-test
 kubectl apply -k deploy/k8s
-kubectl rollout status deployment/shark-socket-new --timeout=180s
+kubectl rollout status deployment/shark-socket --timeout=180s
 ```
 
 Results:
@@ -114,7 +114,7 @@ Results:
 - kind cluster `shark-test` created successfully.
 - Deployment rolled out successfully.
 - Two pods were `Running` and `Ready`.
-- Service `shark-socket-new` was created.
+- Service `shark-socket` was created.
 - Port-forwarded health and readiness checks returned `ok` and `ready`.
 
 ## Helm Validation
@@ -122,16 +122,16 @@ Results:
 After deleting the Kustomize deployment, Helm installation was verified:
 
 ```bash
-helm upgrade --install shark-socket-new deploy/helm/shark-socket-new \
-  --set image.repository=shark-socket-new \
+helm upgrade --install shark-socket deploy/helm/shark-socket \
+  --set image.repository=shark-socket \
   --set image.tag=latest \
   --set image.pullPolicy=IfNotPresent
-kubectl rollout status deployment/shark-socket-new --timeout=180s
+kubectl rollout status deployment/shark-socket --timeout=180s
 ```
 
 Results:
 
-- Helm release `shark-socket-new` installed in namespace `default`.
+- Helm release `shark-socket` installed in namespace `default`.
 - Deployment rolled out successfully.
 - Two pods were `Running` and `Ready`.
 - Port-forwarded health and readiness checks returned `ok` and `ready`.

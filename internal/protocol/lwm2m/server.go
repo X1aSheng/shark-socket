@@ -9,7 +9,9 @@ type Server struct {
 	mu            sync.RWMutex
 	registrations map[string]Registration
 	resources     map[string]map[string]Resource
+	objects       map[int]ObjectDefinition
 	defaultLife   time.Duration
+	OnWrite       func(resourcePath string, value []byte)
 }
 
 type ServerOption func(*Server)
@@ -18,12 +20,47 @@ func NewServer(opts ...ServerOption) *Server {
 	s := &Server{
 		registrations: make(map[string]Registration),
 		resources:     make(map[string]map[string]Resource),
+		objects:       make(map[int]ObjectDefinition),
 		defaultLife:   5 * time.Minute,
 	}
 	for _, opt := range opts {
 		opt(s)
 	}
 	return s
+}
+
+// RegisterObject adds a supported OMA object definition to the server.
+func (s *Server) RegisterObject(def ObjectDefinition) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.objects[def.ID] = def
+}
+
+// SupportedObjects returns all registered object definitions.
+func (s *Server) SupportedObjects() []ObjectDefinition {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make([]ObjectDefinition, 0, len(s.objects))
+	for _, def := range s.objects {
+		result = append(result, def)
+	}
+	return result
+}
+
+// GetResourceDefinition looks up the definition for a resource path.
+func (s *Server) GetResourceDefinition(path ObjectPath) (ResourceDefinition, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	def, ok := s.objects[path.ObjectID]
+	if !ok {
+		return ResourceDefinition{}, false
+	}
+	for _, res := range def.Resources {
+		if res.ID == path.ResourceID {
+			return res, true
+		}
+	}
+	return ResourceDefinition{}, false
 }
 
 func WithDefaultLifetime(lifetime time.Duration) ServerOption {
@@ -90,6 +127,13 @@ func (s *Server) Write(endpoint string, path ObjectPath, value []byte) error {
 	if _, ok := s.registrations[endpoint]; !ok {
 		return ErrRegistrationGone
 	}
+	if def, ok := s.objects[path.ObjectID]; ok {
+		for _, res := range def.Resources {
+			if res.ID == path.ResourceID && !res.Operations.Allows(OpWrite) {
+				return ErrReadOnly
+			}
+		}
+	}
 	if _, ok := s.resources[endpoint]; !ok {
 		s.resources[endpoint] = make(map[string]Resource)
 	}
@@ -97,6 +141,9 @@ func (s *Server) Write(endpoint string, path ObjectPath, value []byte) error {
 		Path:      path,
 		Value:     append([]byte(nil), value...),
 		UpdatedAt: time.Now(),
+	}
+	if s.OnWrite != nil {
+		s.OnWrite(path.String(), value)
 	}
 	return nil
 }

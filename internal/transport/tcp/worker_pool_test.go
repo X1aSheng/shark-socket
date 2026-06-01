@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/core"
 )
 
 func TestWorkerPoolDropPolicy(t *testing.T) {
@@ -28,7 +28,7 @@ func TestWorkerPoolClosesSessionOnHandlerError(t *testing.T) {
 	client, server := net.Pipe()
 	defer client.Close()
 
-	sess := newSession(1, server, RawFramer{}, 1)
+	sess := newSession(1, server, RawFramer{}, 1, 0, 0)
 	pool := newWorkerPool(func(core.Session, core.Message) error {
 		return errors.New("handler failed")
 	}, 1, 1, PolicyBlock)

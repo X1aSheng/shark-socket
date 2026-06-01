@@ -4,7 +4,7 @@ Updated: 2026-05-30T11:20:00
 
 ## Purpose
 
-`shark-socket-new` can now start from a JSON configuration file and environment
+`shark-socket` can now start from a JSON configuration file and environment
 variables. This lets operators change listeners, health checks, metrics, and
 enabled protocols without editing Go source code.
 
@@ -13,20 +13,20 @@ enabled protocols without editing Go source code.
 Default startup remains a TCP echo gateway on `127.0.0.1:18000`:
 
 ```powershell
-go run ./cmd/shark-socket-new
+go run ./cmd/shark-socket
 ```
 
 Start with a JSON configuration file:
 
 ```powershell
-go run ./cmd/shark-socket-new -config .\examples\config\multi-protocol.json
+go run ./cmd/shark-socket -config .\examples\config\multi-protocol.json
 ```
 
 The same path can be supplied through the environment:
 
 ```powershell
 $env:SHARK_CONFIG = '.\examples\config\multi-protocol.json'
-go run ./cmd/shark-socket-new
+go run ./cmd/shark-socket
 ```
 
 ## JSON Schema

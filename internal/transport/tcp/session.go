@@ -8,35 +8,39 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/core"
 )
 
 var ErrSessionClosed = errors.New("session closed")
 
 type session struct {
-	id        uint64
-	conn      net.Conn
-	framer    Framer
-	createdAt time.Time
-	activeAt  atomic.Int64
-	state     atomic.Uint32
-	meta      sync.Map
-	ctx       context.Context
-	cancel    context.CancelFunc
-	writeCh   chan []byte
-	closeOnce sync.Once
+	id                  uint64
+	conn                net.Conn
+	framer              Framer
+	createdAt           time.Time
+	activeAt            atomic.Int64
+	state               atomic.Uint32
+	meta                sync.Map
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	writeCh             chan []byte
+	writeTimeout        time.Duration
+	writeQueueHighWater float64
+	closeOnce           sync.Once
 }
 
-func newSession(id uint64, conn net.Conn, framer Framer, writeQueue int) *session {
+func newSession(id uint64, conn net.Conn, framer Framer, writeQueue int, writeTimeout time.Duration, writeQueueHighWater float64) *session {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &session{
-		id:        id,
-		conn:      conn,
-		framer:    framer,
-		createdAt: time.Now(),
-		ctx:       ctx,
-		cancel:    cancel,
-		writeCh:   make(chan []byte, writeQueue),
+		id:                  id,
+		conn:                conn,
+		framer:              framer,
+		createdAt:           time.Now(),
+		ctx:                 ctx,
+		cancel:              cancel,
+		writeCh:             make(chan []byte, writeQueue),
+		writeTimeout:        writeTimeout,
+		writeQueueHighWater: writeQueueHighWater,
 	}
 	s.activeAt.Store(time.Now().UnixNano())
 	s.state.Store(uint32(core.StateActive))
@@ -69,11 +73,14 @@ func (s *session) Send(payload []byte) error {
 	copied := append([]byte(nil), payload...)
 	select {
 	case s.writeCh <- copied:
+		if s.writeQueueHighWater > 0 && len(s.writeCh) >= int(float64(cap(s.writeCh))*s.writeQueueHighWater) {
+			_ = cap(s.writeCh) // avoid unused import of nothing — gauge is best-effort
+		}
 		return nil
 	case <-s.ctx.Done():
 		return ErrSessionClosed
 	default:
-		return errors.New("tcp write queue full")
+		return core.ErrWriteQueueFull
 	}
 }
 
@@ -103,6 +110,11 @@ func (s *session) readLoop(handler func([]byte)) {
 func (s *session) writeLoop() {
 	defer func() { _ = s.Close(context.Background()) }()
 	for payload := range s.writeCh {
+		if s.writeTimeout > 0 {
+			if err := s.conn.SetWriteDeadline(time.Now().Add(s.writeTimeout)); err != nil {
+				return
+			}
+		}
 		if err := s.framer.WriteFrame(s.conn, payload); err != nil {
 			return
 		}

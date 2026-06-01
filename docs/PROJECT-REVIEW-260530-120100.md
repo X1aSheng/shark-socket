@@ -29,6 +29,6 @@ Results:
 ## Notes
 
 - The test used a temporary archive upload at
-  `/tmp/shark-socket-new-bench-d64a9db`; existing remote project directories
+  `/tmp/shark-socket-bench-d64a9db`; existing remote project directories
   were not modified.
 - `47.96.129.59` was not used because SSH host key verification failed locally.

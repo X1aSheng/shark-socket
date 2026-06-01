@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/core"
 )
 
 type Framer interface {

@@ -1,0 +1,126 @@
+package store
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestBoltStoreCRUD(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.bolt")
+	bs, err := NewBoltStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bs.Close()
+
+	if err := bs.SaveV2("sessions", "abc", []byte("hello")); err != nil {
+		t.Fatal(err)
+	}
+	v, ok, err := bs.LoadV2("sessions", "abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || string(v) != "hello" {
+		t.Fatalf("LoadV2: ok=%v val=%s", ok, string(v))
+	}
+	if err := bs.DeleteV2("sessions", "abc"); err != nil {
+		t.Fatal(err)
+	}
+	_, ok, err = bs.LoadV2("sessions", "abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("expected key to be deleted")
+	}
+}
+
+func TestBoltStoreList(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.bolt")
+	bs, err := NewBoltStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bs.Close()
+
+	bs.SaveV2("data", "k1", nil)
+	bs.SaveV2("data", "k2", nil)
+	bs.SaveV2("data", "k3", nil)
+	keys, err := bs.List("data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 3 {
+		t.Fatalf("want 3 keys, got %d", len(keys))
+	}
+}
+
+func TestBoltStoreClose(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.bolt")
+	bs, err := NewBoltStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bs.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := bs.SaveV2("x", "y", nil); err == nil {
+		t.Fatal("expected error after close")
+	}
+}
+
+func TestBoltStoreReopen(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.bolt")
+	bs, err := NewBoltStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bs.SaveV2("bucket", "key", []byte("persist"))
+	bs.Close()
+
+	bs2, err := NewBoltStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bs2.Close()
+	v, ok, err := bs2.LoadV2("bucket", "key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || string(v) != "persist" {
+		t.Fatalf("reopen: ok=%v val=%s", ok, string(v))
+	}
+}
+
+func TestBoltStoreMissingDirCreated(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "nested", "subdir")
+	path := filepath.Join(dir, "test.bolt")
+	bs, err := NewBoltStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bs.Close()
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("directory not created: %v", err)
+	}
+}
+
+func TestMemoryStoreV2(t *testing.T) {
+	m := NewMemory()
+	if err := m.SaveV2("b", "k", []byte("v")); err != nil {
+		t.Fatal(err)
+	}
+	v, ok, err := m.LoadV2("b", "k")
+	if err != nil || !ok || string(v) != "v" {
+		t.Fatalf("LoadV2: ok=%v val=%s err=%v", ok, string(v), err)
+	}
+	keys, err := m.List("b")
+	if err != nil || len(keys) != 1 {
+		t.Fatalf("List: %v err=%v", keys, err)
+	}
+}

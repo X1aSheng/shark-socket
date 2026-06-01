@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/X1aSheng/shark-socket-new/api"
+	"github.com/X1aSheng/shark-socket/api"
 	"go.opentelemetry.io/otel"
 )
 
@@ -20,7 +20,7 @@ func main() {
 	metrics := api.NewPrometheusMetrics()
 	gateway := api.NewGateway(
 		api.WithMetrics(metrics),
-		api.WithTracer(api.NewOpenTelemetryTracer(otel.Tracer("shark-socket-new/example"))),
+		api.WithTracer(api.NewOpenTelemetryTracer(otel.Tracer("shark-socket/example"))),
 	)
 
 	registerOrExit(gateway, api.NewTCPServer(

@@ -1,5 +1,5 @@
 services:
-  shark-socket-new:
+  shark-socket:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile

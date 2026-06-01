@@ -7,32 +7,34 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/core"
 	quicgo "github.com/quic-go/quic-go"
 )
 
 type session struct {
-	id        uint64
-	conn      *quicgo.Conn
-	createdAt time.Time
-	activeAt  atomic.Int64
-	state     atomic.Uint32
-	meta      sync.Map
-	ctx       context.Context
-	cancel    context.CancelFunc
-	writeCh   chan []byte
-	closeOnce sync.Once
+	id           uint64
+	conn         *quicgo.Conn
+	createdAt    time.Time
+	activeAt     atomic.Int64
+	state        atomic.Uint32
+	meta         sync.Map
+	ctx          context.Context
+	cancel       context.CancelFunc
+	writeCh      chan []byte
+	writeTimeout time.Duration
+	closeOnce    sync.Once
 }
 
-func newSession(id uint64, conn *quicgo.Conn, writeQueue int) *session {
+func newSession(id uint64, conn *quicgo.Conn, writeQueue int, writeTimeout time.Duration) *session {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &session{
-		id:        id,
-		conn:      conn,
-		createdAt: time.Now(),
-		ctx:       ctx,
-		cancel:    cancel,
-		writeCh:   make(chan []byte, writeQueue),
+		id:           id,
+		conn:         conn,
+		createdAt:    time.Now(),
+		ctx:          ctx,
+		cancel:       cancel,
+		writeCh:      make(chan []byte, writeQueue),
+		writeTimeout: writeTimeout,
 	}
 	s.activeAt.Store(time.Now().UnixNano())
 	s.state.Store(uint32(core.StateActive))
@@ -87,6 +89,9 @@ func (s *session) writeLoop() {
 		stream, err := s.conn.OpenStreamSync(s.ctx)
 		if err != nil {
 			return
+		}
+		if s.writeTimeout > 0 {
+			stream.SetWriteDeadline(time.Now().Add(s.writeTimeout))
 		}
 		_, _ = stream.Write(payload)
 		_ = stream.Close()

@@ -14,8 +14,8 @@ func TestDockerfileEntrypoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	if !strings.Contains(text, "go build -o /out/shark-socket-new ./cmd/shark-socket-new") {
-		t.Fatal("Dockerfile does not build cmd/shark-socket-new")
+	if !strings.Contains(text, "go build -o /out/shark-socket ./cmd/shark-socket") {
+		t.Fatal("Dockerfile does not build cmd/shark-socket")
 	}
 	if !strings.Contains(text, "ENTRYPOINT") {
 		t.Fatal("Dockerfile missing ENTRYPOINT")
@@ -28,9 +28,9 @@ func TestK8sAndHelmManifestsExist(t *testing.T) {
 	paths := []string{
 		"../../deploy/k8s/deployment.yaml",
 		"../../deploy/k8s/service.yaml",
-		"../../deploy/helm/shark-socket-new/Chart.yaml",
-		"../../deploy/helm/shark-socket-new/templates/deployment.yaml",
-		"../../deploy/helm/shark-socket-new/templates/service.yaml",
+		"../../deploy/helm/shark-socket/Chart.yaml",
+		"../../deploy/helm/shark-socket/templates/deployment.yaml",
+		"../../deploy/helm/shark-socket/templates/service.yaml",
 	}
 	for _, path := range paths {
 		if _, err := os.Stat(path); err != nil {
@@ -45,8 +45,8 @@ func TestK8sManifestSemantics(t *testing.T) {
 	kustomization := readFile(t, "../../deploy/k8s/kustomization.yaml")
 
 	assertContains(t, deployment, "kind: Deployment")
-	assertContains(t, deployment, "name: shark-socket-new")
-	assertContains(t, deployment, "app: shark-socket-new")
+	assertContains(t, deployment, "name: shark-socket")
+	assertContains(t, deployment, "app: shark-socket")
 	assertContains(t, deployment, "containerPort: 18000")
 	assertContains(t, deployment, "containerPort: 18080")
 	assertContains(t, deployment, "containerPort: 18081")
@@ -62,7 +62,7 @@ func TestK8sManifestSemantics(t *testing.T) {
 	assertContains(t, deployment, "resources:")
 
 	assertContains(t, service, "kind: Service")
-	assertContains(t, service, "app: shark-socket-new")
+	assertContains(t, service, "app: shark-socket")
 	assertContains(t, service, "port: 18000")
 	assertContains(t, service, "targetPort: 18000")
 	assertContains(t, service, "port: 18080")
@@ -73,14 +73,14 @@ func TestK8sManifestSemantics(t *testing.T) {
 }
 
 func TestHelmChartSemantics(t *testing.T) {
-	chart := readFile(t, "../../deploy/helm/shark-socket-new/Chart.yaml")
-	values := readFile(t, "../../deploy/helm/shark-socket-new/values.yaml")
-	deployment := readFile(t, "../../deploy/helm/shark-socket-new/templates/deployment.yaml")
-	service := readFile(t, "../../deploy/helm/shark-socket-new/templates/service.yaml")
+	chart := readFile(t, "../../deploy/helm/shark-socket/Chart.yaml")
+	values := readFile(t, "../../deploy/helm/shark-socket/values.yaml")
+	deployment := readFile(t, "../../deploy/helm/shark-socket/templates/deployment.yaml")
+	service := readFile(t, "../../deploy/helm/shark-socket/templates/service.yaml")
 
 	assertContains(t, chart, "apiVersion: v2")
-	assertContains(t, chart, "name: shark-socket-new")
-	assertContains(t, values, "repository: shark-socket-new")
+	assertContains(t, chart, "name: shark-socket")
+	assertContains(t, values, "repository: shark-socket")
 	assertContains(t, values, "port: 18000")
 	assertContains(t, values, "metricsPort: 18080")
 	assertContains(t, values, "healthPort: 18081")
@@ -114,7 +114,7 @@ func TestDeployToolRenderingWhenAvailable(t *testing.T) {
 	}
 
 	if _, err := exec.LookPath("helm"); err == nil {
-		out := runCommand(t, root, "helm", "template", "shark-socket-new", "deploy/helm/shark-socket-new")
+		out := runCommand(t, root, "helm", "template", "shark-socket", "deploy/helm/shark-socket")
 		assertContains(t, out, "kind: Deployment")
 		assertContains(t, out, "kind: Service")
 	} else {
@@ -123,7 +123,7 @@ func TestDeployToolRenderingWhenAvailable(t *testing.T) {
 
 	if _, err := exec.LookPath("docker"); err == nil {
 		out := runCommand(t, root, "docker", "compose", "-f", "deploy/docker/docker-compose.yml", "config")
-		assertContains(t, out, "shark-socket-new")
+		assertContains(t, out, "shark-socket")
 		assertContains(t, out, "GOPROXY")
 	} else {
 		t.Log("docker not found; skipping docker compose config validation")

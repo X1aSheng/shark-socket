@@ -1,0 +1,110 @@
+package mqtt
+
+import (
+	"context"
+	"fmt"
+	"sync"
+
+	paho "github.com/eclipse/paho.mqtt.golang"
+)
+
+type Adapter struct {
+	opts   Options
+	client paho.Client
+	mu     sync.Mutex
+}
+
+func NewAdapter(opts ...Option) (*Adapter, error) {
+	cfg := defaultOptions()
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	if cfg.BrokerURL == "" {
+		return nil, fmt.Errorf("mqtt broker URL is required")
+	}
+	return &Adapter{opts: cfg}, nil
+}
+
+func (a *Adapter) Start(ctx context.Context) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.client != nil && a.client.IsConnected() {
+		return nil
+	}
+
+	handler := a.opts.Handler
+	client := paho.NewClient(pahoOptions(a.opts))
+	token := client.Connect()
+	if !token.WaitTimeout(a.opts.ConnectTimeout) {
+		return fmt.Errorf("mqtt connect timeout")
+	}
+	if err := token.Error(); err != nil {
+		return fmt.Errorf("mqtt connect: %w", err)
+	}
+
+	if a.opts.Topic != "" && handler != nil {
+		h := handler
+		token := client.Subscribe(a.opts.Topic, a.opts.QoS, func(_ paho.Client, msg paho.Message) {
+			h(msg.Topic(), msg.Payload())
+		})
+		if !token.WaitTimeout(a.opts.ConnectTimeout) {
+			client.Disconnect(100)
+			return fmt.Errorf("mqtt subscribe timeout")
+		}
+		if err := token.Error(); err != nil {
+			client.Disconnect(100)
+			return fmt.Errorf("mqtt subscribe: %w", err)
+		}
+	}
+
+	a.client = client
+	return nil
+}
+
+func (a *Adapter) Stop(ctx context.Context) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.client == nil {
+		return nil
+	}
+	a.client.Disconnect(250)
+	a.client = nil
+	return nil
+}
+
+func (a *Adapter) Publish(topic string, qos byte, payload []byte) error {
+	a.mu.Lock()
+	client := a.client
+	a.mu.Unlock()
+	if client == nil || !client.IsConnected() {
+		return fmt.Errorf("mqtt not connected")
+	}
+	token := client.Publish(topic, qos, false, payload)
+	if !token.WaitTimeout(a.opts.ConnectTimeout) {
+		return fmt.Errorf("mqtt publish timeout")
+	}
+	return token.Error()
+}
+
+func (a *Adapter) Subscribe(topic string, qos byte, handler MessageHandler) error {
+	a.mu.Lock()
+	client := a.client
+	a.mu.Unlock()
+	if client == nil || !client.IsConnected() {
+		return fmt.Errorf("mqtt not connected")
+	}
+	token := client.Subscribe(topic, qos, func(_ paho.Client, msg paho.Message) {
+		handler(msg.Topic(), msg.Payload())
+	})
+	if !token.WaitTimeout(a.opts.ConnectTimeout) {
+		return fmt.Errorf("mqtt subscribe timeout")
+	}
+	return token.Error()
+}
+
+func (a *Adapter) Connected() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.client != nil && a.client.IsConnected()
+}

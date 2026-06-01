@@ -5,7 +5,7 @@ Updated: 2026-05-30T08:51:09
 ## Basis
 
 This strategy is based on the mature `shark-socket` test layout and adapted to
-the redesigned `shark-socket-new` module.
+the redesigned `shark-socket` module.
 
 Borrowed practices:
 

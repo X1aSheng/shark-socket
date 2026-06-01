@@ -14,7 +14,7 @@ Result:
 - Cloud selected medium benchmark: PASS
 
 The run used the new `scripts/run_benchmarks.go` cloud profile. The source tree
-was uploaded to `/tmp/shark-socket-new-bench-d64a9db` as a temporary archive so
+was uploaded to `/tmp/shark-socket-bench-d64a9db` as a temporary archive so
 existing server working directories were not modified.
 
 ## Cloud Environment
@@ -25,7 +25,7 @@ existing server working directories were not modified.
 | OS | Ubuntu server |
 | CPU | 2 vCPU class, `Intel(R) Xeon(R) Platinum` |
 | Go | `go1.26.3 linux/amd64` |
-| Working directory | `/tmp/shark-socket-new-bench-d64a9db` |
+| Working directory | `/tmp/shark-socket-bench-d64a9db` |
 | Go proxy | `GOPROXY=https://goproxy.cn,direct` |
 | Sum DB | `GOSUMDB=sum.golang.google.cn` |
 
@@ -91,4 +91,4 @@ gate passed the 1024 MB and load1 <= 2.0 thresholds.
 - Server `47.96.129.59` was not used in this run because SSH host key
   verification failed from the current local environment.
 - Temporary benchmark logs remain on the cloud host under
-  `/tmp/shark-socket-new-bench-d64a9db/logs/cloud-bench`.
+  `/tmp/shark-socket-bench-d64a9db/logs/cloud-bench`.

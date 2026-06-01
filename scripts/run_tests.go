@@ -1,6 +1,6 @@
 //go:build ignore
 
-// shark-socket-new scripted test runner.
+// shark-socket scripted test runner.
 //
 // Examples:
 //   go run scripts/run_tests.go
@@ -45,7 +45,7 @@ func main() {
 	case "cover":
 		must(runCover(root, logs, ts, *timeout))
 	case "all":
-		printBanner("shark-socket-new test suite")
+		printBanner("shark-socket test suite")
 		must(runGoTest(root, logs, ts, "unit", *timeout, "./api/...", "./cmd/...", "./internal/..."))
 		must(runGoTest(root, logs, ts, "integration", *timeout, "./tests/..."))
 		must(runBenchmark(root, logs, ts, *timeout))

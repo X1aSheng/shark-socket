@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/core"
 )
 
 type fakeServer struct {

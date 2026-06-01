@@ -54,7 +54,7 @@ try {
     }
 
     Run-Optional "helm template" "helm" {
-        helm template shark-socket-new deploy/helm/shark-socket-new
+        helm template shark-socket deploy/helm/shark-socket
     }
 
     Write-Host "[$(Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fff")] LOG   $transcript"

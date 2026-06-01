@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/X1aSheng/shark-socket-new/internal/app"
+	"github.com/X1aSheng/shark-socket/internal/app"
 )
 
 func main() {
@@ -30,7 +30,7 @@ func main() {
 	if err := runtimeApp.Start(ctx); err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("shark-socket-new protocols=%v health=%s metrics=%s", runtimeApp.Protocols, cfg.HealthAddr, cfg.MetricsAddr)
+	log.Printf("shark-socket protocols=%v health=%s metrics=%s", runtimeApp.Protocols, cfg.HealthAddr, cfg.MetricsAddr)
 
 	<-ctx.Done()
 	timeout, err := cfg.ShutdownDuration()

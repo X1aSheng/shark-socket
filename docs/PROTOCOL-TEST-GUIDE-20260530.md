@@ -5,7 +5,7 @@ Updated: 2026-05-30T01:05:00
 ## Purpose
 
 This guide defines repeatable testing methods for each communication protocol
-implemented by `shark-socket-new`. It complements package tests and scripted
+implemented by `shark-socket`. It complements package tests and scripted
 validation logs by naming the behavior that must be protected before release.
 
 ## Common Test Model
@@ -231,4 +231,4 @@ When Docker, Kubectl, and Helm are available, deploy validation must include:
 
 - `docker compose -f deploy/docker/docker-compose.yml config`
 - `kubectl kustomize deploy/k8s`
-- `helm template shark-socket-new deploy/helm/shark-socket-new`
+- `helm template shark-socket deploy/helm/shark-socket`

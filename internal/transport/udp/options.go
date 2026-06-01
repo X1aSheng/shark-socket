@@ -1,9 +1,11 @@
 package udp
 
 import (
+	"crypto/tls"
 	"time"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/pion/dtls/v3"
 )
 
 type Options struct {
@@ -12,6 +14,7 @@ type Options struct {
 	SessionTTL    time.Duration
 	SweepInterval time.Duration
 	MaxDatagram   int
+	TLSConfig     *tls.Config
 }
 
 type Option func(*Options)
@@ -50,5 +53,19 @@ func WithSweepInterval(interval time.Duration) Option {
 		if interval > 0 {
 			o.SweepInterval = interval
 		}
+	}
+}
+
+func WithDTLS(cfg *tls.Config) Option {
+	return func(o *Options) {
+		o.TLSConfig = cfg
+	}
+}
+
+// dtlsConfig converts a *tls.Config to *dtls.Config.
+func dtlsConfig(tlsCfg *tls.Config) *dtls.Config {
+	return &dtls.Config{
+		Certificates:       tlsCfg.Certificates,
+		InsecureSkipVerify: tlsCfg.InsecureSkipVerify,
 	}
 }

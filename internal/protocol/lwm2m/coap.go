@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/core"
 )
 
 var ErrInvalidCoAPPayload = errors.New("invalid lwm2m coap payload")
@@ -42,6 +42,8 @@ func (s *Server) HandleCoAPPayload(payload []byte) ([]byte, error) {
 		return s.handleWrite(fields)
 	case "read":
 		return s.handleRead(fields)
+	case "discover":
+		return s.handleDiscover(fields)
 	default:
 		return nil, fmt.Errorf("%w: operation %q", ErrInvalidCoAPPayload, fields[0])
 	}
@@ -118,6 +120,31 @@ func (s *Server) handleRead(fields []string) ([]byte, error) {
 		return nil, ErrRegistrationGone
 	}
 	return append([]byte(nil), resource.Value...), nil
+}
+
+func (s *Server) handleDiscover(_ []string) ([]byte, error) {
+	objects := s.SupportedObjects()
+	if len(objects) == 0 {
+		return []byte("no objects registered"), nil
+	}
+	var lines []string
+	for _, obj := range objects {
+		lines = append(lines, fmt.Sprintf("%d/%s/%s", obj.ID, obj.Name, obj.Version))
+		for _, res := range obj.Resources {
+			ops := ""
+			if res.Operations.Allows(OpRead) {
+				ops += "R"
+			}
+			if res.Operations.Allows(OpWrite) {
+				ops += "W"
+			}
+			if res.Operations.Allows(OpExecute) {
+				ops += "E"
+			}
+			lines = append(lines, fmt.Sprintf("  /%d/%d/%d %s %s", obj.ID, 0, res.ID, res.Name, ops))
+		}
+	}
+	return []byte(strings.Join(lines, "\n")), nil
 }
 
 func parseLifetime(raw string) (time.Duration, error) {

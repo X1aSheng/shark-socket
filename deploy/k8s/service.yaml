@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: shark-socket-new
+  name: shark-socket
 spec:
   selector:
-    app: shark-socket-new
+    app: shark-socket
   ports:
     - name: tcp
       port: 18000

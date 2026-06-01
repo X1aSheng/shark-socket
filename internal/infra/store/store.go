@@ -2,10 +2,21 @@ package store
 
 import "sync"
 
+// Store is the legacy interface for backward compatibility.
 type Store interface {
 	Save(bucket, key string, value []byte)
 	Load(bucket, key string) ([]byte, bool)
 	Delete(bucket, key string)
+}
+
+// StoreV2 is the durable store interface with error returns and lifecycle.
+type StoreV2 interface {
+	Store
+	SaveV2(bucket, key string, value []byte) error
+	LoadV2(bucket, key string) ([]byte, bool, error)
+	DeleteV2(bucket, key string) error
+	List(bucket string) ([]string, error)
+	Close() error
 }
 
 type Memory struct {
@@ -45,4 +56,34 @@ func (m *Memory) Delete(bucket, key string) {
 	m.mu.Unlock()
 }
 
-var _ Store = (*Memory)(nil)
+func (m *Memory) SaveV2(bucket, key string, value []byte) error {
+	m.Save(bucket, key, value)
+	return nil
+}
+
+func (m *Memory) LoadV2(bucket, key string) ([]byte, bool, error) {
+	v, ok := m.Load(bucket, key)
+	return v, ok, nil
+}
+
+func (m *Memory) DeleteV2(bucket, key string) error {
+	m.Delete(bucket, key)
+	return nil
+}
+
+func (m *Memory) List(bucket string) ([]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	keys := make([]string, 0, len(m.buckets[bucket]))
+	for k := range m.buckets[bucket] {
+		keys = append(keys, k)
+	}
+	return keys, nil
+}
+
+func (m *Memory) Close() error { return nil }
+
+var (
+	_ Store  = (*Memory)(nil)
+	_ StoreV2 = (*Memory)(nil)
+)

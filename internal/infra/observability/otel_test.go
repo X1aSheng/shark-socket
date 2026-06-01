@@ -14,7 +14,7 @@ import (
 func TestOpenTelemetryTracerRecordsSpanAttributesAndErrors(t *testing.T) {
 	recorder := tracetest.NewSpanRecorder()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
-	tracer := NewOpenTelemetryTracer(provider.Tracer("shark-socket-new-test"))
+	tracer := NewOpenTelemetryTracer(provider.Tracer("shark-socket-test"))
 
 	_, span := tracer.Start(context.Background(), "runtime.message", "protocol", "tcp", "session_id", int64(7), "accepted", true)
 	span.RecordError(errors.New("boom"))

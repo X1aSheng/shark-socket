@@ -1,7 +1,7 @@
 replicaCount: 2
 
 image:
-  repository: shark-socket-new
+  repository: shark-socket
   tag: latest
   pullPolicy: IfNotPresent
 

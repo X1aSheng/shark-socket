@@ -19,8 +19,8 @@ Result:
 
 | Role | Host | CPU/RAM | Go | Working Directory |
 | --- | --- | --- | --- | --- |
-| Server | `47.96.129.59` | 8 cores, 16 GB class | `go1.26.3 linux/amd64` | `/tmp/shark-socket-new-dual-server-a3d283f` |
-| Client | `120.76.44.233` | 2 cores, 2 GB class | `go1.26.3 linux/amd64` | `/tmp/shark-socket-new-dual-client-a3d283f` |
+| Server | `47.96.129.59` | 8 cores, 16 GB class | `go1.26.3 linux/amd64` | `/tmp/shark-socket-dual-server-a3d283f` |
+| Client | `120.76.44.233` | 2 cores, 2 GB class | `go1.26.3 linux/amd64` | `/tmp/shark-socket-dual-client-a3d283f` |
 
 Network/build settings:
 
@@ -43,7 +43,7 @@ go test ./... -count=1
 go vet ./...
 go run scripts/run_tests.go -mode all -timeout 5m
 go run scripts/run_benchmarks.go -profile cloud -stage medium -logdir logs/dual-server-bench
-go build -o /tmp/shark-socket-new-dual-server-a3d283f/shark-socket-new ./cmd/shark-socket-new
+go build -o /tmp/shark-socket-dual-server-a3d283f/shark-socket ./cmd/shark-socket
 ```
 
 Results:
@@ -160,7 +160,7 @@ temporary server process was stopped after cross-host validation.
 
 Server2 logs:
 
-- Directory: `/tmp/shark-socket-new-dual-server-a3d283f/logs`
+- Directory: `/tmp/shark-socket-dual-server-a3d283f/logs`
 - Scripted unit JSON: `106279` bytes
 - Scripted unit report: `9730` bytes
 - Scripted integration JSON: `6112` bytes
@@ -172,7 +172,7 @@ Server2 logs:
 
 Server1 logs:
 
-- Directory: `/tmp/shark-socket-new-dual-client-a3d283f/logs`
+- Directory: `/tmp/shark-socket-dual-client-a3d283f/logs`
 - Cross-host client log: `logs/dual-cross-client.log`, `192` bytes
 - Resource-gated benchmark logs: five files under `logs/dual-client-bench`
 

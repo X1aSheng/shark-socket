@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
-	"github.com/X1aSheng/shark-socket-new/internal/runtime"
+	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/runtime"
 	quicgo "github.com/quic-go/quic-go"
 )
 
@@ -165,5 +165,5 @@ func testTLSConfig(t *testing.T) *tls.Config {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"shark-socket-new-quic"}}
+	return &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"shark-socket-quic"}}
 }

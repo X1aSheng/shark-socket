@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/X1aSheng/shark-socket-new/internal/runtime"
-	"github.com/X1aSheng/shark-socket-new/internal/transport/coap"
+	"github.com/X1aSheng/shark-socket/internal/runtime"
+	"github.com/X1aSheng/shark-socket/internal/transport/coap"
 )
 
 func TestCoAPResponderLifecycle(t *testing.T) {

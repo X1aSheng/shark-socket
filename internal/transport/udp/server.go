@@ -8,14 +8,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
-	"github.com/X1aSheng/shark-socket-new/internal/runtime"
+	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/runtime"
+	"github.com/pion/dtls/v3"
 )
 
 type Server struct {
 	opts     Options
 	rt       core.Runtime
 	conn     *net.UDPConn
+	dtlsLn   net.Listener
 	closed   atomic.Bool
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
@@ -45,16 +47,29 @@ func (s *Server) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("udp resolve %s: %w", s.opts.Addr, err)
 	}
-	conn, err := net.ListenUDP("udp", addr)
-	if err != nil {
-		return fmt.Errorf("udp listen %s: %w", s.opts.Addr, err)
-	}
-	s.conn = conn
 	runCtx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
-	s.wg.Add(2)
-	go s.readLoop(runCtx)
-	go s.sweepLoop(runCtx)
+
+	if s.opts.TLSConfig != nil {
+		ln, err := dtls.Listen("udp", addr, dtlsConfig(s.opts.TLSConfig))
+		if err != nil {
+			cancel()
+			return fmt.Errorf("udp dtls listen %s: %w", s.opts.Addr, err)
+		}
+		s.dtlsLn = ln
+		s.wg.Add(1)
+		go s.dtlsAcceptLoop(runCtx)
+	} else {
+		conn, err := net.ListenUDP("udp", addr)
+		if err != nil {
+			cancel()
+			return fmt.Errorf("udp listen %s: %w", s.opts.Addr, err)
+		}
+		s.conn = conn
+		s.wg.Add(2)
+		go s.readLoop(runCtx)
+		go s.sweepLoop(runCtx)
+	}
 	return nil
 }
 
@@ -70,6 +85,9 @@ func (s *Server) StopAccept(context.Context) error {
 	}
 	if s.cancel != nil {
 		s.cancel()
+	}
+	if s.dtlsLn != nil {
+		return s.dtlsLn.Close()
 	}
 	if s.conn != nil {
 		return s.conn.Close()
@@ -93,13 +111,16 @@ func (s *Server) Drain(ctx context.Context) error {
 
 func (s *Server) CloseSessions(ctx context.Context) error {
 	s.sessions.Range(func(key, value any) bool {
-		s.closeSession(ctx, key.(string), value.(*session))
+		s.closeSession(ctx, key, value.(*session))
 		return true
 	})
 	return nil
 }
 
 func (s *Server) Addr() net.Addr {
+	if s.dtlsLn != nil {
+		return s.dtlsLn.Addr()
+	}
 	if s.conn == nil {
 		return nil
 	}
@@ -113,6 +134,71 @@ func (s *Server) SessionCount() int {
 		return true
 	})
 	return count
+}
+
+func (s *Server) dtlsAcceptLoop(ctx context.Context) {
+	defer s.wg.Done()
+	for {
+		conn, err := s.dtlsLn.Accept()
+		if err != nil {
+			if s.closed.Load() || ctx.Err() != nil {
+				return
+			}
+			continue
+		}
+		s.wg.Add(1)
+		go s.handleDTLSConn(ctx, conn)
+	}
+}
+
+func (s *Server) handleDTLSConn(ctx context.Context, conn net.Conn) {
+	defer s.wg.Done()
+
+	id := s.rt.Sessions().NextID()
+	sess := newDTLSSession(id, conn)
+	s.sessions.Store(id, sess)
+	defer func() {
+		s.sessions.Delete(id)
+		s.rt.Sessions().Unregister(id)
+		s.rt.Plugins().OnClose(sess)
+	}()
+
+	if err := s.rt.Sessions().Register(sess); err != nil {
+		_ = sess.Close(context.Background())
+		return
+	}
+	if err := s.rt.Plugins().OnAccept(sess); err != nil {
+		_ = sess.Close(context.Background())
+		return
+	}
+
+	buf := make([]byte, s.opts.MaxDatagram)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		n, err := conn.Read(buf)
+		if err != nil {
+			return
+		}
+		sess.touch()
+		payload := append([]byte(nil), buf[:n]...)
+		payload, err = s.rt.Plugins().OnMessage(sess, payload)
+		if err != nil {
+			if err != core.ErrPluginDrop {
+				_ = sess.Close(context.Background())
+			}
+			continue
+		}
+		if s.opts.Handler != nil {
+			msg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolUDP, Payload: payload}
+			if err := s.opts.Handler(sess, msg); err != nil {
+				_ = sess.Close(context.Background())
+			}
+		}
+	}
 }
 
 func (s *Server) readLoop(ctx context.Context) {
@@ -159,7 +245,7 @@ func (s *Server) sweepLoop(ctx context.Context) {
 			s.sessions.Range(func(key, value any) bool {
 				sess := value.(*session)
 				if now.Sub(sess.LastActiveAt()) > s.opts.SessionTTL {
-					s.closeSession(context.Background(), key.(string), sess)
+					s.closeSession(context.Background(), key, sess)
 				}
 				return true
 			})
@@ -193,8 +279,10 @@ func (s *Server) getOrCreateSession(addr *net.UDPAddr) *session {
 	return sess
 }
 
-func (s *Server) closeSession(ctx context.Context, key string, sess *session) {
-	s.sessions.Delete(key)
+func (s *Server) closeSession(ctx context.Context, key any, sess *session) {
+	if _, loaded := s.sessions.LoadAndDelete(key); !loaded {
+		return
+	}
 	s.rt.Sessions().Unregister(sess.ID())
 	_ = sess.Close(ctx)
 	s.rt.Plugins().OnClose(sess)

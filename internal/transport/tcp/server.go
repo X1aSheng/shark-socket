@@ -9,14 +9,16 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
-	"github.com/X1aSheng/shark-socket-new/internal/runtime"
+	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/runtime"
+	"github.com/X1aSheng/shark-socket/internal/transport/shared"
 )
 
 type Server struct {
 	opts     Options
 	rt       core.Runtime
 	listener net.Listener
+	acceptor *shared.Acceptor
 	closed   atomic.Bool
 	acceptWG sync.WaitGroup
 	connWG   sync.WaitGroup
@@ -43,6 +45,7 @@ func (s *Server) Start(ctx context.Context) error {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
 	s.closed.Store(false)
+	s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate)
 	s.pool = newWorkerPool(s.opts.Handler, s.opts.WorkerCount, s.opts.TaskQueueSize, s.opts.FullPolicy)
 	s.pool.start(s.opts.WorkerCount)
 	ln, err := net.Listen("tcp", s.opts.Addr)
@@ -135,9 +138,14 @@ func (s *Server) acceptLoop(ctx context.Context) {
 			slog.Warn("tcp accept failed", "error", err)
 			continue
 		}
+		if s.acceptor != nil && !s.acceptor.TryAccept() {
+			conn.Close()
+			continue
+		}
 		s.connWG.Add(1)
 		go func() {
 			defer s.connWG.Done()
+			defer s.acceptor.Done()
 			s.handleConn(conn)
 		}()
 	}
@@ -145,7 +153,7 @@ func (s *Server) acceptLoop(ctx context.Context) {
 
 func (s *Server) handleConn(conn net.Conn) {
 	id := s.rt.Sessions().NextID()
-	sess := newSession(id, conn, s.opts.Framer, s.opts.WriteQueue)
+	sess := newSession(id, conn, s.opts.Framer, s.opts.WriteQueue, s.opts.WriteTimeout, s.opts.WriteQueueHighWater)
 	s.sessions.Store(id, sess)
 	defer func() {
 		s.sessions.Delete(id)

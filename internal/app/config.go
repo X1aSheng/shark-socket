@@ -2,13 +2,14 @@ package app
 
 import (
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/X1aSheng/shark-socket/internal/infra/tlsutil"
 )
 
 type Config struct {
@@ -104,13 +105,13 @@ func (c Config) Validate() error {
 		if (proto.TLSCertFile == "") != (proto.TLSKeyFile == "") {
 			return fmt.Errorf("protocol %q tls_cert_file and tls_key_file must be supplied together", name)
 		}
-		if proto.TLSCertFile != "" && name != "tcp" && name != "quic" {
+		if proto.TLSCertFile != "" && name != "tcp" && name != "quic" && name != "coap" && name != "udp" {
 			return fmt.Errorf("protocol %q does not support tls_cert_file", name)
 		}
-		if proto.TLSClientCAFile != "" && name != "tcp" && name != "quic" {
+		if proto.TLSClientCAFile != "" && name != "tcp" && name != "quic" && name != "coap" && name != "udp" {
 			return fmt.Errorf("protocol %q does not support tls_client_ca_file", name)
 		}
-		if proto.TLSClientAuth != "" && name != "tcp" && name != "quic" {
+		if proto.TLSClientAuth != "" && name != "tcp" && name != "quic" && name != "coap" && name != "udp" {
 			return fmt.Errorf("protocol %q does not support tls_client_auth", name)
 		}
 		if proto.TLSClientCAFile != "" && proto.TLSCertFile == "" {
@@ -283,33 +284,30 @@ func mergeProtocol(base, override ProtocolConfig) ProtocolConfig {
 	return base
 }
 
-func loadServerTLSConfig(proto ProtocolConfig, nextProtos ...string) (*tls.Config, error) {
-	certFile := proto.TLSCertFile
-	keyFile := proto.TLSKeyFile
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		return nil, fmt.Errorf("load tls certificate: %w", err)
+func loadServerTLSConfig(proto ProtocolConfig, nextProtos ...string) (*tls.Config, *tlsutil.CertCache, error) {
+	cache := tlsutil.NewCertCache(proto.TLSCertFile, proto.TLSKeyFile)
+	if proto.TLSClientCAFile != "" {
+		cache.SetClientCA(proto.TLSClientCAFile)
 	}
-	cfg := &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: nextProtos}
+	if err := cache.Load(); err != nil {
+		return nil, nil, fmt.Errorf("load tls certificate: %w", err)
+	}
+	cfg := &tls.Config{
+		GetCertificate: cache.GetCertificate,
+		NextProtos:     nextProtos,
+		MinVersion:     tls.VersionTLS12,
+	}
 	if proto.TLSClientAuth != "" {
 		clientAuth, err := parseTLSClientAuth(proto.TLSClientAuth)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		cfg.ClientAuth = clientAuth
 	}
-	if proto.TLSClientCAFile != "" {
-		data, err := os.ReadFile(proto.TLSClientCAFile)
-		if err != nil {
-			return nil, fmt.Errorf("read tls client ca file: %w", err)
-		}
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(data) {
-			return nil, fmt.Errorf("parse tls client ca file %q: no certificates found", proto.TLSClientCAFile)
-		}
+	if pool := cache.GetClientCAPool(); pool != nil {
 		cfg.ClientCAs = pool
 	}
-	return cfg, nil
+	return cfg, cache, nil
 }
 
 func parseTLSClientAuth(value string) (tls.ClientAuthType, error) {

@@ -7,13 +7,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/core"
 )
 
 type session struct {
 	id        uint64
+	dtlsConn  net.Conn
 	conn      *net.UDPConn
-	remote    *net.UDPAddr
+	remote    net.Addr
 	local     net.Addr
 	createdAt time.Time
 	activeAt  atomic.Int64
@@ -30,6 +31,22 @@ func newSession(id uint64, conn *net.UDPConn, remote *net.UDPAddr) *session {
 		id:        id,
 		conn:      conn,
 		remote:    remote,
+		local:     conn.LocalAddr(),
+		createdAt: time.Now(),
+		ctx:       ctx,
+		cancel:    cancel,
+	}
+	s.activeAt.Store(time.Now().UnixNano())
+	s.state.Store(uint32(core.StateActive))
+	return s
+}
+
+func newDTLSSession(id uint64, conn net.Conn) *session {
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &session{
+		id:        id,
+		dtlsConn:  conn,
+		remote:    conn.RemoteAddr(),
 		local:     conn.LocalAddr(),
 		createdAt: time.Now(),
 		ctx:       ctx,
@@ -63,13 +80,20 @@ func (s *session) Send(payload []byte) error {
 	if s.State() != core.StateActive {
 		return core.ErrSessionClosed
 	}
-	_, err := s.conn.WriteToUDP(payload, s.remote)
+	if s.dtlsConn != nil {
+		_, err := s.dtlsConn.Write(payload)
+		return err
+	}
+	_, err := s.conn.WriteToUDP(payload, s.remote.(*net.UDPAddr))
 	return err
 }
 
 func (s *session) Close(context.Context) error {
 	s.closeOnce.Do(func() {
 		s.state.Store(uint32(core.StateClosed))
+		if s.dtlsConn != nil {
+			s.dtlsConn.Close()
+		}
 		s.cancel()
 	})
 	return nil

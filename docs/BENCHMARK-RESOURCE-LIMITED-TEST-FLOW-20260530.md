@@ -1,7 +1,7 @@
 # Shark-Socket-New Resource-Limited Benchmark Flow
 
 This flow adapts the original Shark-Socket cloud benchmark approach for
-`shark-socket-new`.
+`shark-socket`.
 
 ## Purpose
 

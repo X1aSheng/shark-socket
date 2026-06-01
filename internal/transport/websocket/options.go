@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/core"
 )
 
 type Options struct {
@@ -15,6 +15,9 @@ type Options struct {
 	PingInterval   time.Duration
 	PongTimeout    time.Duration
 	MaxMessageSize int64
+	WriteTimeout   time.Duration
+	MaxConnections int64
+	AcceptRate     float64
 }
 
 type Option func(*Options)

@@ -1,6 +1,6 @@
 apiVersion: v2
-name: shark-socket-new
-description: Shark Socket New runtime gateway
+name: shark-socket
+description: Shark Socket runtime gateway
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

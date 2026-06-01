@@ -1,6 +1,6 @@
 package runtime
 
-import "github.com/X1aSheng/shark-socket-new/internal/core"
+import "github.com/X1aSheng/shark-socket/internal/core"
 
 type RuntimeOption func(*Runtime)
 

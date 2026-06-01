@@ -7,31 +7,33 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/core"
 	"github.com/gorilla/websocket"
 )
 
 type session struct {
-	id        uint64
-	conn      *websocket.Conn
-	createdAt time.Time
-	activeAt  atomic.Int64
-	state     atomic.Uint32
-	meta      sync.Map
-	writeMu   sync.Mutex
-	ctx       context.Context
-	cancel    context.CancelFunc
-	closeOnce sync.Once
+	id           uint64
+	conn         *websocket.Conn
+	createdAt    time.Time
+	activeAt     atomic.Int64
+	state        atomic.Uint32
+	meta         sync.Map
+	writeMu      sync.Mutex
+	writeTimeout time.Duration
+	ctx          context.Context
+	cancel       context.CancelFunc
+	closeOnce    sync.Once
 }
 
-func newSession(id uint64, conn *websocket.Conn) *session {
+func newSession(id uint64, conn *websocket.Conn, writeTimeout time.Duration) *session {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &session{
-		id:        id,
-		conn:      conn,
-		createdAt: time.Now(),
-		ctx:       ctx,
-		cancel:    cancel,
+		id:           id,
+		conn:         conn,
+		createdAt:    time.Now(),
+		ctx:          ctx,
+		cancel:       cancel,
+		writeTimeout: writeTimeout,
 	}
 	s.activeAt.Store(time.Now().UnixNano())
 	s.state.Store(uint32(core.StateActive))
@@ -63,6 +65,9 @@ func (s *session) Send(payload []byte) error {
 	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
+	if s.writeTimeout > 0 {
+		s.conn.SetWriteDeadline(time.Now().Add(s.writeTimeout))
+	}
 	return s.conn.WriteMessage(websocket.BinaryMessage, payload)
 }
 

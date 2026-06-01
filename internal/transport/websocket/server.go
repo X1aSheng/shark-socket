@@ -10,8 +10,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
-	"github.com/X1aSheng/shark-socket-new/internal/runtime"
+	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/runtime"
+	"github.com/X1aSheng/shark-socket/internal/transport/shared"
 	"github.com/gorilla/websocket"
 )
 
@@ -20,6 +21,7 @@ type Server struct {
 	rt       core.Runtime
 	listener net.Listener
 	server   *http.Server
+	acceptor *shared.Acceptor
 	closed   atomic.Bool
 	wg       sync.WaitGroup
 	sessions sync.Map
@@ -44,6 +46,7 @@ func (s *Server) Start(context.Context) error {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
 	s.closed.Store(false)
+	s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate)
 	mux := http.NewServeMux()
 	mux.HandleFunc(s.opts.Path, s.handleUpgrade)
 	s.server = &http.Server{Addr: s.opts.Addr, Handler: mux}
@@ -106,28 +109,36 @@ func (s *Server) Addr() net.Addr {
 }
 
 func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
+	if s.acceptor != nil && !s.acceptor.TryAccept() {
+		http.Error(w, "server busy", http.StatusServiceUnavailable)
+		return
+	}
 	upgrader := websocket.Upgrader{CheckOrigin: s.opts.CheckOrigin}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		s.acceptor.Done()
 		return
 	}
 	if s.opts.MaxMessageSize > 0 {
 		conn.SetReadLimit(s.opts.MaxMessageSize)
 	}
 	id := s.rt.Sessions().NextID()
-	sess := newSession(id, conn)
+	sess := newSession(id, conn, s.opts.WriteTimeout)
 	s.sessions.Store(id, sess)
 	if err := s.rt.Sessions().Register(sess); err != nil {
+		s.acceptor.Done()
 		s.closeSession(context.Background(), id, sess)
 		return
 	}
 	if err := s.rt.Plugins().OnAccept(sess); err != nil {
+		s.acceptor.Done()
 		s.closeSession(context.Background(), id, sess)
 		return
 	}
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
+		defer s.acceptor.Done()
 		s.readLoop(sess)
 	}()
 	if s.opts.PingInterval > 0 {

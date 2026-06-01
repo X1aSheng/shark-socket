@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
-	"github.com/X1aSheng/shark-socket-new/internal/infra/pubsub"
+	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/infra/pubsub"
 )
 
 type Cluster struct {

@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
-	"github.com/X1aSheng/shark-socket-new/internal/runtime"
-	transporthttp "github.com/X1aSheng/shark-socket-new/internal/transport/http"
-	"github.com/X1aSheng/shark-socket-new/internal/transport/tcp"
-	"github.com/X1aSheng/shark-socket-new/internal/transport/udp"
-	"github.com/X1aSheng/shark-socket-new/internal/transport/websocket"
+	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/runtime"
+	transporthttp "github.com/X1aSheng/shark-socket/internal/transport/http"
+	"github.com/X1aSheng/shark-socket/internal/transport/tcp"
+	"github.com/X1aSheng/shark-socket/internal/transport/udp"
+	"github.com/X1aSheng/shark-socket/internal/transport/websocket"
 	gws "github.com/gorilla/websocket"
 )
 

@@ -6,7 +6,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/core"
 )
 
 func TestLengthPrefixFramerRoundTrip(t *testing.T) {

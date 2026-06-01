@@ -102,7 +102,7 @@ func TestConfigRejectsTLSFilesOnUnsupportedProtocol(t *testing.T) {
 	cfg := Config{
 		ShutdownTimeout: "2s",
 		Protocols: []ProtocolConfig{
-			{Name: "udp", Addr: "127.0.0.1:0", TLSCertFile: "server.crt", TLSKeyFile: "server.key"},
+			{Name: "http", Addr: "127.0.0.1:0", TLSCertFile: "server.crt", TLSKeyFile: "server.key"},
 		},
 	}
 	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "does not support tls_cert_file") {

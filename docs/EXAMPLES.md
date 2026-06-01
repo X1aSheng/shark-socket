@@ -5,7 +5,7 @@
 Run the configurable multi-protocol gateway:
 
 ```powershell
-go run ./cmd/shark-socket-new -config .\examples\config\multi-protocol.json
+go run ./cmd/shark-socket -config .\examples\config\multi-protocol.json
 ```
 
 Run the multi-protocol example:
@@ -64,6 +64,6 @@ Adapt an OpenTelemetry tracer without leaking vendor types into `internal/core`:
 
 ```go
 gateway := api.NewGateway(
-    api.WithTracer(api.NewOpenTelemetryTracer(otel.Tracer("shark-socket-new"))),
+    api.WithTracer(api.NewOpenTelemetryTracer(otel.Tracer("shark-socket"))),
 )
 ```

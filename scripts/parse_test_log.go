@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const modulePrefix = "github.com/X1aSheng/shark-socket-new/"
+const modulePrefix = "github.com/X1aSheng/shark-socket/"
 
 type testEvent struct {
 	Time    string  `json:"Time"`
@@ -123,7 +123,7 @@ func parseFile(path string) error {
 	title := reportTitle(path)
 	sep := strings.Repeat("=", 72)
 	fmt.Println(sep)
-	fmt.Printf("  shark-socket-new %s\n", title)
+	fmt.Printf("  shark-socket %s\n", title)
 	fmt.Printf("  started: %s\n", started)
 	fmt.Println(sep)
 

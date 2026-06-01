@@ -5,13 +5,13 @@ Updated: 2026-05-30T11:20:00
 ## Purpose
 
 This document defines the forward implementation goals for
-`shark-socket-new`. It is an execution guide for future work, not a record of
+`shark-socket`. It is an execution guide for future work, not a record of
 completed steps. Use it to decide what to build next, how to split work, and
 how to judge whether a milestone is complete.
 
 ## Product Direction
 
-`shark-socket-new` should become a modular, observable, and deployable
+`shark-socket` should become a modular, observable, and deployable
 multi-protocol communication gateway for IoT, edge, and backend systems.
 
 The project should optimize for:

@@ -10,9 +10,9 @@ import (
 
 func TestParseFileWritesReadableSummary(t *testing.T) {
 	path := writeJSONLog(t, "2026-05-29T12-30-30.148_unit.json", []string{
-		`{"Time":"2026-05-29T12:30:30.148Z","Action":"run","Package":"github.com/X1aSheng/shark-socket-new/internal/runtime","Test":"TestGateway"}`,
-		`{"Time":"2026-05-29T12:30:30.149Z","Action":"pass","Package":"github.com/X1aSheng/shark-socket-new/internal/runtime","Test":"TestGateway","Elapsed":0.01}`,
-		`{"Time":"2026-05-29T12:30:30.150Z","Action":"pass","Package":"github.com/X1aSheng/shark-socket-new/internal/runtime","Elapsed":0.01}`,
+		`{"Time":"2026-05-29T12:30:30.148Z","Action":"run","Package":"github.com/X1aSheng/shark-socket/internal/runtime","Test":"TestGateway"}`,
+		`{"Time":"2026-05-29T12:30:30.149Z","Action":"pass","Package":"github.com/X1aSheng/shark-socket/internal/runtime","Test":"TestGateway","Elapsed":0.01}`,
+		`{"Time":"2026-05-29T12:30:30.150Z","Action":"pass","Package":"github.com/X1aSheng/shark-socket/internal/runtime","Elapsed":0.01}`,
 	})
 
 	out := captureStdout(t, func() {
@@ -34,10 +34,10 @@ func TestParseFileWritesReadableSummary(t *testing.T) {
 
 func TestParseFileIncludesBenchmarkRows(t *testing.T) {
 	path := writeJSONLog(t, "2026-05-29T12-30-30.148_benchmark.json", []string{
-		`{"Time":"2026-05-29T12:30:30.148Z","Action":"output","Package":"github.com/X1aSheng/shark-socket-new/internal/transport/tcp","Output":"BenchmarkLengthPrefixFramerRoundTrip-16    1000    249.4 ns/op    664 B/op    6 allocs/op\n"}`,
-		`{"Time":"2026-05-29T12:30:30.149Z","Action":"output","Package":"github.com/X1aSheng/shark-socket-new/internal/transport/tcp","Output":"BenchmarkLineFramerRoundTrip-16    \t"}`,
-		`{"Time":"2026-05-29T12:30:30.150Z","Action":"output","Package":"github.com/X1aSheng/shark-socket-new/internal/transport/tcp","Output":"1000    2496 ns/op    1840 B/op    12 allocs/op\n"}`,
-		`{"Time":"2026-05-29T12:30:31.148Z","Action":"pass","Package":"github.com/X1aSheng/shark-socket-new/internal/transport/tcp","Elapsed":1}`,
+		`{"Time":"2026-05-29T12:30:30.148Z","Action":"output","Package":"github.com/X1aSheng/shark-socket/internal/transport/tcp","Output":"BenchmarkLengthPrefixFramerRoundTrip-16    1000    249.4 ns/op    664 B/op    6 allocs/op\n"}`,
+		`{"Time":"2026-05-29T12:30:30.149Z","Action":"output","Package":"github.com/X1aSheng/shark-socket/internal/transport/tcp","Output":"BenchmarkLineFramerRoundTrip-16    \t"}`,
+		`{"Time":"2026-05-29T12:30:30.150Z","Action":"output","Package":"github.com/X1aSheng/shark-socket/internal/transport/tcp","Output":"1000    2496 ns/op    1840 B/op    12 allocs/op\n"}`,
+		`{"Time":"2026-05-29T12:30:31.148Z","Action":"pass","Package":"github.com/X1aSheng/shark-socket/internal/transport/tcp","Elapsed":1}`,
 	})
 
 	out := captureStdout(t, func() {
