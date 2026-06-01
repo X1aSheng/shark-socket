@@ -1,2 +1,8 @@
 logs/**
 coverage.out
+*.exe
+*.test
+.claude/
+.idea/
+.vscode/
+shark-socket

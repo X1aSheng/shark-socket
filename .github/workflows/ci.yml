@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - shark-socket-new-main
+      - shark-socket-main
       - main
   pull_request:
 

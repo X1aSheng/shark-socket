@@ -6,20 +6,20 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
-	"github.com/X1aSheng/shark-socket-new/internal/infra/observability"
-	"github.com/X1aSheng/shark-socket-new/internal/infra/pubsub"
-	"github.com/X1aSheng/shark-socket-new/internal/infra/store"
-	"github.com/X1aSheng/shark-socket-new/internal/plugin"
-	"github.com/X1aSheng/shark-socket-new/internal/protocol/lwm2m"
-	"github.com/X1aSheng/shark-socket-new/internal/runtime"
-	"github.com/X1aSheng/shark-socket-new/internal/transport/coap"
-	"github.com/X1aSheng/shark-socket-new/internal/transport/grpcweb"
-	transporthttp "github.com/X1aSheng/shark-socket-new/internal/transport/http"
-	"github.com/X1aSheng/shark-socket-new/internal/transport/quic"
-	"github.com/X1aSheng/shark-socket-new/internal/transport/tcp"
-	"github.com/X1aSheng/shark-socket-new/internal/transport/udp"
-	"github.com/X1aSheng/shark-socket-new/internal/transport/websocket"
+	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/infra/observability"
+	"github.com/X1aSheng/shark-socket/internal/infra/pubsub"
+	"github.com/X1aSheng/shark-socket/internal/infra/store"
+	"github.com/X1aSheng/shark-socket/internal/plugin"
+	"github.com/X1aSheng/shark-socket/internal/protocol/lwm2m"
+	"github.com/X1aSheng/shark-socket/internal/runtime"
+	"github.com/X1aSheng/shark-socket/internal/transport/coap"
+	"github.com/X1aSheng/shark-socket/internal/transport/grpcweb"
+	transporthttp "github.com/X1aSheng/shark-socket/internal/transport/http"
+	"github.com/X1aSheng/shark-socket/internal/transport/quic"
+	"github.com/X1aSheng/shark-socket/internal/transport/tcp"
+	"github.com/X1aSheng/shark-socket/internal/transport/udp"
+	"github.com/X1aSheng/shark-socket/internal/transport/websocket"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -62,11 +62,18 @@ type (
 	AutoBanPlugin       = plugin.AutoBan
 	ClusterPlugin       = plugin.Cluster
 	HeartbeatPlugin     = plugin.Heartbeat
-	PersistencePlugin   = plugin.Persistence
-	SlowHandlerOption   = plugin.SlowHandlerOption
+	PersistencePlugin     = plugin.Persistence
+	PersistenceV2Plugin   = plugin.PersistenceV2
+	SlowHandlerOption     = plugin.SlowHandlerOption
 	PrometheusMetrics   = observability.PrometheusMetrics
 	OpenTelemetryTracer = observability.OpenTelemetryTracer
 	PubSub              = pubsub.PubSub
+	StoreV2             = store.StoreV2
+	BoltStore           = store.BoltStore
+	MemoryStore         = store.Memory
+	MessageLog          = store.MessageLog
+	SessionStore        = store.SessionStore
+	SessionSnapshot     = store.SessionSnapshot
 	Logger              = core.Logger
 	Metrics             = core.Metrics
 	Tracer              = core.Tracer
@@ -141,6 +148,10 @@ func WithUDPHandler(handler Handler) UDPOption {
 	return udp.WithHandler(handler)
 }
 
+func WithUDPDTLS(config *tls.Config) UDPOption {
+	return udp.WithDTLS(config)
+}
+
 func NewHTTPServer(opts ...HTTPOption) *HTTPServer {
 	return transporthttp.NewServer(opts...)
 }
@@ -187,6 +198,10 @@ func WithCoAPAddr(addr string) CoAPOption {
 
 func WithCoAPHandler(handler Handler) CoAPOption {
 	return coap.WithHandler(handler)
+}
+
+func WithCoAPDTLS(config *tls.Config) CoAPOption {
+	return coap.WithDTLS(config)
 }
 
 func WithCoAPResponder(responder func(Session, Message) ([]byte, error)) CoAPOption {
@@ -277,6 +292,26 @@ func NewPersistencePlugin(s store.Store, bucket string) *PersistencePlugin {
 	return plugin.NewPersistence(s, bucket)
 }
 
+func NewPersistenceV2Plugin(s StoreV2, bucket string) *PersistenceV2Plugin {
+	return plugin.NewPersistenceV2(s, bucket)
+}
+
+func NewMemoryStore() *MemoryStore {
+	return store.NewMemory()
+}
+
+func NewBoltStore(path string) (*BoltStore, error) {
+	return store.NewBoltStore(path)
+}
+
+func NewMessageLog(s StoreV2, bucket string) (*MessageLog, error) {
+	return store.NewMessageLog(s, bucket)
+}
+
+func NewSessionStore(s StoreV2, bucket string) *SessionStore {
+	return store.NewSessionStore(s, bucket)
+}
+
 func NewSlowHandler(logger Logger, threshold time.Duration, next Handler, opts ...SlowHandlerOption) Handler {
 	return plugin.NewSlowHandler(logger, threshold, next, opts...)
 }
@@ -296,3 +331,4 @@ func AdaptTyped[M any](codec Codec[M], handler TypedHandler[M]) Handler {
 func Run(ctx context.Context, gateway *Gateway) error {
 	return gateway.Start(ctx)
 }
+

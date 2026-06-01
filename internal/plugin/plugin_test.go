@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/X1aSheng/shark-socket-new/internal/core"
-	"github.com/X1aSheng/shark-socket-new/internal/infra/observability"
-	"github.com/X1aSheng/shark-socket-new/internal/infra/store"
-	"github.com/X1aSheng/shark-socket-new/internal/runtime"
+	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/infra/observability"
+	"github.com/X1aSheng/shark-socket/internal/infra/store"
+	"github.com/X1aSheng/shark-socket/internal/runtime"
 )
 
 type fakeSession struct {
@@ -147,6 +147,47 @@ func TestSlowHandlerLogsDurationAndReturnsError(t *testing.T) {
 	}
 	if !attrsContain(entries[0].Attrs, "error", "boom") {
 		t.Fatalf("attrs missing error: %#v", entries[0].Attrs)
+	}
+}
+
+func TestPersistenceV2WritesLifecycleEvents(t *testing.T) {
+	s := store.NewMemory()
+	p := NewPersistenceV2(s, "sessions")
+	sess := fakeSession{addr: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234}}
+	if err := p.OnAccept(sess); err != nil {
+		t.Fatal(err)
+	}
+	p.OnClose(sess)
+	_, ok, err := s.LoadV2("sessions", "custom/1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("persistence-v2 event missing")
+	}
+}
+
+func TestPersistenceV2OnMessageAppendsToLog(t *testing.T) {
+	s := store.NewMemory()
+	p := NewPersistenceV2(s, "sessions")
+	sess := fakeSession{addr: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234}}
+	data, err := p.OnMessage(sess, []byte("hello"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "hello" {
+		t.Fatalf("data = %q, want hello", string(data))
+	}
+	log := p.MessageLog()
+	if log == nil {
+		t.Fatal("message log is nil")
+	}
+	n, err := log.Len()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("log len = %d, want 1", n)
 	}
 }
 
