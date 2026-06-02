@@ -3,7 +3,14 @@ package benchmark
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/url"
@@ -14,10 +21,12 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/runtime"
 	"github.com/X1aSheng/shark-socket/internal/transport/grpcweb"
 	transporthttp "github.com/X1aSheng/shark-socket/internal/transport/http"
+	"github.com/X1aSheng/shark-socket/internal/transport/quic"
 	"github.com/X1aSheng/shark-socket/internal/transport/tcp"
 	"github.com/X1aSheng/shark-socket/internal/transport/udp"
 	"github.com/X1aSheng/shark-socket/internal/transport/websocket"
 	gws "github.com/gorilla/websocket"
+	quicgo "github.com/quic-go/quic-go"
 )
 
 func BenchmarkSessionManager_NextID(b *testing.B) {
@@ -342,6 +351,82 @@ func BenchmarkGRPCWebEcho(b *testing.B) {
 			b.Fatal("response too short")
 		}
 	}
+}
+
+func BenchmarkQUICEcho(b *testing.B) {
+	cfg := &tls.Config{
+		Certificates: []tls.Certificate{mustGenerateBenchCert(b)},
+		NextProtos:   []string{"shark-socket-quic"},
+	}
+	server := quic.NewServer(
+		quic.WithAddr("127.0.0.1:0"),
+		quic.WithTLS(cfg),
+		quic.WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		b.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { stopGateway(b, gateway) })
+
+	payload := []byte("benchmark-payload")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		conn, err := quicgo.DialAddr(context.Background(), server.Addr().String(), quic.ClientTLSConfig(true), nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+		stream, err := conn.OpenStreamSync(context.Background())
+		if err != nil {
+			b.Fatal(err)
+		}
+		_, _ = stream.Write(payload)
+		buf := make([]byte, 1024)
+		n, err := io.ReadFull(stream, buf[:len(payload)])
+		if err != nil {
+			_ = conn.CloseWithError(0, "")
+			b.Fatal(err)
+		}
+		_ = stream.Close()
+		_ = conn.CloseWithError(0, "")
+		if !bytes.Equal(buf[:n], payload) {
+			b.Fatalf("echo = %q, want %q", buf[:n], payload)
+		}
+	}
+}
+
+func mustGenerateBenchCert(tb testing.TB) tls.Certificate {
+	tb.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "localhost"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return cert
 }
 
 func stopGateway(tb testing.TB, gateway *runtime.Gateway) {

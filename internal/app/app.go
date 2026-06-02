@@ -19,6 +19,7 @@ type App struct {
 	Health       *http.Server
 	MetricsHTTP  *http.Server
 	Protocols    []string
+	serveErrors  []error
 	certCaches   []*tlsutil.CertCache
 	certWatchers []context.CancelFunc
 	appCtx       context.Context
@@ -54,13 +55,20 @@ func New(cfg Config) (*App, error) {
 
 func (a *App) Start(ctx context.Context) error {
 	a.appCtx, a.appCancel = context.WithCancel(ctx)
+	a.serveErrors = nil
 	if a.Health != nil {
-		go serveHTTP("health", a.Health)
+		go a.serveHTTP("health", a.Health)
 	}
 	if a.MetricsHTTP != nil {
-		go serveHTTP("metrics", a.MetricsHTTP)
+		go a.serveHTTP("metrics", a.MetricsHTTP)
 	}
 	return a.Gateway.Start(ctx)
+}
+
+// ServeErrors returns errors from the health and metrics HTTP servers.
+// Call after Start() to detect port conflicts or permission errors.
+func (a *App) ServeErrors() []error {
+	return a.serveErrors
 }
 
 func (a *App) Stop(ctx context.Context) error {
@@ -246,8 +254,9 @@ func echoHandler(sess api.Session, msg api.Message) error {
 	return sess.Send(msg.Payload)
 }
 
-func serveHTTP(name string, server *http.Server) {
+func (a *App) serveHTTP(name string, server *http.Server) {
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		a.serveErrors = append(a.serveErrors, fmt.Errorf("%s: %w", name, err))
 		log.Printf("%s server failed: %v", name, err)
 	}
 }
