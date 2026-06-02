@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shark-socket-config
+  namespace: shark-socket
+data:
+  tcpAddr: "0.0.0.0:18000"
+  metricsAddr: "0.0.0.0:18080"
+  healthAddr: "0.0.0.0:18081"

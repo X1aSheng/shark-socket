@@ -1,3 +1,9 @@
 resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - configmap.yaml
   - deployment.yaml
   - service.yaml
+  - networkpolicy.yaml
+  - pdb.yaml
+  - hpa.yaml

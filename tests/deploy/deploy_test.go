@@ -22,12 +22,21 @@ func TestDockerfileEntrypoint(t *testing.T) {
 	}
 	assertContains(t, text, "ARG GOPROXY=")
 	assertContains(t, text, "EXPOSE 18000 18080 18081")
+	assertContains(t, text, "HEALTHCHECK")
+	assertContains(t, text, "ca-certificates")
+	assertContains(t, text, "adduser -u 1000")
 }
 
 func TestK8sAndHelmManifestsExist(t *testing.T) {
 	paths := []string{
+		"../../deploy/k8s/namespace.yaml",
+		"../../deploy/k8s/serviceaccount.yaml",
+		"../../deploy/k8s/configmap.yaml",
 		"../../deploy/k8s/deployment.yaml",
 		"../../deploy/k8s/service.yaml",
+		"../../deploy/k8s/networkpolicy.yaml",
+		"../../deploy/k8s/pdb.yaml",
+		"../../deploy/k8s/hpa.yaml",
 		"../../deploy/helm/shark-socket/Chart.yaml",
 		"../../deploy/helm/shark-socket/templates/deployment.yaml",
 		"../../deploy/helm/shark-socket/templates/service.yaml",
@@ -60,6 +69,8 @@ func TestK8sManifestSemantics(t *testing.T) {
 	assertContains(t, deployment, "allowPrivilegeEscalation: false")
 	assertContains(t, deployment, "readOnlyRootFilesystem: true")
 	assertContains(t, deployment, "resources:")
+	assertContains(t, deployment, "serviceAccountName: shark-socket")
+	assertContains(t, deployment, "fsGroup: 1000")
 
 	assertContains(t, service, "kind: Service")
 	assertContains(t, service, "app: shark-socket")
@@ -68,8 +79,14 @@ func TestK8sManifestSemantics(t *testing.T) {
 	assertContains(t, service, "port: 18080")
 	assertContains(t, service, "port: 18081")
 
+	assertContains(t, kustomization, "namespace.yaml")
+	assertContains(t, kustomization, "serviceaccount.yaml")
+	assertContains(t, kustomization, "configmap.yaml")
 	assertContains(t, kustomization, "deployment.yaml")
 	assertContains(t, kustomization, "service.yaml")
+	assertContains(t, kustomization, "networkpolicy.yaml")
+	assertContains(t, kustomization, "pdb.yaml")
+	assertContains(t, kustomization, "hpa.yaml")
 }
 
 func TestHelmChartSemantics(t *testing.T) {
@@ -99,6 +116,8 @@ func TestHelmChartSemantics(t *testing.T) {
 	assertContains(t, deployment, "path: /readyz")
 	assertContains(t, deployment, "path: /healthz")
 	assertContains(t, deployment, "allowPrivilegeEscalation: {{ .Values.securityContext.allowPrivilegeEscalation }}")
+	assertContains(t, deployment, "fsGroup: {{ .Values.podSecurityContext.fsGroup }}")
+	assertContains(t, deployment, "serviceAccountName: {{ include \"shark-socket.fullname\" . }}")
 	assertContains(t, service, "{{ .Values.service.type }}")
 	assertContains(t, service, "{{ .Values.service.port }}")
 }
@@ -139,6 +158,8 @@ func TestGitHubActionsWorkflowSemantics(t *testing.T) {
 	assertContains(t, workflow, "matrix:")
 	assertContains(t, workflow, "windows-latest")
 	assertContains(t, workflow, "ubuntu-latest")
+	assertContains(t, workflow, "golangci-lint")
+	assertContains(t, workflow, "govulncheck")
 	assertContains(t, workflow, "go run scripts/run_tests.go -mode all -timeout 5m")
 	assertContains(t, workflow, "go run scripts/run_tests.go -mode race -timeout 5m")
 	assertContains(t, workflow, "go run scripts/run_tests.go -mode cover -timeout 5m")

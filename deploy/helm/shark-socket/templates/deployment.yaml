@@ -14,9 +14,11 @@ spec:
       labels:
         app: {{ .Chart.Name }}
     spec:
+      serviceAccountName: {{ include "shark-socket.fullname" . }}
       securityContext:
         runAsNonRoot: {{ .Values.podSecurityContext.runAsNonRoot }}
         runAsUser: {{ .Values.podSecurityContext.runAsUser }}
+        fsGroup: {{ .Values.podSecurityContext.fsGroup }}
         seccompProfile:
           type: {{ .Values.podSecurityContext.seccompProfile.type }}
       containers:

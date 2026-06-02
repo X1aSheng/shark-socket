@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: shark-socket-netpol
+  namespace: shark-socket
+spec:
+  podSelector:
+    matchLabels:
+      app: shark-socket
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - port: 18000
+          protocol: TCP
+        - port: 18000
+          protocol: UDP
+        - port: 18080
+          protocol: TCP
+        - port: 18081
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector: {}

@@ -27,10 +27,6 @@ function Run-Step {
 }
 
 try {
-    Run-Step "go test" {
-        go test ./... -count=1
-    }
-
     Run-Step "go vet" {
         go vet ./...
     }

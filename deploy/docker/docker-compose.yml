@@ -14,8 +14,11 @@ services:
       SHARK_METRICS_ADDR: 0.0.0.0:18080
       SHARK_HEALTH_ADDR: 0.0.0.0:18081
     read_only: true
+    tmpfs:
+      - /tmp
+      - /var/log
     security_opt:
-      - no-new-privileges:true
+      - "no-new-privileges:true"
     cap_drop:
       - ALL
     restart: unless-stopped

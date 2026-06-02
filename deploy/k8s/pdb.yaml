@@ -1,0 +1,10 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: shark-socket-pdb
+  namespace: shark-socket
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: shark-socket

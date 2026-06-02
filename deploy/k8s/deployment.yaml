@@ -14,14 +14,16 @@ spec:
       labels:
         app: shark-socket
     spec:
+      serviceAccountName: shark-socket
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
+        fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: shark-socket
-          image: shark-socket:latest
+          image: shark-socket:0.1.0
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false

@@ -2,8 +2,12 @@ replicaCount: 2
 
 image:
   repository: shark-socket
-  tag: latest
+  tag: "0.1.0"
   pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  name: shark-socket
 
 service:
   type: ClusterIP
@@ -19,6 +23,7 @@ config:
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 1000
+  fsGroup: 1000
   seccompProfile:
     type: RuntimeDefault
 

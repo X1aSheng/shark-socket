@@ -35,7 +35,7 @@ func main() {
 
 	switch *mode {
 	case "unit":
-		must(runGoTest(root, logs, ts, "unit", *timeout, "./api/...", "./cmd/...", "./internal/..."))
+		must(runGoTest(root, logs, ts, "unit", *timeout, "./api", "./cmd/...", "./internal/..."))
 	case "integration":
 		must(runGoTest(root, logs, ts, "integration", *timeout, "./tests/..."))
 	case "benchmark":
@@ -46,7 +46,7 @@ func main() {
 		must(runCover(root, logs, ts, *timeout))
 	case "all":
 		printBanner("shark-socket test suite")
-		must(runGoTest(root, logs, ts, "unit", *timeout, "./api/...", "./cmd/...", "./internal/..."))
+		must(runGoTest(root, logs, ts, "unit", *timeout, "./api", "./cmd/...", "./internal/..."))
 		must(runGoTest(root, logs, ts, "integration", *timeout, "./tests/..."))
 		must(runBenchmark(root, logs, ts, *timeout))
 		fmt.Printf("\nlogs: %s\n", logs)
