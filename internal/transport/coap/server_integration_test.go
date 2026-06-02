@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"math/big"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -121,11 +122,11 @@ func TestCoAPSessionTTL(t *testing.T) {
 }
 
 func TestCoAPDuplicateCONDoesNotRerunHandler(t *testing.T) {
-	handled := 0
+	var handled atomic.Int32
 	server := NewServer(
 		WithAddr("127.0.0.1:0"),
 		WithHandler(func(core.Session, core.Message) error {
-			handled++
+			handled.Add(1)
 			return nil
 		}),
 	)
@@ -152,8 +153,8 @@ func TestCoAPDuplicateCONDoesNotRerunHandler(t *testing.T) {
 	if second.Code != CodeValid {
 		t.Fatalf("second ack code = %d, want %d", second.Code, CodeValid)
 	}
-	if handled != 1 {
-		t.Fatalf("handler calls = %d, want 1", handled)
+	if got := handled.Load(); got != 1 {
+		t.Fatalf("handler calls = %d, want 1", got)
 	}
 }
 
