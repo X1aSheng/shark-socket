@@ -5,4 +5,4 @@ coverage.out
 .claude/
 .idea/
 .vscode/
-shark-socket
+/shark-socket

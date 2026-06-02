@@ -1,0 +1,21 @@
+Thank you for installing {{ .Chart.Name }} {{ .Chart.Version }}!
+
+The shark-socket gateway has been deployed to namespace {{ .Release.Namespace }}.
+
+## Service Access
+- TCP Gateway:  {{ .Values.service.port }}
+- Metrics:      {{ .Values.service.metricsPort }}
+- Health:       {{ .Values.service.healthPort }}
+
+## Verify Deployment
+  kubectl get pods -l app={{ .Chart.Name }} -n {{ .Release.Namespace }}
+
+## Port Forward (local testing)
+  kubectl port-forward svc/{{ include "shark-socket.fullname" . }} 18000:18000 -n {{ .Release.Namespace }}
+
+## Check Health
+  curl http://localhost:18081/healthz
+  curl http://localhost:18081/readyz
+
+## Check Metrics
+  curl http://localhost:18080/metrics
