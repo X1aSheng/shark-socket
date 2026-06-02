@@ -255,6 +255,9 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 		if err != core.ErrPluginDrop {
 			_ = sess.Close(context.Background())
 		}
+		if msg.Type == TypeCON {
+			_ = s.sendACK(sess, msg, CodeInternalServerError, nil)
+		}
 		return
 	}
 	var responsePayload []byte

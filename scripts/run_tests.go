@@ -109,12 +109,43 @@ func raceEnv() []string {
 
 func runCover(root, logs, ts string, timeout time.Duration) error {
 	logFile := filepath.Join(logs, ts+"_cover.log")
-	args := []string{"test", "./...", "-count=1", "-cover", "-timeout=" + timeout.String()}
+	coverFile := filepath.Join(logs, "coverage.out")
+	args := []string{"test", "./...", "-count=1", "-coverprofile=" + coverFile, "-timeout=" + timeout.String()}
 	fmt.Printf("[%s] %s -> %s\n", time.Now().Format("2006-01-02T15:04:05.000"), strings.Join(append([]string{"go"}, args...), " "), logFile)
 	out, err := output(root, "go", args...)
 	_ = os.WriteFile(logFile, out, 0o644)
 	fmt.Print(string(out))
-	return err
+	if err != nil {
+		return err
+	}
+	// Compute total coverage from the profile
+	totalOut, _ := output(root, "go", "tool", "cover", "-func="+coverFile)
+	fmt.Print(string(totalOut))
+	_ = os.WriteFile(logFile, totalOut, 0o644) // overwrite with detailed output
+	total := parseCoverageTotal(string(totalOut))
+	fmt.Printf("\nTotal coverage: %.1f%%\n", total)
+	const minCoverage = 50.0
+	if total < minCoverage {
+		return fmt.Errorf("coverage %.1f%% is below minimum %.1f%%", total, minCoverage)
+	}
+	return nil
+}
+
+func parseCoverageTotal(output string) float64 {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) == 0 {
+		return 0
+	}
+	lastLine := lines[len(lines)-1]
+	// Last line is: "total:\t(statements)\tXX.X%"
+	fields := strings.Fields(lastLine)
+	for _, f := range fields {
+		if strings.HasSuffix(f, "%") {
+			v, _ := strconv.ParseFloat(strings.TrimSuffix(f, "%"), 64)
+			return v
+		}
+	}
+	return 0
 }
 
 func writeReport(root, jsonFile, logFile string) {
