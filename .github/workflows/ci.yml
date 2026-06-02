@@ -7,6 +7,10 @@ on:
       - shark-socket-main
       - main
   pull_request:
+    branches:
+      - shark-socket-new-main
+      - shark-socket-main
+      - main
 
 permissions:
   contents: read
@@ -79,11 +83,11 @@ jobs:
 
       - name: Validate tests and vet
         shell: pwsh
-        run: .\scripts\validate.ps1
+        run: ./scripts/validate.ps1
 
       - name: Validate deploy manifests
         shell: pwsh
-        run: .\scripts\validate_deploy.ps1
+        run: ./scripts/validate_deploy.ps1
 
       - name: Upload validation logs
         if: always()
