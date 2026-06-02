@@ -118,13 +118,15 @@ func (s *Server) CloseSessions(ctx context.Context) error {
 	}()
 	select {
 	case <-done:
-		if s.pool != nil {
-			s.pool.stop()
-		}
-		return firstErr
 	case <-ctx.Done():
+	}
+	if s.pool != nil {
+		s.pool.stop()
+	}
+	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	return firstErr
 }
 
 func (s *Server) Addr() net.Addr {
