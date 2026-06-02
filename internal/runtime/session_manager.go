@@ -40,9 +40,6 @@ func (m *SessionManager) Register(sess core.Session) error {
 	if sess == nil {
 		return core.ErrInvalidArgument
 	}
-	if m.max > 0 && m.count.Load() >= m.max {
-		return core.ErrSessionCapacity
-	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.sessions[sess.ID()]; ok {

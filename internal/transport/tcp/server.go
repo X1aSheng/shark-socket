@@ -21,6 +21,7 @@ type Server struct {
 	listener net.Listener
 	acceptor *shared.Acceptor
 	closed   atomic.Bool
+	started  atomic.Bool
 	acceptWG sync.WaitGroup
 	connWG   sync.WaitGroup
 	sessions sync.Map
@@ -42,6 +43,9 @@ func (s *Server) UseRuntime(rt core.Runtime) {
 }
 
 func (s *Server) Start(ctx context.Context) error {
+	if !s.started.CompareAndSwap(false, true) {
+		return fmt.Errorf("tcp server already started")
+	}
 	if s.rt == nil {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
@@ -52,6 +56,7 @@ func (s *Server) Start(ctx context.Context) error {
 	ln, err := net.Listen("tcp", s.opts.Addr)
 	if err != nil {
 		s.pool.stop()
+		s.started.Store(false)
 		return fmt.Errorf("tcp listen %s: %w", s.opts.Addr, err)
 	}
 	if s.opts.TLSConfig != nil {
@@ -76,6 +81,7 @@ func (s *Server) StopAccept(context.Context) error {
 	if !s.closed.CompareAndSwap(false, true) {
 		return nil
 	}
+	s.started.Store(false)
 	if s.listener != nil {
 		return s.listener.Close()
 	}

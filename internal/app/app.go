@@ -21,6 +21,8 @@ type App struct {
 	Protocols    []string
 	certCaches   []*tlsutil.CertCache
 	certWatchers []context.CancelFunc
+	appCtx       context.Context
+	appCancel    context.CancelFunc
 }
 
 func New(cfg Config) (*App, error) {
@@ -51,6 +53,7 @@ func New(cfg Config) (*App, error) {
 }
 
 func (a *App) Start(ctx context.Context) error {
+	a.appCtx, a.appCancel = context.WithCancel(ctx)
 	if a.Health != nil {
 		go serveHTTP("health", a.Health)
 	}
@@ -61,6 +64,9 @@ func (a *App) Start(ctx context.Context) error {
 }
 
 func (a *App) Stop(ctx context.Context) error {
+	if a.appCancel != nil {
+		a.appCancel()
+	}
 	for _, cancel := range a.certWatchers {
 		cancel()
 	}
@@ -179,7 +185,10 @@ func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 	// Start cert file watchers for hot-reload
 	for _, cache := range a.certCaches {
 		c := cache
-		cancel := tlsutil.WatchFiles(context.Background(), 30*time.Second, func() {
+		if a.appCtx == nil {
+			a.appCtx = context.Background()
+		}
+		cancel := tlsutil.WatchFiles(a.appCtx, 30*time.Second, func() {
 			if err := c.Load(); err != nil {
 				log.Printf("cert reload failed: %v", err)
 			} else {

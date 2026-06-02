@@ -191,6 +191,8 @@ func (s *Server) pingLoop(sess *session) {
 		select {
 		case <-ticker.C:
 			if err := sess.ping(); err != nil {
+				id := sess.ID()
+				s.closeSession(context.Background(), id, sess)
 				return
 			}
 		case <-sess.Context().Done():

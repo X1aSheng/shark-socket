@@ -13,6 +13,7 @@ import (
 
 	"github.com/X1aSheng/shark-socket/internal/core"
 	"github.com/X1aSheng/shark-socket/internal/runtime"
+	"github.com/X1aSheng/shark-socket/internal/transport/shared"
 	"github.com/gorilla/websocket"
 )
 
@@ -21,6 +22,7 @@ type Server struct {
 	rt       core.Runtime
 	listener net.Listener
 	server   *http.Server
+	acceptor *shared.Acceptor
 	closed   atomic.Bool
 	wg       sync.WaitGroup
 	sessions sync.Map
@@ -45,6 +47,7 @@ func (s *Server) Start(context.Context) error {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
 	s.closed.Store(false)
+	s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate)
 	mux := http.NewServeMux()
 	mux.HandleFunc(s.opts.Path, s.handle)
 	if s.opts.WebSocket {
@@ -133,6 +136,11 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
 	}
+	if s.acceptor != nil && !s.acceptor.TryAccept() {
+		http.Error(w, "server busy", http.StatusServiceUnavailable)
+		return
+	}
+	defer s.acceptor.Done()
 	if s.opts.MaxMessageBytes > 0 {
 		r.Body = http.MaxBytesReader(w, r.Body, s.opts.MaxMessageBytes)
 	}
@@ -184,9 +192,14 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	if s.acceptor != nil && !s.acceptor.TryAccept() {
+		http.Error(w, "server busy", http.StatusServiceUnavailable)
+		return
+	}
 	upgrader := websocket.Upgrader{CheckOrigin: s.opts.CheckOrigin}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		s.acceptor.Done()
 		return
 	}
 	if s.opts.MaxMessageBytes > 0 {
@@ -241,6 +254,9 @@ func (s *Server) closeWebSocketSession(ctx context.Context, id uint64, sess *web
 	s.rt.Sessions().Unregister(id)
 	_ = sess.Close(ctx)
 	s.rt.Plugins().OnClose(sess)
+	if s.acceptor != nil {
+		s.acceptor.Done()
+	}
 }
 
 var (

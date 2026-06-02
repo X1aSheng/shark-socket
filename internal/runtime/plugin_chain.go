@@ -3,11 +3,13 @@ package runtime
 import (
 	"log/slog"
 	"slices"
+	"sync"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
 )
 
 type PluginChain struct {
+	mu      sync.RWMutex
 	plugins []core.Plugin
 }
 
@@ -18,6 +20,8 @@ func NewPluginChain(plugins ...core.Plugin) *PluginChain {
 }
 
 func (c *PluginChain) Append(plugins ...core.Plugin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	for _, p := range plugins {
 		if p == nil {
 			continue
@@ -30,6 +34,8 @@ func (c *PluginChain) Append(plugins ...core.Plugin) {
 }
 
 func (c *PluginChain) OnAccept(sess core.Session) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	for _, p := range c.plugins {
 		if err := safeAccept(p, sess); err != nil {
 			return err
@@ -39,6 +45,8 @@ func (c *PluginChain) OnAccept(sess core.Session) error {
 }
 
 func (c *PluginChain) OnMessage(sess core.Session, data []byte) ([]byte, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	var err error
 	for _, p := range c.plugins {
 		data, err = safeMessage(p, sess, data)
@@ -50,6 +58,8 @@ func (c *PluginChain) OnMessage(sess core.Session, data []byte) ([]byte, error) 
 }
 
 func (c *PluginChain) OnClose(sess core.Session) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	for i := len(c.plugins) - 1; i >= 0; i-- {
 		safeClose(c.plugins[i], sess)
 	}

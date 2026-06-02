@@ -14,6 +14,8 @@ type Options struct {
 	Handler         core.Handler
 	TLSConfig       *tls.Config
 	MaxMessageBytes int64
+	MaxConnections  int64
+	AcceptRate      float64
 	ReadTimeout     time.Duration
 	WriteTimeout    time.Duration
 	WebSocket       bool
