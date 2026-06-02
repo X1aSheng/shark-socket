@@ -51,6 +51,17 @@ This project uses semantic versioning. Pre-release tags use the form
 - ✅ Server 1 (120.76.44.233): Go 1.26.3 build, test, race, Docker deploy, client test.
 - ✅ Server 2 (47.110.238.85): Go 1.26.3 build, test, race, coverage, Docker deploy, concurrent 64KB.
 
+### Coverage Improvements (2026-06-02)
+- Core package: 0% → 100% (17 tests)
+- API package: 0% → 77.4% (44 tests)
+- Runtime package: 64.5% → 88.2% (20 tests)
+- UDP transport: 51.1% → 71.5% (20 tests)
+- MQTT adapter: 0% → 59.1% (13 tests)
+- Plugin package: 71.2% → 79.3% (8 tests)
+- LwM2M protocol: 67% → 73.9% (5 tests)
+- App package: 67.9% → 73.4% (4 tests)
+- CoAP transport: 67.6% → 69.3% (4 tests)
+
 ### Security (Phase 1)
 - Added TLS certificate hot-reload via file watcher and `GetCertificate` callback.
 - Added DTLS support for UDP transport using pion/dtls v3.

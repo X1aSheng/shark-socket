@@ -29,7 +29,7 @@ runtime ownership, plugin execution, and graceful shutdown explicit.
 | Security | Implemented | TLS cert hot-reload via file watcher, mTLS client auth, DTLS for UDP/CoAP |
 | Persistence | Implemented | StoreV2 interface, BoltDB backend, durable message log with sequence numbers, session snapshots |
 | Infra | Implemented | In-memory cache/store/pubsub/circuitbreaker/observability, Prometheus metrics exporter, OpenTelemetry tracer adapter, TLS cert cache |
-| Deploy | Hardened | Docker, docker-compose, K8s, Helm manifests with security, probe, and resource defaults |
+| Deploy | Hardened | Docker (HEALTHCHECK, non-root), K8s (HPA, PDB, NetworkPolicy), Helm _helpers.tpl |
 
 ## Run
 
@@ -51,6 +51,15 @@ Health and readiness endpoints are available when `health_addr` is configured:
 - `GET /readyz`
 
 ## Validate
+
+| Check | Command | Status |
+|-------|---------|--------|
+| Unit tests (25 suites) | `go test ./...` | ✅ |
+| Race detection | `go test -race ./...` | ✅ |
+| Coverage (50% threshold) | `go run scripts/run_tests.go -mode cover` | ✅ |
+| Lint (golangci-lint) | `golangci-lint run` | ✅ |
+| Security (govulncheck) | `govulncheck ./...` | ✅ |
+| Deploy manifests | `.\scripts\validate_deploy.ps1` | ✅ |
 
 Fast validation:
 
