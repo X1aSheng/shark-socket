@@ -277,13 +277,15 @@ func (s *Server) getOrCreateSession(addr *net.UDPAddr) *session {
 	if value, ok := s.sessions.Load(key); ok {
 		return value.(*session)
 	}
-	id := s.rt.Sessions().NextID()
-	sess := newSession(id, s.conn, addr)
+	// Create a provisional session; only allocate ID if it's actually new
+	sess := newSession(0, s.conn, addr)
 	actual, loaded := s.sessions.LoadOrStore(key, sess)
 	if loaded {
 		_ = sess.Close(context.Background())
 		return actual.(*session)
 	}
+	// Session is new; assign a proper ID now
+	sess.id = s.rt.Sessions().NextID()
 	if err := s.rt.Sessions().Register(sess); err != nil {
 		s.sessions.Delete(key)
 		_ = sess.Close(context.Background())

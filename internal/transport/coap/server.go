@@ -408,13 +408,14 @@ func (s *Server) getOrCreateUDPSession(addr *net.UDPAddr) *session {
 	if value, ok := s.sessions.Load(key); ok {
 		return value.(*session)
 	}
-	id := s.rt.Sessions().NextID()
-	sess := newUDPSession(id, s.udpConn, addr)
+	// Create provisional session; only allocate ID if it's actually new
+	sess := newUDPSession(0, s.udpConn, addr)
 	actual, loaded := s.sessions.LoadOrStore(key, sess)
 	if loaded {
 		_ = sess.Close(context.Background())
 		return actual.(*session)
 	}
+	sess.id = s.rt.Sessions().NextID()
 	if err := s.rt.Sessions().Register(sess); err != nil {
 		s.sessions.Delete(key)
 		_ = sess.Close(context.Background())
