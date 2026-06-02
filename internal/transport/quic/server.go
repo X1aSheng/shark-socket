@@ -21,6 +21,7 @@ type Server struct {
 	listener *quicgo.Listener
 	acceptor *shared.Acceptor
 	closed   atomic.Bool
+	started  atomic.Bool
 	wg       sync.WaitGroup
 	sessions sync.Map
 }
@@ -40,7 +41,11 @@ func (s *Server) UseRuntime(rt core.Runtime) {
 }
 
 func (s *Server) Start(ctx context.Context) error {
+	if !s.started.CompareAndSwap(false, true) {
+		return fmt.Errorf("quic server already started")
+	}
 	if s.opts.TLSConfig == nil {
+		s.started.Store(false)
 		return fmt.Errorf("quic tls config required")
 	}
 	if s.rt == nil {
@@ -50,6 +55,7 @@ func (s *Server) Start(ctx context.Context) error {
 	s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate)
 	ln, err := quicgo.ListenAddr(s.opts.Addr, s.opts.TLSConfig, nil)
 	if err != nil {
+		s.started.Store(false)
 		return fmt.Errorf("quic listen %s: %w", s.opts.Addr, err)
 	}
 	s.listener = ln
@@ -68,6 +74,7 @@ func (s *Server) StopAccept(context.Context) error {
 	if !s.closed.CompareAndSwap(false, true) {
 		return nil
 	}
+	s.started.Store(false)
 	if s.listener != nil {
 		return s.listener.Close()
 	}

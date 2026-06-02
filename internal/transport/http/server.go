@@ -20,6 +20,7 @@ type Server struct {
 	listener net.Listener
 	server   *stdhttp.Server
 	closed   atomic.Bool
+	started  atomic.Bool
 }
 
 func NewServer(opts ...Option) *Server {
@@ -45,6 +46,9 @@ func (s *Server) HandleFunc(pattern string, handler stdhttp.HandlerFunc) {
 }
 
 func (s *Server) Start(context.Context) error {
+	if !s.started.CompareAndSwap(false, true) {
+		return fmt.Errorf("http server already started")
+	}
 	if s.rt == nil {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
@@ -121,6 +125,7 @@ func (s *Server) StopAccept(ctx context.Context) error {
 	if !s.closed.CompareAndSwap(false, true) {
 		return nil
 	}
+	s.started.Store(false)
 	if s.server != nil {
 		return s.server.Shutdown(ctx)
 	}

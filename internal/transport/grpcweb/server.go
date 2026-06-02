@@ -24,6 +24,7 @@ type Server struct {
 	server   *http.Server
 	acceptor *shared.Acceptor
 	closed   atomic.Bool
+	started  atomic.Bool
 	wg       sync.WaitGroup
 	sessions sync.Map
 }
@@ -43,6 +44,9 @@ func (s *Server) UseRuntime(rt core.Runtime) {
 }
 
 func (s *Server) Start(context.Context) error {
+	if !s.started.CompareAndSwap(false, true) {
+		return fmt.Errorf("grpc-web server already started")
+	}
 	if s.rt == nil {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
@@ -96,6 +100,7 @@ func (s *Server) StopAccept(ctx context.Context) error {
 	if !s.closed.CompareAndSwap(false, true) {
 		return nil
 	}
+	s.started.Store(false)
 	if s.server != nil {
 		return s.server.Shutdown(ctx)
 	}

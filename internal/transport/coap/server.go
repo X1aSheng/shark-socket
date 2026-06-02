@@ -21,6 +21,7 @@ type Server struct {
 	dtlsLn    net.Listener
 	dtlsConns sync.Map // active DTLS connections, closed on shutdown
 	closed    atomic.Bool
+	started   atomic.Bool
 	cancel    context.CancelFunc
 	wg        sync.WaitGroup
 	sessions  sync.Map
@@ -43,12 +44,16 @@ func (s *Server) UseRuntime(rt core.Runtime) {
 }
 
 func (s *Server) Start(ctx context.Context) error {
+	if !s.started.CompareAndSwap(false, true) {
+		return fmt.Errorf("coap server already started")
+	}
 	if s.rt == nil {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
 	s.closed.Store(false)
 	addr, err := net.ResolveUDPAddr("udp", s.opts.Addr)
 	if err != nil {
+		s.started.Store(false)
 		return fmt.Errorf("coap resolve %s: %w", s.opts.Addr, err)
 	}
 	runCtx, cancel := context.WithCancel(ctx)
@@ -89,6 +94,7 @@ func (s *Server) StopAccept(context.Context) error {
 	if !s.closed.CompareAndSwap(false, true) {
 		return nil
 	}
+	s.started.Store(false)
 	if s.cancel != nil {
 		s.cancel()
 	}
