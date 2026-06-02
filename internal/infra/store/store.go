@@ -19,6 +19,12 @@ type StoreV2 interface {
 	Close() error
 }
 
+// BulkDeleter is an optional interface for stores that can batch-delete
+// multiple keys in a single transaction (e.g., BoltDB).
+type BulkDeleter interface {
+	DeleteBatch(bucket string, keys []string) error
+}
+
 type Memory struct {
 	mu      sync.RWMutex
 	buckets map[string]map[string][]byte

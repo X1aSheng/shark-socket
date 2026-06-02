@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/binary"
 	"fmt"
+	"sort"
 	"sync"
 )
 
@@ -39,11 +40,11 @@ func (m *MessageLog) Append(data []byte) (uint64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	seq := m.next
-	m.next++
 	key := seqKey(seq)
 	if err := m.store.SaveV2(m.bucket, key, data); err != nil {
 		return 0, fmt.Errorf("message_log: append: %w", err)
 	}
+	m.next++
 	return seq, nil
 }
 
@@ -53,8 +54,8 @@ func (m *MessageLog) Replay(fn func(seq uint64, data []byte) error) error {
 	if err != nil {
 		return err
 	}
-	sorted := sortByteKeys(keys)
-	for _, key := range sorted {
+	sort.Strings(keys)
+	for _, key := range keys {
 		val, ok, err := m.store.LoadV2(m.bucket, key)
 		if err != nil {
 			return err
@@ -76,15 +77,26 @@ func (m *MessageLog) Prune(beforeSeq uint64) error {
 	if err != nil {
 		return err
 	}
+	var toDelete []string
 	for _, key := range keys {
 		if len(key) < 8 {
 			continue
 		}
 		seq := binary.BigEndian.Uint64([]byte(key)[:8])
 		if seq < beforeSeq {
-			if err := m.store.DeleteV2(m.bucket, key); err != nil {
-				return err
-			}
+			toDelete = append(toDelete, key)
+		}
+	}
+	if len(toDelete) == 0 {
+		return nil
+	}
+	// Use batch delete if the store supports it
+	if bd, ok := m.store.(BulkDeleter); ok {
+		return bd.DeleteBatch(m.bucket, toDelete)
+	}
+	for _, key := range toDelete {
+		if err := m.store.DeleteV2(m.bucket, key); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -103,15 +115,4 @@ func seqKey(seq uint64) string {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, seq)
 	return string(buf)
-}
-
-func sortByteKeys(keys []string) []string {
-	for i := 0; i < len(keys)-1; i++ {
-		for j := i + 1; j < len(keys); j++ {
-			if keys[i] > keys[j] {
-				keys[i], keys[j] = keys[j], keys[i]
-			}
-		}
-	}
-	return keys
 }

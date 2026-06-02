@@ -8,6 +8,7 @@ var (
 	ErrDuplicateSession   = errors.New("duplicate session")
 	ErrInvalidArgument    = errors.New("invalid argument")
 	ErrNoServers          = errors.New("no servers registered")
+	ErrPluginPanic        = errors.New("plugin panicked")
 	ErrSessionCapacity    = errors.New("session capacity reached")
 	ErrSessionClosed      = errors.New("session closed")
 	ErrServerClosed       = errors.New("server closed")

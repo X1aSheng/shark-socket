@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
+	"github.com/X1aSheng/shark-socket/internal/core"
 	bolt "go.etcd.io/bbolt"
 )
 
 // BoltStore implements StoreV2 backed by a BoltDB file.
 type BoltStore struct {
+	mu     sync.RWMutex
 	db     *bolt.DB
 	closed bool
 }
@@ -26,11 +29,20 @@ func NewBoltStore(path string) (*BoltStore, error) {
 	return &BoltStore{db: db}, nil
 }
 
+func (b *BoltStore) isClosed() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.closed
+}
+
 func (b *BoltStore) Save(bucket, key string, value []byte) {
 	_ = b.SaveV2(bucket, key, value)
 }
 
 func (b *BoltStore) SaveV2(bucket, key string, value []byte) error {
+	if b.isClosed() {
+		return core.ErrClosed
+	}
 	return b.db.Update(func(tx *bolt.Tx) error {
 		bk, err := tx.CreateBucketIfNotExists([]byte(bucket))
 		if err != nil {
@@ -46,6 +58,9 @@ func (b *BoltStore) Load(bucket, key string) ([]byte, bool) {
 }
 
 func (b *BoltStore) LoadV2(bucket, key string) ([]byte, bool, error) {
+	if b.isClosed() {
+		return nil, false, core.ErrClosed
+	}
 	var val []byte
 	err := b.db.View(func(tx *bolt.Tx) error {
 		bk := tx.Bucket([]byte(bucket))
@@ -67,6 +82,9 @@ func (b *BoltStore) Delete(bucket, key string) {
 }
 
 func (b *BoltStore) DeleteV2(bucket, key string) error {
+	if b.isClosed() {
+		return core.ErrClosed
+	}
 	return b.db.Update(func(tx *bolt.Tx) error {
 		bk := tx.Bucket([]byte(bucket))
 		if bk == nil {
@@ -77,6 +95,9 @@ func (b *BoltStore) DeleteV2(bucket, key string) error {
 }
 
 func (b *BoltStore) List(bucket string) ([]string, error) {
+	if b.isClosed() {
+		return nil, core.ErrClosed
+	}
 	var keys []string
 	err := b.db.View(func(tx *bolt.Tx) error {
 		bk := tx.Bucket([]byte(bucket))
@@ -91,9 +112,33 @@ func (b *BoltStore) List(bucket string) ([]string, error) {
 	return keys, err
 }
 
+// DeleteBatch deletes multiple keys within a single transaction.
+func (b *BoltStore) DeleteBatch(bucket string, keys []string) error {
+	if b.isClosed() {
+		return core.ErrClosed
+	}
+	return b.db.Update(func(tx *bolt.Tx) error {
+		bk := tx.Bucket([]byte(bucket))
+		if bk == nil {
+			return nil
+		}
+		for _, key := range keys {
+			if err := bk.Delete([]byte(key)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (b *BoltStore) Close() error {
+	b.mu.Lock()
 	b.closed = true
+	b.mu.Unlock()
 	return b.db.Close()
 }
 
-var _ StoreV2 = (*BoltStore)(nil)
+var (
+	_ StoreV2     = (*BoltStore)(nil)
+	_ BulkDeleter = (*BoltStore)(nil)
+)

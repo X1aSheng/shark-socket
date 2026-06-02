@@ -18,7 +18,12 @@ func NewPluginChain(plugins ...core.Plugin) *PluginChain {
 }
 
 func (c *PluginChain) Append(plugins ...core.Plugin) {
-	c.plugins = append(c.plugins, plugins...)
+	for _, p := range plugins {
+		if p == nil {
+			continue
+		}
+		c.plugins = append(c.plugins, p)
+	}
 	slices.SortFunc(c.plugins, func(a, b core.Plugin) int {
 		return a.Priority() - b.Priority()
 	})
@@ -54,7 +59,7 @@ func safeAccept(p core.Plugin, sess core.Session) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("plugin accept panic", "plugin", p.Name(), "panic", r)
-			err = nil
+			err = core.ErrPluginPanic
 		}
 	}()
 	return p.OnAccept(sess)
@@ -65,7 +70,7 @@ func safeMessage(p core.Plugin, sess core.Session, data []byte) (out []byte, err
 		if r := recover(); r != nil {
 			slog.Error("plugin message panic", "plugin", p.Name(), "panic", r)
 			out = data
-			err = nil
+			err = core.ErrPluginPanic
 		}
 	}()
 	return p.OnMessage(sess, data)

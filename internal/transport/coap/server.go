@@ -308,7 +308,7 @@ func (s *Server) addObserveSeq(sess *session, req Message, resp *Message) {
 		if resp.Options == nil {
 			resp.Options = make(map[uint16][]byte)
 		}
-		resp.Options[ObserveOption] = []byte{byte(seq)}
+		resp.Options[ObserveOption] = encodeObserveSeq(seq)
 	}
 }
 
@@ -321,7 +321,7 @@ func (s *Server) NotifyObservers(resource string, payload []byte) {
 			continue
 		}
 		seq := obs.NextSeq()
-		seqBuf := []byte{byte(seq >> 24), byte(seq >> 16), byte(seq >> 8), byte(seq)}
+		seqBuf := encodeObserveSeq(seq)
 		notify := Message{
 			Type:      TypeCON,
 			Code:      CodeContent,
@@ -428,6 +428,21 @@ func (s *Server) sendACKMsg(sess *session, msg Message) error {
 		return err
 	}
 	return sess.Send(data)
+}
+
+// encodeObserveSeq encodes a sequence number in minimal big-endian bytes.
+// RFC 7641 uses variable-length encoding; 3 bytes covers up to 16M notifications.
+func encodeObserveSeq(seq uint32) []byte {
+	switch {
+	case seq == 0:
+		return []byte{0}
+	case seq <= 0xFF:
+		return []byte{byte(seq)}
+	case seq <= 0xFFFF:
+		return []byte{byte(seq >> 8), byte(seq)}
+	default:
+		return []byte{byte(seq >> 16), byte(seq >> 8), byte(seq)}
+	}
 }
 
 func (s *Server) closeSession(ctx context.Context, key any, sess *session) {
