@@ -11,8 +11,14 @@ func FuzzTLVRoundTrip(f *testing.F) {
 	f.Add(make([]byte, 256))
 
 	f.Fuzz(func(t *testing.T, payload []byte) {
-		entry := tlvEntry{id: 0, typ: ResourceString, value: payload}
+		entry := tlvEntry{ResourceID: 0, Type: ResourceString, Value: payload}
 		encoded, err := EncodeTLV([]tlvEntry{entry})
+		if len(payload) > 65535 {
+			if err == nil {
+				t.Fatal("EncodeTLV succeeded for oversized value")
+			}
+			return
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -23,7 +29,7 @@ func FuzzTLVRoundTrip(f *testing.F) {
 		if len(decoded) != 1 {
 			t.Fatalf("expected 1 resource, got %d", len(decoded))
 		}
-		if !bytes.Equal(decoded[0].value, payload) {
+		if !bytes.Equal(decoded[0].Value, payload) {
 			t.Fatalf("value mismatch for %d-byte payload", len(payload))
 		}
 	})

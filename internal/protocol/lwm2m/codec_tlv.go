@@ -22,6 +22,9 @@ func EncodeTLV(entries []tlvEntry) ([]byte, error) {
 		if e.ResourceID < 0 || e.ResourceID > 65535 {
 			return nil, fmt.Errorf("resource id %d out of range", e.ResourceID)
 		}
+		if len(e.Value) > 65535 {
+			return nil, fmt.Errorf("resource %d value length %d out of range", e.ResourceID, len(e.Value))
+		}
 		typeByte := resourceTypeToByte(e.Type)
 		buf = append(buf, typeByte)
 		idBytes := make([]byte, 2)
