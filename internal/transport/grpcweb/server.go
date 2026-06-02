@@ -2,6 +2,7 @@ package grpcweb
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -49,13 +50,27 @@ func (s *Server) Start(context.Context) error {
 	if s.opts.WebSocket {
 		mux.HandleFunc(s.opts.WebSocketPath, s.handleWebSocket)
 	}
-	s.server = &http.Server{
-		Addr:         s.opts.Addr,
-		Handler:      mux,
-		ReadTimeout:  s.opts.ReadTimeout,
-		WriteTimeout: s.opts.WriteTimeout,
+	var ln net.Listener
+	var err error
+	if s.opts.TLSConfig != nil {
+		// Use tls.Listen for TLS; do NOT set TLSConfig on http.Server
+		// to avoid HTTP/2 negotiation that conflicts with WebSocket/gRPC-Web.
+		s.server = &http.Server{
+			Addr:         s.opts.Addr,
+			Handler:      mux,
+			ReadTimeout:  s.opts.ReadTimeout,
+			WriteTimeout: s.opts.WriteTimeout,
+		}
+		ln, err = tls.Listen("tcp", s.opts.Addr, s.opts.TLSConfig)
+	} else {
+		s.server = &http.Server{
+			Addr:         s.opts.Addr,
+			Handler:      mux,
+			ReadTimeout:  s.opts.ReadTimeout,
+			WriteTimeout: s.opts.WriteTimeout,
+		}
+		ln, err = net.Listen("tcp", s.opts.Addr)
 	}
-	ln, err := net.Listen("tcp", s.opts.Addr)
 	if err != nil {
 		return fmt.Errorf("grpc-web listen %s: %w", s.opts.Addr, err)
 	}

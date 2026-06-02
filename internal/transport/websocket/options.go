@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"crypto/tls"
 	"net/http"
 	"time"
 
@@ -11,6 +12,7 @@ type Options struct {
 	Addr           string
 	Path           string
 	Handler        core.Handler
+	TLSConfig      *tls.Config
 	CheckOrigin    func(*http.Request) bool
 	PingInterval   time.Duration
 	PongTimeout    time.Duration
@@ -49,6 +51,10 @@ func WithPath(path string) Option {
 
 func WithHandler(handler core.Handler) Option {
 	return func(o *Options) { o.Handler = handler }
+}
+
+func WithTLSConfig(cfg *tls.Config) Option {
+	return func(o *Options) { o.TLSConfig = cfg }
 }
 
 func WithCheckOrigin(fn func(*http.Request) bool) Option {

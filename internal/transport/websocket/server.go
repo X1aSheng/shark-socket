@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -49,8 +50,17 @@ func (s *Server) Start(context.Context) error {
 	s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate)
 	mux := http.NewServeMux()
 	mux.HandleFunc(s.opts.Path, s.handleUpgrade)
-	s.server = &http.Server{Addr: s.opts.Addr, Handler: mux}
-	ln, err := net.Listen("tcp", s.opts.Addr)
+	var ln net.Listener
+	var err error
+	if s.opts.TLSConfig != nil {
+		// Use tls.Listen for TLS; do NOT set TLSConfig on http.Server
+		// to avoid HTTP/2 negotiation that conflicts with WebSocket upgrades.
+		s.server = &http.Server{Addr: s.opts.Addr, Handler: mux}
+		ln, err = tls.Listen("tcp", s.opts.Addr, s.opts.TLSConfig)
+	} else {
+		s.server = &http.Server{Addr: s.opts.Addr, Handler: mux}
+		ln, err = net.Listen("tcp", s.opts.Addr)
+	}
 	if err != nil {
 		return fmt.Errorf("websocket listen %s: %w", s.opts.Addr, err)
 	}

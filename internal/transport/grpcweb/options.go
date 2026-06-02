@@ -1,6 +1,7 @@
 package grpcweb
 
 import (
+	"crypto/tls"
 	"net/http"
 	"time"
 
@@ -11,6 +12,7 @@ type Options struct {
 	Addr            string
 	Path            string
 	Handler         core.Handler
+	TLSConfig       *tls.Config
 	MaxMessageBytes int64
 	ReadTimeout     time.Duration
 	WriteTimeout    time.Duration
@@ -62,6 +64,10 @@ func WithWebSocketMode(path string) Option {
 			o.WebSocketPath = path
 		}
 	}
+}
+
+func WithTLSConfig(cfg *tls.Config) Option {
+	return func(o *Options) { o.TLSConfig = cfg }
 }
 
 func WithCheckOrigin(fn func(*http.Request) bool) Option {
