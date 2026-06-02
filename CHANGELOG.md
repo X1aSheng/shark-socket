@@ -34,15 +34,39 @@ This project uses semantic versioning. Pre-release tags use the form
 - Added `PersistenceV2` plugin using `StoreV2` with `OnMessage` hook appending to `MessageLog`.
 - Added `SessionStore` — JSON session snapshot save/load/list/delete for restart recovery.
 
-### Defect Fixes (2026-06-02 Review)
-- Fixed CI branch trigger list to include `shark-socket-new-main`.
-- Replaced CoAP `encodeOptionHeader` panic with proper error return and extended format support.
-- Fixed `parseUint64` to use `strconv.ParseUint` instead of silent character-dropping.
-- Expanded `.gitignore` with IDE files, binaries, and worktree entries.
-- Exported `StoreV2`, `BoltStore`, `MessageLog`, `SessionStore`, `PersistenceV2` in public API.
-- Added test coverage for `SessionStore` (5 tests) and `PersistenceV2` (2 tests).
-- Updated README feature matrix with all Phase 1-4 additions.
-- Added project review report `docs/PROJECT-REVIEW-260602-064500.md`.
+### Defect Fixes (2026-06-02 Comprehensive Review)
+
+#### Critical Fixes
+- Fixed data race on `allowance` field in shared Acceptor (added mutex for rate limiting).
+- Fixed DTLS goroutine leaks in UDP and CoAP transports (track and close connections on shutdown).
+- Fixed unbounded memory leak in CoAP dedup map (periodic cleanup goroutine).
+- Fixed QUIC double-invoke of OnClose/Unregister (use LoadAndDelete for idempotency).
+- Fixed data race on `clientCAFile` in tlsutil CertCache (added mutex to SetClientCA).
+- Added nil guards on exported `Gateway.Register` and `SessionManager.Register`.
+
+#### High Priority Fixes
+- Fixed CoAP Observe sequence encoding inconsistency (variable-length big-endian encoding).
+- Added BoltDB closed-state guard with mutex (operations return ErrClosed after close).
+- Added BulkDeleter interface and BoltDB batch delete for MessageLog bulk operations.
+- Fixed TCP accept loop spin on persistent errors (added 100ms backoff).
+- Added nil guard and validation in PluginChain.Append.
+- Panicking plugins now return ErrPluginPanic instead of silently succeeding.
+
+#### Deployment Hardening
+- Added ca-certificates, wget, and HEALTHCHECK to Dockerfile.
+- Fixed Docker UID to 1000 for K8s compatibility.
+- Added .dockerignore to reduce build context.
+- Fixed docker-compose YAML ambiguity and added tmpfs mounts.
+- Added K8s namespace, ServiceAccount, ConfigMap, NetworkPolicy, PDB, HPA manifests.
+- Added Helm _helpers.tpl and NOTES.txt templates.
+- Added golangci-lint and govulncheck CI jobs.
+
+#### Test & Coverage
+- Added WSS/TLS tests for WebSocket transport.
+- Added TLS tests for gRPC-Web transport.
+- Added CoAP Observe E2E tests (4 test functions).
+- Fixed scripts: `./api/...` to `./api`, removed duplicate test from validate.ps1.
+- Added comprehensive project review document.
 
 ## v0.1.0 - 2026-05-30
 

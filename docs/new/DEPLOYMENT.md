@@ -128,6 +128,16 @@ kubectl apply -k deploy/k8s/
 
 ### 4.2 清单说明
 
+#### 额外资源
+
+除了 Deployment 和 Service，Kustomize 还部署：
+- **Namespace**: `shark-socket` 命名空间隔离
+- **ServiceAccount**: 专用服务账号
+- **ConfigMap**: 应用配置（地址、端口）
+- **NetworkPolicy**: 网络隔离策略
+- **PodDisruptionBudget**: 最小可用 1 副本
+- **HorizontalPodAutoscaler**: CPU 50%，2-10 副本
+
 #### Deployment
 
 ```yaml
@@ -135,9 +145,11 @@ spec:
   replicas: 2
   template:
     spec:
+      serviceAccountName: shark-socket
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
+        fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -280,32 +292,44 @@ resources:
 
 ## 8. CI/CD 流水线
 
-CI 配置位于 `.github/workflows/ci.yml`，包含三个并行 Job（validate 在 Windows + Ubuntu 矩阵上运行）。
+CI 配置位于 `.github/workflows/ci.yml`，包含五个 Job。
 
-### 8.1 validate（跨平台）
+### 8.1 lint（代码质量检查）
+
+运行于 `ubuntu-latest`：
+
+- 使用 `golangci-lint` 进行静态分析
+
+### 8.2 security（安全扫描）
+
+运行于 `ubuntu-latest`：
+
+- 使用 `govulncheck` 扫描已知漏洞
+
+### 8.3 validate（跨平台测试）
 
 运行于 `windows-latest` + `ubuntu-latest` 矩阵：
 
 1. `go run scripts/run_tests.go -mode all` — 单元 + 集成 + 基准测试
-2. `scripts/validate.ps1` — `go test` + `go vet`
+2. `scripts/validate.ps1` — `go vet`
 3. `scripts/validate_deploy.ps1` — 部署清单静态校验
 
-### 8.2 race
+### 8.4 race（竞态检测）
 
 运行于 `ubuntu-latest`：
 
 - `go run scripts/run_tests.go -mode race` — 竞态检测
 
-### 8.3 coverage
+### 8.5 coverage（覆盖率）
 
 运行于 `ubuntu-latest`：
 
 - `go run scripts/run_tests.go -mode cover` — 覆盖率
 
-### 8.4 触发条件
+### 8.6 触发条件
 
-- Push 到 `main` 或 `shark-socket-main` 分支
-- Pull Request
+- Push 到 `main`、`shark-socket-main` 或 `shark-socket-new-main` 分支
+- Pull Request 到上述分支
 
 ---
 
