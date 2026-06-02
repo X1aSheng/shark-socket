@@ -12,6 +12,7 @@ import (
 
 	"github.com/X1aSheng/shark-socket/internal/core"
 	"github.com/X1aSheng/shark-socket/internal/runtime"
+	"github.com/X1aSheng/shark-socket/internal/transport/grpcweb"
 	transporthttp "github.com/X1aSheng/shark-socket/internal/transport/http"
 	"github.com/X1aSheng/shark-socket/internal/transport/tcp"
 	"github.com/X1aSheng/shark-socket/internal/transport/udp"
@@ -301,6 +302,47 @@ type benchAddr string
 
 func (a benchAddr) Network() string { return string(a) }
 func (a benchAddr) String() string  { return string(a) }
+
+func BenchmarkGRPCWebEcho(b *testing.B) {
+	server := grpcweb.NewServer(
+		grpcweb.WithAddr("127.0.0.1:0"),
+		grpcweb.WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		b.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { stopGateway(b, gateway) })
+
+	payload := []byte("benchmark-payload")
+	url := "http://" + server.Addr().String() + "/grpc"
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// gRPC-Web framed message: 1 byte flag + 4 bytes length + payload
+		frame := make([]byte, 5+len(payload))
+		frame[0] = 0
+		frame[1] = byte(len(payload) >> 24)
+		frame[2] = byte(len(payload) >> 16)
+		frame[3] = byte(len(payload) >> 8)
+		frame[4] = byte(len(payload))
+		copy(frame[5:], payload)
+		resp, err := http.Post(url, "application/grpc-web", bytes.NewReader(frame))
+		if err != nil {
+			b.Fatal(err)
+		}
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if len(respBody) < 5 {
+			b.Fatal("response too short")
+		}
+	}
+}
 
 func stopGateway(tb testing.TB, gateway *runtime.Gateway) {
 	tb.Helper()
