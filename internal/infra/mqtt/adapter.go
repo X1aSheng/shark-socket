@@ -27,28 +27,28 @@ func NewAdapter(opts ...Option) (*Adapter, error) {
 
 func (a *Adapter) Start(ctx context.Context) error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	if a.client != nil && a.client.IsConnected() {
+		a.mu.Unlock()
 		return nil
 	}
+	opts := a.opts // copy under lock
+	a.mu.Unlock()
 
-	handler := a.opts.Handler
-	client := paho.NewClient(pahoOptions(a.opts))
+	client := paho.NewClient(pahoOptions(opts))
 	token := client.Connect()
-	if !token.WaitTimeout(a.opts.ConnectTimeout) {
+	if !token.WaitTimeout(opts.ConnectTimeout) {
 		return fmt.Errorf("mqtt connect timeout")
 	}
 	if err := token.Error(); err != nil {
 		return fmt.Errorf("mqtt connect: %w", err)
 	}
 
-	if a.opts.Topic != "" && handler != nil {
-		h := handler
-		token := client.Subscribe(a.opts.Topic, a.opts.QoS, func(_ paho.Client, msg paho.Message) {
+	if opts.Topic != "" && opts.Handler != nil {
+		h := opts.Handler
+		token := client.Subscribe(opts.Topic, opts.QoS, func(_ paho.Client, msg paho.Message) {
 			h(msg.Topic(), msg.Payload())
 		})
-		if !token.WaitTimeout(a.opts.ConnectTimeout) {
+		if !token.WaitTimeout(opts.ConnectTimeout) {
 			client.Disconnect(100)
 			return fmt.Errorf("mqtt subscribe timeout")
 		}
@@ -58,7 +58,9 @@ func (a *Adapter) Start(ctx context.Context) error {
 		}
 	}
 
+	a.mu.Lock()
 	a.client = client
+	a.mu.Unlock()
 	return nil
 }
 
