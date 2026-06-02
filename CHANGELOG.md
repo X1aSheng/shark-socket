@@ -62,6 +62,17 @@ This project uses semantic versioning. Pre-release tags use the form
 - App package: 67.9% → 73.4% (4 tests)
 - CoAP transport: 67.6% → 69.3% (4 tests)
 
+### Latest Fixes & Enhancements
+- MQTT integration: mosquitto broker in docker-compose, E2E tests pass on dual cloud servers.
+- Fuzz testing: TCP framers, LwM2M TLV codec (11 fuzz tests total).
+- Benchmark: gRPC-Web + QUIC benchmarks added (6 protocols covered).
+- CoAP: message edge cases, option encoding, extended deltas (coverage 69% → 76%).
+- UDP/CoAP: session ID allocation fix (defer NextID until confirmed new session).
+- Health/metrics: error propagation via App.ServeErrors().
+- K8s: explicit ClusterIP type, protocol fields on service ports.
+- CI: PR branch filter, cross-platform path separators, missing strconv import fix.
+- Docs: ARCHITECTURE test matrix, SECURITY Docker hardening updated.
+
 ### Security (Phase 1)
 - Added TLS certificate hot-reload via file watcher and `GetCertificate` callback.
 - Added DTLS support for UDP transport using pion/dtls v3.

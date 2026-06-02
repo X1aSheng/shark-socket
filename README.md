@@ -29,7 +29,10 @@ runtime ownership, plugin execution, and graceful shutdown explicit.
 | Security | Implemented | TLS cert hot-reload via file watcher, mTLS client auth, DTLS for UDP/CoAP |
 | Persistence | Implemented | StoreV2 interface, BoltDB backend, durable message log with sequence numbers, session snapshots |
 | Infra | Implemented | In-memory cache/store/pubsub/circuitbreaker/observability, Prometheus metrics exporter, OpenTelemetry tracer adapter, TLS cert cache |
-| Deploy | Hardened | Docker (HEALTHCHECK, non-root), K8s (HPA, PDB, NetworkPolicy), Helm _helpers.tpl |
+| MQTT | Integrated | External broker adapter (paho client), docker-compose mosquitto for E2E tests |
+| Fuzz Testing | 11 tests | TCP framers, CoAP message parse, LwM2M TLV codec — all passing |
+| Benchmark | 6 protocols | TCP, UDP, HTTP, WebSocket, gRPC-Web, QUIC — all benchmarked |
+| Deploy | Hardened | Docker (HEALTHCHECK, non-root), K8s (HPA, PDB, NetworkPolicy, ConfigMap), Helm _helpers.tpl |
 
 ## Run
 
@@ -49,6 +52,13 @@ Health and readiness endpoints are available when `health_addr` is configured:
 
 - `GET /healthz`
 - `GET /readyz`
+
+### MQTT Integration Test
+
+```bash
+# Start mosquitto broker + run E2E tests (requires Docker)
+docker compose -f deploy/docker/docker-compose.yml --profile test run mqtt-test
+```
 
 ## Validate
 

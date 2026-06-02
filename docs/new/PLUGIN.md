@@ -1084,9 +1084,32 @@ func (p *PersistencePlugin) batchWriter() {
 
 ---
 
-## 9. ClusterPlugin
+## 9. PersistenceV2Plugin
 
-### 9.1 设计
+> StoreV2 + MessageLog durable persistence with error returns.
+
+### 9.1 OnMessage Hook
+```go
+func (p *PersistenceV2) OnMessage(sess core.Session, data []byte) ([]byte, error) {
+    seq, err := p.log.Append(data)
+    return data, err  // transmit data even if log fails
+}
+```
+
+### 9.2 Usage
+```go
+store, _ := NewBoltStore("/data/shark.db")
+log, _ := NewMessageLog(store, "messages")
+p := NewPersistenceV2(store, "sessions")
+log.Replay(func(seq uint64, data []byte) error { return nil })
+log.Prune(1000)
+```
+
+---
+
+## 10. ClusterPlugin
+
+### 10.1 设计
 
 ```
 职责：跨节点会话路由 + 集群事件广播
@@ -1103,7 +1126,7 @@ Priority：40
   → 远端节点 ClusterPlugin 订阅，转发到本地 Session
 ```
 
-### 9.2 结构定义
+### 10.2 结构定义
 
 ```go
 // internal/plugin/cluster.go
@@ -1134,7 +1157,7 @@ func (p *ClusterPlugin) Name() string  { return "cluster" }
 func (p *ClusterPlugin) Priority() int { return 40 }
 ```
 
-### 9.3 OnAccept 与 OnClose 实现
+### 10.3 OnAccept 与 OnClose 实现
 
 ```go
 func (p *ClusterPlugin) OnAccept(sess core.Session) error {
@@ -1179,7 +1202,7 @@ func (p *ClusterPlugin) OnClose(sess core.Session) {
 }
 ```
 
-### 9.4 路由转发
+### 10.4 路由转发
 
 ```go
 // Route 向目标 Session 转发消息（跨节点感知）。
@@ -1251,7 +1274,7 @@ func (p *ClusterPlugin) handleRouteMessage(data []byte) {
 }
 ```
 
-### 9.5 节点心跳
+### 10.5 节点心跳
 
 ```go
 func (p *ClusterPlugin) startHeartbeat() {
@@ -1284,9 +1307,9 @@ func (p *ClusterPlugin) startHeartbeat() {
 
 ---
 
-## 10. SlowHandlerPlugin
+## 11. SlowHandlerPlugin
 
-### 10.1 设计
+### 11.1 设计
 
 ```
 职责：记录执行时间超过阈值的 Handler 调用
@@ -1295,7 +1318,7 @@ Priority：60（最后执行，观察最终 payload）
 用途：定位业务 Handler 性能问题，不影响主流程
 ```
 
-### 10.2 实现
+### 11.2 实现
 
 ```go
 // internal/plugin/slowhandler.go
@@ -1344,9 +1367,9 @@ func (p *SlowHandlerPlugin) RecordHandlerDuration(
 
 ---
 
-## 11. 自定义插件指南
+## 12. 自定义插件指南
 
-### 11.1 最小实现模板
+### 12.1 最小实现模板
 
 ```go
 // 自定义插件：只需嵌入 BasePlugin，覆盖关心的方法
@@ -1372,14 +1395,14 @@ func (p *MyPlugin) OnMessage(
 }
 ```
 
-### 11.2 注册到 PluginRunner
+### 12.2 注册到 PluginRunner
 
 ```go
 // application/app.go 中注册
 rt.Plugins().Register(&MyPlugin{})
 ```
 
-### 11.3 自定义插件检查清单
+### 12.3 自定义插件检查清单
 
 ```
 功能验证：
