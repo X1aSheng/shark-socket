@@ -120,9 +120,13 @@ func runCover(root, logs, ts string, timeout time.Duration) error {
 		return err
 	}
 	// Compute total coverage from the profile
-	totalOut, _ := output(root, "go", "tool", "cover", "-func="+coverFile)
+	detailFile := filepath.Join(logs, ts+"_cover_detail.log")
+	totalOut, covErr := output(root, "go", "tool", "cover", "-func="+coverFile)
 	fmt.Print(string(totalOut))
-	_ = os.WriteFile(logFile, totalOut, 0o644) // overwrite with detailed output
+	_ = os.WriteFile(detailFile, totalOut, 0o644)
+	if covErr != nil {
+		return covErr
+	}
 	total := parseCoverageTotal(string(totalOut))
 	fmt.Printf("\nTotal coverage: %.1f%%\n", total)
 	const minCoverage = 50.0

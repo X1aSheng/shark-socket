@@ -1,15 +1,15 @@
 linters:
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
     - staticcheck
     - unused
+    - gocritic
     - gofmt
     - goimports
+  exclusions:
+    paths:
+      - examples/
 run:
   timeout: 5m
-issues:
-  exclude-dirs:
-    - examples
