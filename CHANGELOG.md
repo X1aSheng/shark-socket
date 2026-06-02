@@ -7,6 +7,50 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### Comprehensive Review Fixes (2026-06-02)
+
+#### Critical (5 fixes)
+- Fixed data race on `allowance` in shared Acceptor (mutex for rate limiting).
+- Fixed DTLS goroutine leaks in UDP and CoAP transports (track + close connections).
+- Fixed unbounded memory leak in CoAP dedup map (periodic cleanup).
+- Fixed QUIC double-invoke of OnClose/Unregister (LoadAndDelete guard).
+- Fixed data race on `clientCAFile` in tlsutil CertCache.
+
+#### High (7 fixes)
+- Fixed CoAP Observe sequence encoding inconsistency (variable-length BE).
+- Added BoltDB closed-state guard with sync.RWMutex.
+- Added BulkDeleter interface + BoltDB batch delete for MessageLog.
+- Fixed TCP accept loop spin on persistent errors (100ms backoff).
+- Added nil guard to PluginChain.Append (filter nil plugins).
+- Panicking plugins return ErrPluginPanic instead of silently succeeding.
+- Added nil guards to Gateway.Register and SessionManager.Register.
+
+#### Medium (8 fixes)
+- Added sync.RWMutex to PluginChain for thread safety.
+- Fixed TOCTOU in SessionManager.Register capacity check.
+- Added double-start guard to TCP Server (atomic.Bool).
+- WebSocket pingLoop closes session on failure (prevent zombie).
+- Added Acceptor rate limiting to gRPC-Web direct + WebSocket modes.
+- Added sync.Once to gRPC-Web session.Close().
+- Fixed cert watchers to use app lifecycle context instead of Background.
+- Fixed parseUint64 to return error instead of silently returning 0.
+
+#### Deployment Hardening
+- Docker: ca-certificates, wget, HEALTHCHECK, UID 1000, .dockerignore.
+- K8s: namespace, ServiceAccount, ConfigMap, NetworkPolicy, PDB, HPA.
+- Helm: _helpers.tpl, NOTES.txt, fsGroup, serviceAccountName.
+- CI: golangci-lint + govulncheck jobs, .golangci.yml config.
+
+#### Test Coverage
+- Added WebSocket TLS (WSS) integration test.
+- Added gRPC-Web TLS integration test.
+- Added CoAP Observe E2E tests (4 test functions).
+- Fixed data race in CoAP duplicate CON test handler.
+
+#### Cloud Validation
+- ✅ Server 1 (120.76.44.233): Go 1.26.3 build, test, race, Docker deploy, client test.
+- ✅ Server 2 (47.110.238.85): Go 1.26.3 build, test, race, coverage, Docker deploy, concurrent 64KB.
+
 ### Security (Phase 1)
 - Added TLS certificate hot-reload via file watcher and `GetCertificate` callback.
 - Added DTLS support for UDP transport using pion/dtls v3.
