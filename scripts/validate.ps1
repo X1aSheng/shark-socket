@@ -22,6 +22,9 @@ function Run-Step {
     $started = Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fff"
     Write-Host "[$started] START $Name"
     & $Command
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Name failed with exit code $LASTEXITCODE"
+    }
     $finished = Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fff"
     Write-Host "[$finished] PASS  $Name"
 }
