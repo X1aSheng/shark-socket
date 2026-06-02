@@ -39,6 +39,9 @@ func NewGateway(opts ...GatewayOption) *Gateway {
 }
 
 func (g *Gateway) Register(server core.Server) error {
+	if server == nil {
+		return core.ErrNoServers
+	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	proto := server.Protocol()

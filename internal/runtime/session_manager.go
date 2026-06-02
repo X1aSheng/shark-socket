@@ -37,6 +37,9 @@ func (m *SessionManager) NextID() uint64 {
 }
 
 func (m *SessionManager) Register(sess core.Session) error {
+	if sess == nil {
+		return core.ErrInvalidArgument
+	}
 	if m.max > 0 && m.count.Load() >= m.max {
 		return core.ErrSessionCapacity
 	}

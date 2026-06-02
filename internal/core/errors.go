@@ -6,6 +6,7 @@ var (
 	ErrClosed             = errors.New("closed")
 	ErrDuplicateProtocol  = errors.New("duplicate protocol")
 	ErrDuplicateSession   = errors.New("duplicate session")
+	ErrInvalidArgument    = errors.New("invalid argument")
 	ErrNoServers          = errors.New("no servers registered")
 	ErrSessionCapacity    = errors.New("session capacity reached")
 	ErrSessionClosed      = errors.New("session closed")

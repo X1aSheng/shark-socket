@@ -171,7 +171,9 @@ func (s *Server) handleStream(sess *session, stream *quicgo.Stream) {
 }
 
 func (s *Server) closeSession(ctx context.Context, id uint64, sess *session) {
-	s.sessions.Delete(id)
+	if _, loaded := s.sessions.LoadAndDelete(id); !loaded {
+		return // already closed
+	}
 	s.rt.Sessions().Unregister(id)
 	_ = sess.Close(ctx)
 	s.rt.Plugins().OnClose(sess)

@@ -26,6 +26,8 @@ func NewCertCache(certFile, keyFile string) *CertCache {
 
 // SetClientCA configures an optional client CA file for mTLS.
 func (c *CertCache) SetClientCA(caFile string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.clientCAFile = caFile
 }
 

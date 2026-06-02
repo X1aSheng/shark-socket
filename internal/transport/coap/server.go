@@ -19,6 +19,7 @@ type Server struct {
 	rt        core.Runtime
 	udpConn   *net.UDPConn
 	dtlsLn    net.Listener
+	dtlsConns sync.Map // active DTLS connections, closed on shutdown
 	closed    atomic.Bool
 	cancel    context.CancelFunc
 	wg        sync.WaitGroup
@@ -60,8 +61,9 @@ func (s *Server) Start(ctx context.Context) error {
 			return fmt.Errorf("coap dtls listen %s: %w", s.opts.Addr, err)
 		}
 		s.dtlsLn = ln
-		s.wg.Add(1)
+		s.wg.Add(2)
 		go s.dtlsAcceptLoop(runCtx)
+		go s.seenCleanupLoop(runCtx)
 	} else {
 		conn, err := net.ListenUDP("udp", addr)
 		if err != nil {
@@ -69,9 +71,10 @@ func (s *Server) Start(ctx context.Context) error {
 			return fmt.Errorf("coap listen %s: %w", s.opts.Addr, err)
 		}
 		s.udpConn = conn
-		s.wg.Add(2)
+		s.wg.Add(3)
 		go s.readLoop(runCtx)
 		go s.sweepLoop(runCtx)
+		go s.seenCleanupLoop(runCtx)
 	}
 	return nil
 }
@@ -89,6 +92,13 @@ func (s *Server) StopAccept(context.Context) error {
 	if s.cancel != nil {
 		s.cancel()
 	}
+	// Close individual DTLS connections to unblock read goroutines
+	s.dtlsConns.Range(func(key, value any) bool {
+		if conn, ok := value.(net.Conn); ok {
+			_ = conn.Close()
+		}
+		return true
+	})
 	if s.dtlsLn != nil {
 		return s.dtlsLn.Close()
 	}
@@ -163,7 +173,9 @@ func (s *Server) handleDTLSConn(ctx context.Context, conn net.Conn) {
 	id := s.rt.Sessions().NextID()
 	sess := newDTLSSession(id, conn)
 	s.sessions.Store(id, sess)
+	s.dtlsConns.Store(id, conn)
 	defer func() {
+		s.dtlsConns.Delete(id)
 		s.sessions.Delete(id)
 		s.rt.Sessions().Unregister(id)
 		s.rt.Plugins().OnClose(sess)
@@ -358,6 +370,23 @@ func (s *Server) sweepLoop(ctx context.Context) {
 				}
 				return true
 			})
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// seenCleanupLoop periodically clears the dedup map to prevent unbounded memory
+// growth from transient clients (e.g., IoT devices behind rotating NAT).
+// CoAP MessageIDs are 16-bit (wrapping at 65536), so a 5-minute interval is safe.
+func (s *Server) seenCleanupLoop(ctx context.Context) {
+	defer s.wg.Done()
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			s.seen.Clear()
 		case <-ctx.Done():
 			return
 		}

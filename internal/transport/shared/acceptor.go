@@ -1,6 +1,7 @@
 package shared
 
 import (
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -11,7 +12,8 @@ type Acceptor struct {
 	active    atomic.Int64
 	rate      float64
 	lastCheck atomic.Int64 // UnixNano
-	allowance float64      // accessed only by TryAccept
+	mu        sync.Mutex   // guards allowance and rate check atomicity
+	allowance float64
 }
 
 // NewAcceptor creates an Acceptor with optional limits. Zero values mean unlimited.
@@ -28,6 +30,7 @@ func (a *Acceptor) TryAccept() bool {
 		return false
 	}
 	if a.rate > 0 {
+		a.mu.Lock()
 		now := time.Now().UnixNano()
 		last := a.lastCheck.Swap(now)
 		elapsed := float64(now-last) / float64(time.Second)
@@ -35,10 +38,14 @@ func (a *Acceptor) TryAccept() bool {
 		if a.allowance > a.rate {
 			a.allowance = a.rate
 		}
-		if a.allowance < 1 {
+		ok := a.allowance >= 1
+		if ok {
+			a.allowance--
+		}
+		a.mu.Unlock()
+		if !ok {
 			return false
 		}
-		a.allowance--
 	}
 	a.active.Add(1)
 	return true

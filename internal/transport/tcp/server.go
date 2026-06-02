@@ -8,6 +8,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
 	"github.com/X1aSheng/shark-socket/internal/runtime"
@@ -136,6 +137,7 @@ func (s *Server) acceptLoop(ctx context.Context) {
 				return
 			}
 			slog.Warn("tcp accept failed", "error", err)
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 		if s.acceptor != nil && !s.acceptor.TryAccept() {

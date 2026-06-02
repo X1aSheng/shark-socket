@@ -14,14 +14,15 @@ import (
 )
 
 type Server struct {
-	opts     Options
-	rt       core.Runtime
-	conn     *net.UDPConn
-	dtlsLn   net.Listener
-	closed   atomic.Bool
-	cancel   context.CancelFunc
-	wg       sync.WaitGroup
-	sessions sync.Map
+	opts      Options
+	rt        core.Runtime
+	conn      *net.UDPConn
+	dtlsLn    net.Listener
+	dtlsConns sync.Map // active DTLS connections, closed on shutdown
+	closed    atomic.Bool
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+	sessions  sync.Map
 }
 
 func NewServer(opts ...Option) *Server {
@@ -86,6 +87,13 @@ func (s *Server) StopAccept(context.Context) error {
 	if s.cancel != nil {
 		s.cancel()
 	}
+	// Close individual DTLS connections to unblock read goroutines
+	s.dtlsConns.Range(func(key, value any) bool {
+		if conn, ok := value.(net.Conn); ok {
+			_ = conn.Close()
+		}
+		return true
+	})
 	if s.dtlsLn != nil {
 		return s.dtlsLn.Close()
 	}
@@ -157,7 +165,9 @@ func (s *Server) handleDTLSConn(ctx context.Context, conn net.Conn) {
 	id := s.rt.Sessions().NextID()
 	sess := newDTLSSession(id, conn)
 	s.sessions.Store(id, sess)
+	s.dtlsConns.Store(id, conn)
 	defer func() {
+		s.dtlsConns.Delete(id)
 		s.sessions.Delete(id)
 		s.rt.Sessions().Unregister(id)
 		s.rt.Plugins().OnClose(sess)
