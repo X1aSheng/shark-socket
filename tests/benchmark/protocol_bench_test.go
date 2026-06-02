@@ -387,13 +387,27 @@ func BenchmarkQUICEcho(b *testing.B) {
 			b.Fatal(err)
 		}
 		_, _ = stream.Write(payload)
-		buf := make([]byte, 1024)
-		n, err := io.ReadFull(stream, buf[:len(payload)])
+		if err := stream.Close(); err != nil {
+			_ = conn.CloseWithError(0, "")
+			b.Fatal(err)
+		}
+		readCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		resp, err := conn.AcceptStream(readCtx)
+		cancel()
 		if err != nil {
 			_ = conn.CloseWithError(0, "")
 			b.Fatal(err)
 		}
-		_ = stream.Close()
+		buf := make([]byte, 1024)
+		if err := resp.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			_ = conn.CloseWithError(0, "")
+			b.Fatal(err)
+		}
+		n, err := io.ReadFull(resp, buf[:len(payload)])
+		if err != nil {
+			_ = conn.CloseWithError(0, "")
+			b.Fatal(err)
+		}
 		_ = conn.CloseWithError(0, "")
 		if !bytes.Equal(buf[:n], payload) {
 			b.Fatalf("echo = %q, want %q", buf[:n], payload)
