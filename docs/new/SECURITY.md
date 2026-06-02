@@ -281,11 +281,20 @@ for i := len(started) - 1; i >= 0; i-- {
 ```yaml
 # docker-compose.yml
 read_only: true                    # 只读根文件系统
+tmpfs:
+  - /tmp                           # 运行时临时文件
+  - /var/log                       # 日志输出
 security_opt:
-  - no-new-privileges:true         # 禁止通过 setuid/setgid 提权
+  - "no-new-privileges:true"       # 禁止通过 setuid/setgid 提权
 cap_drop:
   - ALL                            # 删除所有 Linux capabilities
 ```
+
+Dockerfile 安全措施：
+- `adduser -u 1000` 确定 UID，匹配 K8s `runAsUser`
+- `apk add ca-certificates` TLS 证书验证支持
+- HEALTHCHECK 指令监控容器健康状态
+- 多阶段构建减小攻击面
 
 ### 7.2 Kubernetes 安全配置
 

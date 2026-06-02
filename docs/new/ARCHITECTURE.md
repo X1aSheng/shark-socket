@@ -350,7 +350,31 @@ shark-socket/
 
 ---
 
-## 7. 文档导航
+## 7. 测试与覆盖率
+
+| 包 | 覆盖率 | 测试文件 | 说明 |
+|------|--------|---------|------|
+| Core | 100% | `core_test.go` | 接口、错误、类型 |
+| Cache | 97.2% | `cache_test.go` | TTL 缓存 |
+| PubSub | 100% | `pubsub_test.go` | 发布订阅 |
+| Shared | 95.7% | `acceptor_test.go` | 连接限流 |
+| TLS Util | 94.1% | `cert_cache_test.go` | 证书管理 |
+| Runtime | 88.2% | `runtime_test.go` | 网关编排 |
+| API | 77.4% | `api_test.go` | 公共接口 |
+| Plugin | 79.3% | 4 测试文件 | 插件系统 |
+| Store | 77.3% | 3 测试文件 | 存储后端 |
+| UDP | 71.5% | 3 测试文件 | DTLS+session |
+| CoAP | 76.1% | 4 测试文件 | 协议编解码 |
+| TCP | 70.6% | 3 测试文件 | TLS+mTLS+pool |
+| QUIC | 76.8% | 1 测试文件 | QUIC 流传输 |
+| gRPC-Web | 73.1% | 2 测试文件 | TLS+WS 模式 |
+| MQTT | 59.1% | 2 测试文件 | 适配器单元测试 |
+
+总体：25 测试套件，250+ 测试函数，零数据竞争，覆盖率阈值 50% CI 强制执行。
+
+---
+
+## 8. 文档导航
 
 ### 7.1 读者路径建议
 
