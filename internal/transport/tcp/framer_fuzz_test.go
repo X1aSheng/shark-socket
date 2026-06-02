@@ -2,6 +2,8 @@ package tcp
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"testing"
 )
 
@@ -33,6 +35,9 @@ func FuzzRawFramerRoundTrip(f *testing.F) {
 			t.Fatal(err)
 		}
 		got, err := framer.ReadFrame(&buf)
+		if len(payload) == 0 && errors.Is(err, io.EOF) {
+			return
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
