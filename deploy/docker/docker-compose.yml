@@ -13,6 +13,7 @@ services:
       SHARK_TCP_ADDR: 0.0.0.0:18000
       SHARK_METRICS_ADDR: 0.0.0.0:18080
       SHARK_HEALTH_ADDR: 0.0.0.0:18081
+      SHARK_MQTT_BROKER: tcp://mosquitto:1883
     read_only: true
     tmpfs:
       - /tmp
@@ -22,3 +23,43 @@ services:
     cap_drop:
       - ALL
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:18081/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    volumes:
+      - mosquitto-data:/mosquitto/data
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-i", "healthcheck", "-W", "3"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  mqtt-test:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      target: build
+    environment:
+      SHARK_MQTT_BROKER: tcp://mosquitto:1883
+    command: go test ./internal/infra/mqtt -v -count=1 -timeout 30s
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    profiles:
+      - test
+
+volumes:
+  mosquitto-data:
