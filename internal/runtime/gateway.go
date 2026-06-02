@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -44,6 +45,9 @@ func (g *Gateway) Register(server core.Server) error {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if g.started.Load() {
+		return fmt.Errorf("gateway: cannot register %q after Start", server.Protocol())
+	}
 	proto := server.Protocol()
 	if _, exists := g.servers[proto]; exists {
 		return core.ErrDuplicateProtocol

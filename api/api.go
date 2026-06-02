@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -329,6 +330,9 @@ func AdaptTyped[M any](codec Codec[M], handler TypedHandler[M]) Handler {
 }
 
 func Run(ctx context.Context, gateway *Gateway) error {
+	if gateway == nil {
+		return fmt.Errorf("api.Run: gateway is nil")
+	}
 	return gateway.Start(ctx)
 }
 

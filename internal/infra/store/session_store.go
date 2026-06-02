@@ -56,7 +56,11 @@ func (s *SessionStore) ListSnapshots() ([]SessionSnapshot, error) {
 	}
 	var snaps []SessionSnapshot
 	for _, key := range keys {
-		snap, ok, err := s.LoadSnapshot(parseUint64(key))
+		id, ok := parseUint64(key)
+		if !ok {
+			continue // skip invalid snapshot keys
+		}
+		snap, ok, err := s.LoadSnapshot(id)
 		if err != nil {
 			return nil, err
 		}
@@ -71,10 +75,10 @@ func (s *SessionStore) DeleteSnapshot(id uint64) error {
 	return s.store.DeleteV2(s.bucket, fmt.Sprintf("%d", id))
 }
 
-func parseUint64(s string) uint64 {
+func parseUint64(s string) (uint64, bool) {
 	v, err := strconv.ParseUint(s, 10, 64)
 	if err != nil {
-		return 0
+		return 0, false
 	}
-	return v
+	return v, true
 }
