@@ -7,6 +7,13 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### Review Fixes (2026-06-02 Evening)
+- Fixed TCP RawFramer fuzz behavior for empty raw payload reads.
+- Fixed LwM2M TLV fuzz tests after field rename and added value length validation.
+- Fixed PowerShell validation scripts so native command failures fail CI correctly.
+- Fixed QUIC benchmark response handling to read the server-initiated stream.
+- Revalidated local Go tests, race, coverage, deploy static tests, and cloud Docker smoke tests.
+
 ### Comprehensive Review Fixes (2026-06-02)
 
 #### Critical (5 fixes)

@@ -66,7 +66,7 @@ docker compose -f deploy/docker/docker-compose.yml --profile test run mqtt-test
 |-------|---------|--------|
 | Unit tests (25 suites) | `go test ./...` | ✅ |
 | Race detection | `go test -race ./...` | ✅ |
-| Coverage (50% threshold) | `go run scripts/run_tests.go -mode cover` | ✅ |
+| Coverage (50% threshold) | `go run scripts/run_tests.go -mode cover` | ✅ 72.1% |
 | Lint (golangci-lint) | `golangci-lint run` | ✅ |
 | Security (govulncheck) | `govulncheck ./...` | ✅ |
 | Deploy manifests | `.\scripts\validate_deploy.ps1` | ✅ |
@@ -140,5 +140,5 @@ Raw JSON and readable reports are written to `logs/`.
 - Resource-limited benchmark flow: [docs/BENCHMARK-RESOURCE-LIMITED-TEST-FLOW-20260530.md](docs/BENCHMARK-RESOURCE-LIMITED-TEST-FLOW-20260530.md)
 - Latest cloud benchmark: [docs/BENCHMARK-RESULT-260530-123500-DUAL-CLOUD.md](docs/BENCHMARK-RESULT-260530-123500-DUAL-CLOUD.md)
 - Examples: [docs/EXAMPLES.md](docs/EXAMPLES.md)
-- Latest review: [docs/PROJECT-REVIEW-260530-123600.md](docs/PROJECT-REVIEW-260530-123600.md)
+- Latest review: [docs/PROJECT-REVIEW-260602-213050.md](docs/PROJECT-REVIEW-260602-213050.md)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
