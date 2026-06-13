@@ -8,9 +8,24 @@ import (
 	paho "github.com/eclipse/paho.mqtt.golang"
 )
 
+// mqttClient is the subset of paho.Client used by Adapter.
+// Defined as an interface so unit tests can substitute a mock.
+type mqttClient interface {
+	IsConnected() bool
+	Connect() paho.Token
+	Disconnect(quiesce uint)
+	Publish(topic string, qos byte, retained bool, payload interface{}) paho.Token
+	Subscribe(topic string, qos byte, callback paho.MessageHandler) paho.Token
+}
+
+// clientFactory creates a mqttClient from options. Overridable in tests.
+var clientFactory = func(o *paho.ClientOptions) mqttClient {
+	return paho.NewClient(o)
+}
+
 type Adapter struct {
 	opts   Options
-	client paho.Client
+	client mqttClient
 	mu     sync.Mutex
 }
 
@@ -34,7 +49,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 	opts := a.opts // copy under lock
 	a.mu.Unlock()
 
-	client := paho.NewClient(pahoOptions(opts))
+	client := clientFactory(pahoOptions(opts))
 	token := client.Connect()
 	if !token.WaitTimeout(opts.ConnectTimeout) {
 		return fmt.Errorf("mqtt connect timeout")

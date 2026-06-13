@@ -3,6 +3,7 @@ package app
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
@@ -438,3 +439,189 @@ func TestHealthHandlerReadiness(t *testing.T) {
 		t.Fatalf("status before start = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 	}
 }
+
+func TestHealthHandlerOK(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+	healthHandler(nil).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("health status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if body := rec.Body.String(); body != "ok\n" {
+		t.Fatalf("health body = %q, want %q", body, "ok\n")
+	}
+}
+
+func TestConfigRejectsDuplicateProtocols(t *testing.T) {
+	cfg := Config{
+		ShutdownTimeout: "2s",
+		Protocols: []ProtocolConfig{
+			{Name: "tcp", Addr: "127.0.0.1:0"},
+			{Name: "tcp", Addr: "127.0.0.1:0"},
+		},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("Validate error = %v, want duplicate protocol error", err)
+	}
+}
+
+func TestConfigRejectsUnsupportedProtocol(t *testing.T) {
+	cfg := Config{
+		ShutdownTimeout: "2s",
+		Protocols: []ProtocolConfig{
+			{Name: "mqtt", Addr: "127.0.0.1:0"},
+		},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "unsupported protocol") {
+		t.Fatalf("Validate error = %v, want unsupported protocol error", err)
+	}
+}
+
+func TestConfigRejectsNoEnabledProtocols(t *testing.T) {
+	cfg := Config{
+		ShutdownTimeout: "2s",
+		Protocols: []ProtocolConfig{
+			{Name: "tcp", Addr: "127.0.0.1:0", Enabled: boolPtr(false)},
+		},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "at least one protocol") {
+		t.Fatalf("Validate error = %v, want at least one protocol error", err)
+	}
+}
+
+func TestConfigRejectsNegativeShutdownTimeout(t *testing.T) {
+	cfg := Config{
+		ShutdownTimeout: "-5s",
+		Protocols: []ProtocolConfig{
+			{Name: "tcp", Addr: "127.0.0.1:0"},
+		},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "shutdown_timeout") {
+		t.Fatalf("Validate error = %v, want shutdown_timeout error", err)
+	}
+}
+
+func TestConfigTLSClientAuthRejectsWithoutCert(t *testing.T) {
+	cfg := Config{
+		ShutdownTimeout: "2s",
+		Protocols: []ProtocolConfig{
+			{Name: "tcp", Addr: "127.0.0.1:0", TLSClientAuth: "require_and_verify"},
+		},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "tls_client_auth requires") {
+		t.Fatalf("Validate error = %v, want tls_client_auth requires tls error", err)
+	}
+}
+
+func TestConfigClientCAOnUnsupportedProtocol(t *testing.T) {
+	cfg := Config{
+		ShutdownTimeout: "2s",
+		Protocols: []ProtocolConfig{
+			{Name: "http", Addr: "127.0.0.1:0", TLSClientCAFile: "ca.crt"},
+		},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "does not support tls_client_ca_file") {
+		t.Fatalf("Validate error = %v, want unsupported tls_client_ca_file error", err)
+	}
+}
+
+func TestConfigRejectsEmptyProtocolName(t *testing.T) {
+	cfg := Config{
+		ShutdownTimeout: "2s",
+		Protocols: []ProtocolConfig{
+			{Name: "", Addr: "127.0.0.1:0"},
+		},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "protocol name is required") {
+		t.Fatalf("Validate error = %v, want protocol name error", err)
+	}
+}
+
+func TestConfigRejectsMissingAddr(t *testing.T) {
+	cfg := Config{
+		ShutdownTimeout: "2s",
+		Protocols: []ProtocolConfig{
+			{Name: "tcp"},
+		},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "addr is required") {
+		t.Fatalf("Validate error = %v, want addr required error", err)
+	}
+}
+
+func TestConfigCoapSupportsTLSUDP(t *testing.T) {
+	cfg := Config{
+		ShutdownTimeout: "2s",
+		Protocols: []ProtocolConfig{
+			{Name: "coap", Addr: "127.0.0.1:0", TLSCertFile: "server.crt", TLSKeyFile: "server.key"},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("CoAP with TLS should be valid: %v", err)
+	}
+}
+
+func TestConfigUDPSupportsTLS(t *testing.T) {
+	cfg := Config{
+		ShutdownTimeout: "2s",
+		Protocols: []ProtocolConfig{
+			{Name: "udp", Addr: "127.0.0.1:0", TLSCertFile: "server.crt", TLSKeyFile: "server.key"},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("UDP with TLS should be valid: %v", err)
+	}
+}
+
+func TestParseTLSClientAuthValues(t *testing.T) {
+	tests := []struct {
+		input string
+		want  tls.ClientAuthType
+	}{
+		{"", tls.NoClientCert},
+		{"none", tls.NoClientCert},
+		{"no_client_cert", tls.NoClientCert},
+		{"request", tls.RequestClientCert},
+		{"request_client_cert", tls.RequestClientCert},
+		{"require_any", tls.RequireAnyClientCert},
+		{"require_any_client_cert", tls.RequireAnyClientCert},
+		{"verify_if_given", tls.VerifyClientCertIfGiven},
+		{"verify_client_cert_if_given", tls.VerifyClientCertIfGiven},
+		{"require_and_verify", tls.RequireAndVerifyClientCert},
+		{"require_and_verify_client_cert", tls.RequireAndVerifyClientCert},
+	}
+	for _, tt := range tests {
+		got, err := parseTLSClientAuth(tt.input)
+		if err != nil {
+			t.Fatalf("parseTLSClientAuth(%q) unexpected error: %v", tt.input, err)
+		}
+		if got != tt.want {
+			t.Fatalf("parseTLSClientAuth(%q) = %d, want %d", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestParseTLSClientAuthInvalid(t *testing.T) {
+	_, err := parseTLSClientAuth("invalid_value")
+	if err == nil {
+		t.Fatal("expected error for invalid tls_client_auth")
+	}
+}
+
+func TestServeErrors(t *testing.T) {
+	cfg := Config{
+		ShutdownTimeout: "2s",
+		Protocols: []ProtocolConfig{
+			{Name: "tcp", Addr: "127.0.0.1:0"},
+		},
+	}
+	app, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if errs := app.ServeErrors(); len(errs) != 0 {
+		t.Fatalf("ServeErrors before Start = %v, want empty", errs)
+	}
+}
+
+func boolPtr(v bool) *bool { return &v }
