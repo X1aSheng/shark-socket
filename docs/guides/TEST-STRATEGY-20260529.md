@@ -99,7 +99,7 @@ normal test runs.
 ## Protocol Coverage Guide
 
 Detailed protocol-specific test methods are maintained in
-`docs/PROTOCOL-TEST-GUIDE-20260530.md`.
+`docs/guides/PROTOCOL-TEST-GUIDE-20260530.md`.
 
 Latest protocol expansion added focused regressions for:
 

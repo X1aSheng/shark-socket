@@ -28,4 +28,4 @@ Shark-Socket 的协议整合边界是统一业务服务端运行时，不替代�
 
 - [ARCHITECTURE.md](../ARCHITECTURE.md)
 - [TRANSPORT.md](../TRANSPORT.md)
-- [MQTT-INTEGRATION.md](../MQTT-INTEGRATION.md)
+- [MQTT-INTEGRATION.md](../../guides/MQTT-INTEGRATION.md)

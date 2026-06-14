@@ -26,5 +26,5 @@ Shark-Socket 不解析 MQTT packet，不维护 MQTT ClientID 会话，不实现 
 
 ## 关联文档
 
-- [MQTT-INTEGRATION.md](../MQTT-INTEGRATION.md)
+- [MQTT-INTEGRATION.md](../../guides/MQTT-INTEGRATION.md)
 - [ADR-009-protocol-integration-boundary.md](ADR-009-protocol-integration-boundary.md)

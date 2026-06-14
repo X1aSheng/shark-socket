@@ -172,7 +172,7 @@ CoAP Observe (RFC 7641) 是较新的功能，需要更多测试。
 
 ## 六、版本规划缺口
 
-来自 `docs/IMPLEMENTATION-GOALS-20260530.md` 的未实现规划：
+来自 `docs/planning/IMPLEMENTATION-GOALS-20260530.md` 的未实现规划：
 
 ### v0.3.x — IoT 协议深度（未开始）
 

@@ -238,14 +238,14 @@ Expected evidence:
   matrix runner for local and cloud smoke/light/medium stages.
 - Cloud benchmark smoke, light, and selected medium stages passed on
   `120.76.44.233` for commit `d64a9db`; results are recorded in
-  `docs/BENCHMARK-RESULT-260530-120000.md`.
+  `docs/reports/BENCHMARK-260614-102513.md`.
 - Server-side cloud validation passed on `47.96.129.59` for commit `68e3123`,
   including full tests, vet, scripted validation, medium benchmark, temporary
   service run, and cross-host traffic from `120.76.44.233`; results are
-  recorded in `docs/BENCHMARK-RESULT-260530-120500-SERVER2.md`.
+  recorded in `docs/reports/BENCHMARK-260614-102513.md`.
 - Dual-cloud validation passed on `47.96.129.59` and `120.76.44.233` for
   commit `a3d283f`, including server/client benchmarks, cross-host
   multi-protocol traffic, and log/data statistics; results are recorded in
-  `docs/BENCHMARK-RESULT-260530-123500-DUAL-CLOUD.md`.
+  `docs/reports/BENCHMARK-260614-102513.md`.
 - Certificate reload and finer protocol security defaults remain part of the
   security-baseline milestone.

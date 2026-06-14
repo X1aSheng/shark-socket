@@ -619,7 +619,7 @@ func (p *RateLimitPlugin) cleanIdleBuckets() {
 
 ```
 职责：监控违规行为，超阈值后自动加入黑名单
-Priority：20（在 BlacklistPlugin 和 RateLimitPlugin 之后）
+Priority：5（紧接 BlacklistPlugin，在 RateLimitPlugin 之前）
 触发：
   OnAccept → 检查协议错误次数
   OnMessage → 检查消息级违规
@@ -659,7 +659,7 @@ type AutoBanPlugin struct {
 var _ core.Plugin = (*AutoBanPlugin)(nil)
 
 func (p *AutoBanPlugin) Name() string  { return "autoban" }
-func (p *AutoBanPlugin) Priority() int { return 20 }
+func (p *AutoBanPlugin) Priority() int { return 5 }
 ```
 
 ### 6.3 OnAccept 与 OnMessage 实现
@@ -732,7 +732,7 @@ func (p *AutoBanPlugin) ban(ip, reason, detail string) {
 
 ```
 职责：检测空闲超时，关闭不活跃会话
-Priority：30
+Priority：50
 触发：
   OnAccept → 记录会话（P2：注册到时间轮）
   OnMessage → 重置心跳计时器（TouchActive 已在协议层调用，此处可跳过）
@@ -763,7 +763,7 @@ type HeartbeatPlugin struct {
 var _ core.Plugin = (*HeartbeatPlugin)(nil)
 
 func (p *HeartbeatPlugin) Name() string  { return "heartbeat" }
-func (p *HeartbeatPlugin) Priority() int { return 30 }
+func (p *HeartbeatPlugin) Priority() int { return 50 }
 
 func (p *HeartbeatPlugin) OnAccept(sess core.Session) error {
     // P0：无需 per-session 注册，扫描时遍历 Manager
@@ -859,7 +859,7 @@ P2 方案：
 
 ```
 职责：会话消息异步持久化
-Priority：50
+Priority：90
 触发：
   OnAccept → 加载历史数据到 Session Meta
   OnMessage → 异步写入 Store
@@ -904,7 +904,7 @@ type PersistencePlugin struct {
 var _ core.Plugin = (*PersistencePlugin)(nil)
 
 func (p *PersistencePlugin) Name() string  { return "persistence" }
-func (p *PersistencePlugin) Priority() int { return 50 }
+func (p *PersistencePlugin) Priority() int { return 90 }
 ```
 
 ### 8.3 OnAccept 实现
@@ -1113,7 +1113,7 @@ log.Prune(1000)
 
 ```
 职责：跨节点会话路由 + 集群事件广播
-Priority：40
+Priority：95
 触发：
   OnAccept → 写入会话路由到 Cache + 发布 joined 事件
   OnClose → 删除路由 + 发布 left 事件
@@ -1154,7 +1154,7 @@ type ClusterPlugin struct {
 var _ core.Plugin = (*ClusterPlugin)(nil)
 
 func (p *ClusterPlugin) Name() string  { return "cluster" }
-func (p *ClusterPlugin) Priority() int { return 40 }
+func (p *ClusterPlugin) Priority() int { return 95 }
 ```
 
 ### 10.3 OnAccept 与 OnClose 实现
@@ -1381,7 +1381,7 @@ type MyPlugin struct {
 var _ core.Plugin = (*MyPlugin)(nil)
 
 func (p *MyPlugin) Name() string  { return "my-plugin" }
-func (p *MyPlugin) Priority() int { return 35 } // 在限流(10)和心跳(30)之后
+func (p *MyPlugin) Priority() int { return 35 } // 在限流(10)和心跳(50)之后
 
 // 只覆盖需要的方法
 func (p *MyPlugin) OnMessage(

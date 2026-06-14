@@ -27,5 +27,5 @@ P0 允许使用更简单实现。P2 根据实测引入六级 BufferPool、分片
 
 ## 关联文档
 
-- [PERFORMANCE.md](../PERFORMANCE.md)
-- [TESTING.md](../TESTING.md)
+- [PERFORMANCE.md (规划中)](../PERFORMANCE.md)
+- [TESTING.md (规划中)](../TESTING.md)

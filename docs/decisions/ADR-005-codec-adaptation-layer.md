@@ -27,4 +27,4 @@
 ## 关联文档
 
 - [CONTRACTS.md](../CONTRACTS.md)
-- [PERFORMANCE.md](../PERFORMANCE.md)
+- [PERFORMANCE.md (规划中)](../PERFORMANCE.md)
