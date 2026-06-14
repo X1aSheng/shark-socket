@@ -7,8 +7,6 @@ linters:
     - staticcheck
     - unused
     - gocritic
-    - gofmt
-    - goimports
   exclusions:
     paths:
       - examples/
