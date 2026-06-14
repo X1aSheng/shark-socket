@@ -1,7 +1,6 @@
-logs/**
-coverage.out
 *.exe
 *.test
-.claude/
 .idea/
 .vscode/
+coverage.out
+logs/**

@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Bash(xargs sed *)",
+      "Bash(go *)",
+      "Bash(git *)",
+      "Bash(docker *)",
+      "Bash(helm *)",
+      "Bash(kubectl *)",
+      "Bash(sed 's/\\\\.md$//')",
+      "WebFetch(domain:github.com)",
+      "Read(//tmp/**)",
+      "Read(//g/shark-socket/.github/**)",
+      "WebSearch"
+    ]
+  }
+}
