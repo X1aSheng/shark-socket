@@ -1,14 +1,14 @@
-package udp
+package websocket
 
 import (
-	"context"
 	"testing"
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
 )
 
-func TestUDP_SessionMethods(t *testing.T) {
+func TestWS_SessionID(t *testing.T) {
+	// Create session with initialized fields to avoid zero defaults
 	now := time.Now()
 	sess := &session{
 		id:        42,
@@ -16,28 +16,21 @@ func TestUDP_SessionMethods(t *testing.T) {
 	}
 	sess.state.Store(uint32(core.StateActive))
 	sess.activeAt.Store(now.UnixNano())
-	ctx, cancel := context.WithCancel(context.Background())
-	sess.ctx = ctx
-	sess.cancel = cancel
-	defer cancel()
 
-	if got := sess.Protocol(); got != core.ProtocolUDP {
-		t.Errorf("Protocol() = %v, want %v", got, core.ProtocolUDP)
-	}
 	if got := sess.ID(); got != 42 {
 		t.Errorf("ID() = %d, want 42", got)
 	}
+	if got := sess.Protocol(); got != core.ProtocolWS {
+		t.Errorf("Protocol() = %v, want %v", got, core.ProtocolWS)
+	}
 	if got := sess.State(); got != core.StateActive {
-		t.Errorf("State() = %v", got)
+		t.Errorf("State() = %v, want %v", got, core.StateActive)
 	}
 	if got := sess.CreatedAt(); got.IsZero() {
 		t.Error("CreatedAt() is zero")
 	}
 	if got := sess.LastActiveAt(); got.IsZero() {
 		t.Error("LastActiveAt() is zero")
-	}
-	if got := sess.Context(); got == nil {
-		t.Error("Context() = nil")
 	}
 	sess.SetMeta("k", "v")
 	got, ok := sess.GetMeta("k")
