@@ -12,6 +12,10 @@ on:
       - shark-socket-main
       - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -27,11 +31,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.26.1"
+          go-version-file: go.mod
           cache: true
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
           version: latest
           args: --timeout=5m
@@ -47,24 +51,18 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.26.1"
+          go-version-file: go.mod
           cache: true
 
       - name: govulncheck
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
           govulncheck ./...
 
-  validate:
-    name: Validate (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+  validate-ubuntu:
+    name: Validate (ubuntu-latest)
+    runs-on: ubuntu-latest
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - windows-latest
-          - ubuntu-latest
     services:
       mosquitto:
         image: eclipse-mosquitto:2
@@ -82,13 +80,13 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.26.1"
+          go-version-file: go.mod
           cache: true
 
       - name: Download modules
         run: go mod download
 
-      - name: Scripted unit, integration, and benchmark tests
+      - name: Full test suite (unit, integration, benchmark)
         run: go run scripts/run_tests.go -mode all -timeout 5m
         env:
           SHARK_MQTT_BROKER: tcp://localhost:1883
@@ -107,7 +105,43 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: validation-logs-${{ matrix.os }}
+          name: validation-logs-ubuntu-latest
+          path: logs/
+          if-no-files-found: ignore
+
+  validate-windows:
+    name: Validate (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Unit tests (MQTT-dependent tests skipped on Windows)
+        run: go run scripts/run_tests.go -mode unit -timeout 5m
+
+      - name: Validate tests and vet
+        shell: pwsh
+        run: ./scripts/validate.ps1
+
+      - name: Validate deploy manifests
+        shell: pwsh
+        run: ./scripts/validate_deploy.ps1
+
+      - name: Upload validation logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-logs-windows-latest
           path: logs/
           if-no-files-found: ignore
 
@@ -132,7 +166,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.26.1"
+          go-version-file: go.mod
           cache: true
 
       - name: Download modules
@@ -155,6 +189,16 @@ jobs:
     name: Coverage (ubuntu-latest)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      mosquitto:
+        image: eclipse-mosquitto:2
+        ports:
+          - 1883:1883
+        options: >-
+          --health-cmd "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 3
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -162,7 +206,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.26.1"
+          go-version-file: go.mod
           cache: true
 
       - name: Download modules
