@@ -124,3 +124,63 @@ func TestMemoryStoreV2(t *testing.T) {
 		t.Fatalf("List: %v err=%v", keys, err)
 	}
 }
+
+func TestBoltStoreLegacySaveLoadDelete(t *testing.T) {
+	dir := t.TempDir()
+	bs, err := NewBoltStore(filepath.Join(dir, "test.bolt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bs.Close()
+
+	// Legacy Save
+	bs.Save("legacy", "k1", []byte("v1"))
+	// Legacy Load
+	val, ok := bs.Load("legacy", "k1")
+	if !ok || string(val) != "v1" {
+		t.Fatalf("Load: ok=%v val=%s", ok, string(val))
+	}
+	// Legacy Delete
+	bs.Delete("legacy", "k1")
+	val, ok = bs.Load("legacy", "k1")
+	if ok {
+		t.Fatal("expected key to be deleted")
+	}
+}
+
+func TestBoltStoreDeleteBatch(t *testing.T) {
+	dir := t.TempDir()
+	bs, err := NewBoltStore(filepath.Join(dir, "test.bolt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bs.Close()
+
+	keys := []string{"a", "b", "c"}
+	for _, k := range keys {
+		if err := bs.SaveV2("batch", k, []byte("data")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Verify 3 keys exist
+	list, err := bs.List("batch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 3 {
+		t.Fatalf("before delete: want 3 keys, got %d", len(list))
+	}
+
+	// DeleteBatch
+	if err := bs.DeleteBatch("batch", []string{"a", "c"}); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err = bs.List("batch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0] != "b" {
+		t.Fatalf("after DeleteBatch: want [b], got %v", list)
+	}
+}

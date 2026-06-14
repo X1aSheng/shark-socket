@@ -181,6 +181,38 @@ func readFile(t *testing.T, path string) string {
 	return string(data)
 }
 
+func TestExamplesCompile(t *testing.T) {
+	root, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// deploy_test.go is in tests/deploy/; root is ../../examples
+	examplesDir := filepath.Join(root, "..", "..", "examples")
+	entries, err := os.ReadDir(examplesDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		dir := filepath.Join(examplesDir, entry.Name())
+		// Skip directories without Go files (e.g. config/)
+		gos, _ := filepath.Glob(filepath.Join(dir, "*.go"))
+		if len(gos) == 0 {
+			continue
+		}
+		t.Run(entry.Name(), func(t *testing.T) {
+			cmd := exec.Command("go", "build", "-o", os.DevNull, ".")
+			cmd.Dir = dir
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("go build %s: %v\n%s", entry.Name(), err, out)
+			}
+		})
+	}
+}
+
 func assertContains(t *testing.T, text, want string) {
 	t.Helper()
 	if !strings.Contains(text, want) {
