@@ -129,7 +129,7 @@ func runCover(root, logs, ts string, timeout time.Duration) error {
 	}
 	total := parseCoverageTotal(string(totalOut))
 	fmt.Printf("\nTotal coverage: %.1f%%\n", total)
-	const minCoverage = 50.0
+	const minCoverage = 70.0
 	if total < minCoverage {
 		return fmt.Errorf("coverage %.1f%% is below minimum %.1f%%", total, minCoverage)
 	}
