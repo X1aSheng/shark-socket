@@ -419,3 +419,93 @@ func TestSlowHandler(t *testing.T) {
 		t.Fatal("handler should have been called")
 	}
 }
+
+// API Option constructor coverage tests
+func TestWithTCPTLS(t *testing.T) {
+	opt := WithTCPTLS(nil)
+	if opt == nil {
+		t.Fatal("WithTCPTLS should return an option")
+	}
+}
+
+func TestWithUDPDTLS(t *testing.T) {
+	opt := WithUDPDTLS(nil)
+	if opt == nil {
+		t.Fatal("WithUDPDTLS should return an option")
+	}
+}
+
+func TestWithHTTPHandler(t *testing.T) {
+	opt := WithHTTPHandler(nil)
+	if opt == nil {
+		t.Fatal("WithHTTPHandler should return an option")
+	}
+	h := NewHTTPServer(WithHTTPAddr("127.0.0.1:0"), WithHTTPHandler(nil))
+	if h == nil {
+		t.Fatal("server with handler should not be nil")
+	}
+}
+
+func TestWithWebSocketHandler(t *testing.T) {
+	opt := WithWebSocketHandler(nil)
+	if opt == nil {
+		t.Fatal("WithWebSocketHandler should return an option")
+	}
+}
+
+func TestWithWebSocketCheckOrigin(t *testing.T) {
+	opt := WithWebSocketCheckOrigin(nil)
+	if opt == nil {
+		t.Fatal("WithWebSocketCheckOrigin should return an option")
+	}
+}
+
+func TestWithCoAPDTLS(t *testing.T) {
+	opt := WithCoAPDTLS(nil)
+	if opt == nil {
+		t.Fatal("WithCoAPDTLS should return an option")
+	}
+}
+
+func TestWithQUICOptions(t *testing.T) {
+	a := WithQUICAddr("127.0.0.1:0")
+	if a == nil {
+		t.Fatal("WithQUICAddr should return an option")
+	}
+	tlsOpt := WithQUICTLS(nil)
+	if tlsOpt == nil {
+		t.Fatal("WithQUICTLS should return an option")
+	}
+	h := WithQUICHandler(nil)
+	if h == nil {
+		t.Fatal("WithQUICHandler should return an option")
+	}
+}
+
+func TestWithGRPCWebHandler(t *testing.T) {
+	opt := WithGRPCWebHandler(nil)
+	if opt == nil {
+		t.Fatal("WithGRPCWebHandler should return an option")
+	}
+}
+
+func TestWithGRPCWebCheckOrigin(t *testing.T) {
+	opt := WithGRPCWebCheckOrigin(nil)
+	if opt == nil {
+		t.Fatal("WithGRPCWebCheckOrigin should return an option")
+	}
+}
+
+func TestNewOpenTelemetryTracer(t *testing.T) {
+	tracer := NewOpenTelemetryTracer(nil)
+	if tracer == nil {
+		t.Fatal("tracer should not be nil")
+	}
+}
+
+func TestAdaptTyped(t *testing.T) {
+	handler := AdaptTyped[*core.Message](nil, nil)
+	if handler == nil {
+		t.Fatal("adapted handler should not be nil")
+	}
+}
