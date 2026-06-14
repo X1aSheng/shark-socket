@@ -81,3 +81,46 @@ func TestClusterWithTopic(t *testing.T) {
 	c := NewCluster("node-2", nil, nil)
 	c.WithTopic("custom/topic")
 }
+
+// Constructor edge case coverage
+func TestNewBlacklistWithCIDR(t *testing.T) {
+	b := NewBlacklist("10.0.0.0/8", "192.168.1.1")
+	if b.Name() != "blacklist" {
+		t.Fatalf("Name = %s", b.Name())
+	}
+}
+
+func TestNewRateLimitZeroDefaults(t *testing.T) {
+	r := NewRateLimit(0, 0)
+	if r.Name() != "ratelimit" {
+		t.Fatalf("Name = %s", r.Name())
+	}
+}
+
+func TestNewAutoBanZeroThreshold(t *testing.T) {
+	a := NewAutoBan(0)
+	if a.Name() != "autoban" {
+		t.Fatalf("Name = %s", a.Name())
+	}
+}
+
+func TestNewPersistenceEmptyBucket(t *testing.T) {
+	p := NewPersistence(nil, "")
+	if p.Name() != "persistence" {
+		t.Fatalf("Name = %s", p.Name())
+	}
+}
+
+func TestNewHeartbeatCustomTimeout(t *testing.T) {
+	h := NewHeartbeat(nil, 60)
+	if h.Name() != "heartbeat" {
+		t.Fatalf("Name = %s", h.Name())
+	}
+}
+
+func TestNewClusterWithPubSub(t *testing.T) {
+	c := NewCluster("node-3", nil, nil)
+	if c.Name() != "cluster" {
+		t.Fatalf("Name = %s", c.Name())
+	}
+}

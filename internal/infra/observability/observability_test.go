@@ -20,9 +20,18 @@ func TestMemoryMetrics(t *testing.T) {
 
 func TestMemoryLogger(t *testing.T) {
 	l := NewMemoryLogger()
-	l.Info("hello", "k", "v")
+	l.Debug("debug msg", "k1", "v1")
+	l.Info("info msg", "k2", "v2")
+	l.Warn("warn msg", "k3", "v3")
+	l.Error("error msg", "k4", "v4")
+
 	entries := l.Entries()
-	if len(entries) != 1 || entries[0].Level != "info" || entries[0].Msg != "hello" {
-		t.Fatalf("entries = %#v", entries)
+	if len(entries) != 4 {
+		t.Fatalf("entries = %d, want 4", len(entries))
+	}
+	if entries[0].Level != "debug" || entries[1].Level != "info" ||
+		entries[2].Level != "warn" || entries[3].Level != "error" {
+		t.Fatalf("entry levels = %v %v %v %v",
+			entries[0].Level, entries[1].Level, entries[2].Level, entries[3].Level)
 	}
 }
