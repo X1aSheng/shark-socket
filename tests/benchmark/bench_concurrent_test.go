@@ -24,6 +24,10 @@ import (
 // concurrentClients defines the connection counts for concurrent benchmarks.
 var concurrentClients = []int{1, 10, 100, 500}
 
+// ---------------------------------------------------------------------------
+// TCP concurrent — each parallel goroutine gets its own client
+// ---------------------------------------------------------------------------
+
 func BenchmarkTCPEcho_Concurrent(b *testing.B) {
 	for _, n := range concurrentClients {
 		b.Run(connCountName(n), func(b *testing.B) {
@@ -42,29 +46,29 @@ func BenchmarkTCPEcho_Concurrent(b *testing.B) {
 			}
 			b.Cleanup(func() { stopGateway(b, gateway) })
 
-			// Pre-create all clients
-			clients := make([]*tcp.Client, n)
-			for i := 0; i < n; i++ {
-				client := tcp.NewClient(server.Addr().String())
-				if err := client.Connect(context.Background()); err != nil {
-					b.Fatal(err)
-				}
-				clients[i] = client
-			}
-			b.Cleanup(func() {
-				for _, c := range clients {
-					_ = c.Close()
-				}
-			})
-
 			payload := []byte("benchmark-payload")
 			b.ReportAllocs()
 			b.ResetTimer()
 
+			// Each parallel goroutine creates its own client
 			var mu sync.Mutex
+			clients := make([]*tcp.Client, n)
+			for i := 0; i < n; i++ {
+				c := tcp.NewClient(server.Addr().String())
+				if err := c.Connect(context.Background()); err != nil {
+					b.Fatal(err)
+				}
+				clients[i] = c
+			}
+			next := 0
+
 			b.RunParallel(func(pb *testing.PB) {
-				// Pick a client based on goroutine index
-				client := clients[goroutineIndex(&mu, n)]
+				mu.Lock()
+				idx := next
+				next++
+				mu.Unlock()
+				client := clients[idx%len(clients)]
+
 				for pb.Next() {
 					if err := client.Send(payload); err != nil {
 						b.Fatal(err)
@@ -81,6 +85,10 @@ func BenchmarkTCPEcho_Concurrent(b *testing.B) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// UDP concurrent — each parallel goroutine gets its own connection
+// ---------------------------------------------------------------------------
 
 func BenchmarkUDPEcho_Concurrent(b *testing.B) {
 	for _, n := range concurrentClients {
@@ -100,28 +108,29 @@ func BenchmarkUDPEcho_Concurrent(b *testing.B) {
 			}
 			b.Cleanup(func() { stopGateway(b, gateway) })
 
-			conns := make([]net.Conn, n)
-			for i := 0; i < n; i++ {
-				conn, err := net.Dial("udp", server.Addr().String())
-				if err != nil {
-					b.Fatal(err)
-				}
-				conns[i] = conn
-			}
-			b.Cleanup(func() {
-				for _, c := range conns {
-					_ = c.Close()
-				}
-			})
-
 			payload := []byte("benchmark-payload")
 			buf := make([]byte, 1024)
 			b.ReportAllocs()
 			b.ResetTimer()
 
 			var mu sync.Mutex
+			conns := make([]net.Conn, n)
+			for i := 0; i < n; i++ {
+				c, err := net.Dial("udp", server.Addr().String())
+				if err != nil {
+					b.Fatal(err)
+				}
+				conns[i] = c
+			}
+			next := 0
+
 			b.RunParallel(func(pb *testing.PB) {
-				conn := conns[goroutineIndex(&mu, n)]
+				mu.Lock()
+				idx := next
+				next++
+				mu.Unlock()
+				conn := conns[idx%len(conns)]
+
 				for pb.Next() {
 					if _, err := conn.Write(payload); err != nil {
 						b.Fatal(err)
@@ -135,6 +144,11 @@ func BenchmarkUDPEcho_Concurrent(b *testing.B) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// WebSocket concurrent — each parallel goroutine uses its own connection
+// (gorilla/websocket is not safe for concurrent writes on the same conn)
+// ---------------------------------------------------------------------------
 
 func BenchmarkWSEcho_Concurrent(b *testing.B) {
 	for _, n := range concurrentClients {
@@ -156,27 +170,28 @@ func BenchmarkWSEcho_Concurrent(b *testing.B) {
 			b.Cleanup(func() { stopGateway(b, gateway) })
 
 			u := url.URL{Scheme: "ws", Host: server.Addr().String(), Path: "/ws"}
-			conns := make([]*gws.Conn, n)
-			for i := 0; i < n; i++ {
-				conn, _, err := gws.DefaultDialer.Dial(u.String(), nil)
-				if err != nil {
-					b.Fatal(err)
-				}
-				conns[i] = conn
-			}
-			b.Cleanup(func() {
-				for _, c := range conns {
-					_ = c.Close()
-				}
-			})
-
 			payload := []byte("benchmark-payload")
 			b.ReportAllocs()
 			b.ResetTimer()
 
 			var mu sync.Mutex
+			conns := make([]*gws.Conn, n)
+			for i := 0; i < n; i++ {
+				c, _, err := gws.DefaultDialer.Dial(u.String(), nil)
+				if err != nil {
+					b.Fatal(err)
+				}
+				conns[i] = c
+			}
+			next := 0
+
 			b.RunParallel(func(pb *testing.PB) {
-				conn := conns[goroutineIndex(&mu, n)]
+				mu.Lock()
+				idx := next
+				next++
+				mu.Unlock()
+				conn := conns[idx%len(conns)]
+
 				for pb.Next() {
 					if err := conn.WriteMessage(gws.BinaryMessage, payload); err != nil {
 						b.Fatal(err)
@@ -193,6 +208,10 @@ func BenchmarkWSEcho_Concurrent(b *testing.B) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// HTTP concurrent — stateless per-request, safe for shared client
+// ---------------------------------------------------------------------------
 
 func BenchmarkHTTPEcho_Concurrent(b *testing.B) {
 	for _, n := range concurrentClients {
@@ -241,6 +260,10 @@ func BenchmarkHTTPEcho_Concurrent(b *testing.B) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// gRPC-Web concurrent — stateless per-request
+// ---------------------------------------------------------------------------
+
 func BenchmarkGRPCWebEcho_Concurrent(b *testing.B) {
 	for _, n := range concurrentClients {
 		b.Run(connCountName(n), func(b *testing.B) {
@@ -285,19 +308,6 @@ func BenchmarkGRPCWebEcho_Concurrent(b *testing.B) {
 		})
 	}
 }
-
-// goroutineIndex deterministically assigns a goroutine to a connection index.
-// It uses the goroutine's internal ID approximation via allocation.
-func goroutineIndex(mu *sync.Mutex, n int) int {
-	mu.Lock()
-	defer mu.Unlock()
-	// Simple round-robin assignment: use a package-level counter
-	idx := nextGoroutineIdx % n
-	nextGoroutineIdx++
-	return idx
-}
-
-var nextGoroutineIdx int
 
 func connCountName(n int) string {
 	return fmt.Sprintf("%dconns", n)
