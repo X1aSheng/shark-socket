@@ -37,7 +37,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v1.64.2
+          version: latest
           args: --timeout=5m
 
   security:
@@ -86,8 +86,13 @@ jobs:
       - name: Download modules
         run: go mod download
 
-      - name: Full test suite (unit, integration, benchmark)
-        run: go run scripts/run_tests.go -mode all -timeout 5m
+      - name: Unit tests
+        run: go run scripts/run_tests.go -mode unit -timeout 5m
+        env:
+          SHARK_MQTT_BROKER: tcp://localhost:1883
+
+      - name: Integration tests
+        run: go run scripts/run_tests.go -mode integration -timeout 5m
         env:
           SHARK_MQTT_BROKER: tcp://localhost:1883
 

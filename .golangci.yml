@@ -1,3 +1,4 @@
+version: "2"
 linters:
   enable:
     - errcheck
@@ -11,5 +12,9 @@ linters:
   exclusions:
     paths:
       - examples/
+formatters:
+  enable:
+    - gofmt
+    - goimports
 run:
   timeout: 5m

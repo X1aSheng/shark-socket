@@ -162,7 +162,7 @@ func TestGitHubActionsWorkflowSemantics(t *testing.T) {
 	assertContains(t, workflow, "golangci-lint")
 	assertContains(t, workflow, "govulncheck")
 	assertContains(t, workflow, `go run scripts/run_tests.go -mode unit -timeout 5m`)
-	assertContains(t, workflow, `go run scripts/run_tests.go -mode all -timeout 5m`)
+	assertContains(t, workflow, `go run scripts/run_tests.go -mode integration -timeout 5m`)
 	assertContains(t, workflow, `go run scripts/run_tests.go -mode race -timeout 5m`)
 	assertContains(t, workflow, `go run scripts/run_tests.go -mode cover -timeout 5m`)
 	assertContains(t, workflow, "./scripts/validate.ps1")
