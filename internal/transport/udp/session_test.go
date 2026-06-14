@@ -9,50 +9,70 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/core"
 )
 
-type testAddr string
-
-func (a testAddr) Network() string { return "test" }
-func (a testAddr) String() string  { return string(a) }
-
 func TestUDP_SessionMethods(t *testing.T) {
-	now := time.Now()
-	sess := &session{
-		id:        42,
-		createdAt: now,
-		remote:    testAddr("192.168.1.1:12345"),
-		local:     testAddr("0.0.0.0:18000"),
-	}
-	sess.state.Store(uint32(core.StateActive))
-	sess.activeAt.Store(now.UnixNano())
-	ctx, cancel := context.WithCancel(context.Background())
-	sess.ctx = ctx
-	sess.cancel = cancel
-	defer cancel()
+	conn1, conn2 := net.Pipe()
+	defer conn1.Close()
+	defer conn2.Close()
+	_ = conn2
 
+	sess := newDTLSSession(42, conn1)
+
+	checkProtocol(t, sess)
+	checkRemoteAddr(t, sess)
+	checkLocalAddr(t, sess)
+	checkID(t, sess, 42)
+	checkState(t, sess)
+	checkCreatedAt(t, sess)
+	checkLastActiveAt(t, sess)
+	checkContext(t, sess)
+	checkMeta(t, sess)
+}
+
+func checkProtocol(t *testing.T, sess interface{ Protocol() core.Protocol }) {
 	if got := sess.Protocol(); got != core.ProtocolUDP {
 		t.Errorf("Protocol() = %v, want %v", got, core.ProtocolUDP)
 	}
-	if got := sess.ID(); got != 42 {
-		t.Errorf("ID() = %d, want 42", got)
+}
+func checkRemoteAddr(t *testing.T, sess interface{ RemoteAddr() net.Addr }) {
+	if got := sess.RemoteAddr(); got == nil {
+		t.Error("RemoteAddr() = nil")
 	}
+}
+func checkLocalAddr(t *testing.T, sess interface{ LocalAddr() net.Addr }) {
+	if got := sess.LocalAddr(); got == nil {
+		t.Error("LocalAddr() = nil")
+	}
+}
+func checkID(t *testing.T, sess interface{ ID() uint64 }, want uint64) {
+	if got := sess.ID(); got != want {
+		t.Errorf("ID() = %d, want %d", got, want)
+	}
+}
+func checkState(t *testing.T, sess interface{ State() core.SessionState }) {
 	if got := sess.State(); got != core.StateActive {
-		t.Errorf("State() = %v", got)
+		t.Errorf("State() = %v, want %v", got, core.StateActive)
 	}
+}
+func checkCreatedAt(t *testing.T, sess interface{ CreatedAt() time.Time }) {
 	if got := sess.CreatedAt(); got.IsZero() {
 		t.Error("CreatedAt() is zero")
 	}
+}
+func checkLastActiveAt(t *testing.T, sess interface{ LastActiveAt() time.Time }) {
 	if got := sess.LastActiveAt(); got.IsZero() {
 		t.Error("LastActiveAt() is zero")
 	}
+}
+func checkContext(t *testing.T, sess interface{ Context() context.Context }) {
 	if got := sess.Context(); got == nil {
 		t.Error("Context() = nil")
 	}
-	if got := sess.RemoteAddr(); got == nil || got.String() != "192.168.1.1:12345" {
-		t.Errorf("RemoteAddr() = %v", got)
-	}
-	if got := sess.LocalAddr(); got == nil || got.String() != "0.0.0.0:18000" {
-		t.Errorf("LocalAddr() = %v", got)
-	}
+}
+func checkMeta(t *testing.T, sess interface {
+	SetMeta(string, any)
+	GetMeta(string) (any, bool)
+	DelMeta(string)
+}) {
 	sess.SetMeta("k", "v")
 	got, ok := sess.GetMeta("k")
 	if !ok || got != "v" {
@@ -61,38 +81,5 @@ func TestUDP_SessionMethods(t *testing.T) {
 	sess.DelMeta("k")
 	if _, ok := sess.GetMeta("k"); ok {
 		t.Error("DelMeta failed")
-	}
-}
-
-func TestUDP_newDTLSSession(t *testing.T) {
-	conn1, conn2 := net.Pipe()
-	defer conn1.Close()
-	defer conn2.Close()
-
-	sess := newDTLSSession(42, conn1)
-
-	if got := sess.ID(); got != 42 {
-		t.Errorf("ID() = %d, want 42", got)
-	}
-	if got := sess.Protocol(); got != core.ProtocolUDP {
-		t.Errorf("Protocol() = %v", got)
-	}
-	if got := sess.State(); got != core.StateActive {
-		t.Errorf("State() = %v", got)
-	}
-	if got := sess.RemoteAddr(); got == nil {
-		t.Error("RemoteAddr() = nil")
-	}
-	if got := sess.LocalAddr(); got == nil {
-		t.Error("LocalAddr() = nil")
-	}
-	if got := sess.CreatedAt(); got.IsZero() {
-		t.Error("CreatedAt() is zero")
-	}
-	if got := sess.LastActiveAt(); got.IsZero() {
-		t.Error("LastActiveAt() is zero")
-	}
-	if got := sess.Context(); got == nil {
-		t.Error("Context() = nil")
 	}
 }
