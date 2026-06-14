@@ -37,7 +37,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v1.64.2
           args: --timeout=5m
 
   security:
@@ -69,10 +69,10 @@ jobs:
         ports:
           - 1883:1883
         options: >-
-          --health-cmd "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 3
+          --health-cmd "nc -z 127.0.0.1 1883 || exit 1"
+          --health-interval 3s
+          --health-timeout 2s
+          --health-retries 5
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -155,10 +155,10 @@ jobs:
         ports:
           - 1883:1883
         options: >-
-          --health-cmd "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 3
+          --health-cmd "nc -z 127.0.0.1 1883 || exit 1"
+          --health-interval 3s
+          --health-timeout 2s
+          --health-retries 5
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -195,10 +195,10 @@ jobs:
         ports:
           - 1883:1883
         options: >-
-          --health-cmd "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 3
+          --health-cmd "nc -z 127.0.0.1 1883 || exit 1"
+          --health-interval 3s
+          --health-timeout 2s
+          --health-retries 5
     steps:
       - name: Checkout
         uses: actions/checkout@v6
