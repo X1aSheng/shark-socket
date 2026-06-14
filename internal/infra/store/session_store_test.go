@@ -96,3 +96,19 @@ func TestSessionStoreOnBolt(t *testing.T) {
 		t.Fatalf("snapshot mismatch: %#v", snap)
 	}
 }
+
+func TestNewSessionStoreWithMemoryStore(t *testing.T) {
+	m := NewMemory()
+	s := NewSessionStore(m, "custom-snapshots")
+	if s == nil {
+		t.Fatal("session store should not be nil")
+	}
+}
+
+func TestNewSessionStoreDefaultBucket(t *testing.T) {
+	m := NewMemory()
+	s := NewSessionStore(m, "")
+	if s == nil {
+		t.Fatal("session store should not be nil")
+	}
+}

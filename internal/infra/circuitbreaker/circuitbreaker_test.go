@@ -64,3 +64,17 @@ func TestCircuitBreakerSnapshot(t *testing.T) {
 		t.Fatalf("snapshot = %#v", snap)
 	}
 }
+
+func TestNewCircuitBreakerDefaultConfig(t *testing.T) {
+	cb := New(3, time.Second)
+	if cb == nil {
+		t.Fatal("circuit breaker should not be nil")
+	}
+}
+
+func TestNewCircuitBreakerCustomConfig(t *testing.T) {
+	cb := New(5, 500*time.Millisecond)
+	if cb == nil {
+		t.Fatal("circuit breaker should not be nil")
+	}
+}

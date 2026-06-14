@@ -184,3 +184,21 @@ func TestBoltStoreDeleteBatch(t *testing.T) {
 		t.Fatalf("after DeleteBatch: want [b], got %v", list)
 	}
 }
+
+func TestBoltStoreNewWithMissingDir(t *testing.T) {
+	// NewBoltStore with non-existent parent dir - should create it
+	path := filepath.Join(t.TempDir(), "a", "b", "test.bolt")
+	bs, err := NewBoltStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bs.Close()
+}
+
+func TestBoltStoreNewWithInvalidPath(t *testing.T) {
+	// Invalid path should fail
+	_, err := NewBoltStore("")
+	if err == nil {
+		t.Fatal("expected error for empty path")
+	}
+}
