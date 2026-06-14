@@ -220,5 +220,5 @@ func normalizeTime(raw string) string {
 	if err != nil {
 		return raw
 	}
-	return parsed.Format("2006-01-02T15:04:05.000")
+	return parsed.Format("2006-01-02T15:04:05")
 }

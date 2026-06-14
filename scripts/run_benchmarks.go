@@ -55,7 +55,7 @@ func main() {
 	root := projectRoot()
 	logs := filepath.Join(root, *logDir)
 	must(os.MkdirAll(logs, 0o755))
-	ts := time.Now().Format("2006-01-02T15-04-05.000")
+	ts := time.Now().Format("2006-01-02T15-04-05")
 
 	fmt.Printf("shark-socket benchmark matrix\n")
 	fmt.Printf("profile=%s stage=%s root=%s\n", *profile, *stage, root)

@@ -9,7 +9,7 @@ if (!(Test-Path $LogDir)) {
     New-Item -ItemType Directory -Path $LogDir | Out-Null
 }
 
-$timestamp = Get-Date -Format "yyyy-MM-ddTHH-mm-ss.fff"
+$timestamp = Get-Date -Format "yyyy-MM-ddTHH-mm-ss"
 $transcript = Join-Path $LogDir "$timestamp`_validate.log"
 Start-Transcript -Path $transcript | Out-Null
 
@@ -19,13 +19,13 @@ function Run-Step {
         [scriptblock]$Command
     )
 
-    $started = Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fff"
+    $started = Get-Date -Format "yyyy-MM-ddTHH:mm:ss"
     Write-Host "[$started] START $Name"
     & $Command
     if ($LASTEXITCODE -ne 0) {
         throw "$Name failed with exit code $LASTEXITCODE"
     }
-    $finished = Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fff"
+    $finished = Get-Date -Format "yyyy-MM-ddTHH:mm:ss"
     Write-Host "[$finished] PASS  $Name"
 }
 
@@ -51,7 +51,8 @@ try {
         }
     }
 
-    Write-Host "[$(Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fff")] LOG   $transcript"
+    $now = Get-Date -Format "yyyy-MM-ddTHH:mm:ss"
+    Write-Host "[$now] LOG   $transcript"
 }
 finally {
     Stop-Transcript | Out-Null

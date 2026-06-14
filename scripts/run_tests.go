@@ -27,29 +27,30 @@ func main() {
 	mode := flag.String("mode", "all", "test mode: unit, integration, benchmark, race, cover, all")
 	logDir := flag.String("logdir", "logs", "directory for test logs")
 	timeout := flag.Duration("timeout", 5*time.Minute, "go test timeout")
+	jsonOut := flag.Bool("json", false, "output test results in JSON format (default: text log)")
 	flag.Parse()
 
 	root := projectRoot()
 	logs := filepath.Join(root, *logDir)
 	must(os.MkdirAll(logs, 0o755))
-	ts := time.Now().Format("2006-01-02T15-04-05.000")
+	ts := time.Now().Format("2006-01-02T15-04-05")
 
 	switch *mode {
 	case "unit":
-		must(runGoTest(root, logs, ts, "unit", *timeout, "./api", "./cmd/...", "./internal/..."))
+		must(runGoTest(root, logs, ts, "unit", *timeout, *jsonOut, "./api", "./cmd/...", "./internal/..."))
 	case "integration":
-		must(runGoTest(root, logs, ts, "integration", *timeout, "./tests/..."))
+		must(runGoTest(root, logs, ts, "integration", *timeout, *jsonOut, "./tests/..."))
 	case "benchmark":
-		must(runBenchmark(root, logs, ts, *timeout))
+		must(runBenchmark(root, logs, ts, *timeout, *jsonOut))
 	case "race":
-		must(runRace(root, logs, ts, *timeout))
+		must(runRace(root, logs, ts, *timeout, *jsonOut))
 	case "cover":
 		must(runCover(root, logs, ts, *timeout))
 	case "all":
 		printBanner("shark-socket test suite")
-		must(runGoTest(root, logs, ts, "unit", *timeout, "./api", "./cmd/...", "./internal/..."))
-		must(runGoTest(root, logs, ts, "integration", *timeout, "./tests/..."))
-		must(runBenchmark(root, logs, ts, *timeout))
+		must(runGoTest(root, logs, ts, "unit", *timeout, *jsonOut, "./api", "./cmd/...", "./internal/..."))
+		must(runGoTest(root, logs, ts, "integration", *timeout, *jsonOut, "./tests/..."))
+		must(runBenchmark(root, logs, ts, *timeout, *jsonOut))
 		fmt.Printf("\nlogs: %s\n", logs)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown mode %q\n", *mode)
@@ -57,35 +58,73 @@ func main() {
 	}
 }
 
-func runGoTest(root, logs, ts, mode string, timeout time.Duration, packages ...string) error {
-	jsonFile := filepath.Join(logs, ts+"_"+mode+".json")
-	logFile := filepath.Join(logs, ts+"_"+mode+".log")
-	args := []string{"test", "-json", "-v", "-count=1", "-timeout=" + timeout.String()}
+func runGoTest(root, logs, ts, mode string, timeout time.Duration, jsonMode bool, packages ...string) error {
+	args := []string{"test", "-v", "-count=1", "-timeout=" + timeout.String()}
+	if jsonMode {
+		// Insert -json after "test" to form "go test -json ..."
+		args = append(args[:1], append([]string{"-json"}, args[1:]...)...)
+	}
 	args = append(args, packages...)
-	fmt.Printf("[%s] %s -> %s\n", time.Now().Format("2006-01-02T15:04:05.000"), strings.Join(append([]string{"go"}, args...), " "), jsonFile)
-	err := capture(root, jsonFile, "go", args...)
-	writeReport(root, jsonFile, logFile)
+
+	if jsonMode {
+		jsonFile := filepath.Join(logs, ts+"_"+mode+".json")
+		logFile := filepath.Join(logs, ts+"_"+mode+".log")
+		fmt.Printf("[%s] %s -> %s\n", time.Now().Format("2006-01-02T15:04:05"), strings.Join(append([]string{"go"}, args...), " "), jsonFile)
+		err := capture(root, jsonFile, "go", args...)
+		writeReport(root, jsonFile, logFile)
+		return err
+	}
+
+	// Text mode: output directly to .log file
+	logFile := filepath.Join(logs, ts+"_"+mode+".log")
+	fmt.Printf("[%s] %s -> %s\n", time.Now().Format("2006-01-02T15:04:05"), strings.Join(append([]string{"go"}, args...), " "), logFile)
+	out, err := output(root, "go", args...)
+	_ = os.WriteFile(logFile, out, 0o644)
+	fmt.Print(string(out))
 	return err
 }
 
-func runBenchmark(root, logs, ts string, timeout time.Duration) error {
-	jsonFile := filepath.Join(logs, ts+"_benchmark.json")
+func runBenchmark(root, logs, ts string, timeout time.Duration, jsonMode bool) error {
+	if jsonMode {
+		jsonFile := filepath.Join(logs, ts+"_benchmark.json")
+		logFile := filepath.Join(logs, ts+"_benchmark.log")
+		args := []string{"test", "-json", "-run=^$", "-bench=.", "-benchmem", "-count=1", "-timeout=" + timeout.String(), "./internal/transport/tcp", "./internal/transport/coap", "./tests/benchmark"}
+		fmt.Printf("[%s] %s -> %s\n", time.Now().Format("2006-01-02T15:04:05"), strings.Join(append([]string{"go"}, args...), " "), jsonFile)
+		err := capture(root, jsonFile, "go", args...)
+		writeReport(root, jsonFile, logFile)
+		return err
+	}
+
+	// Text mode
 	logFile := filepath.Join(logs, ts+"_benchmark.log")
-	args := []string{"test", "-json", "-run=^$", "-bench=.", "-benchmem", "-count=1", "-timeout=" + timeout.String(), "./internal/transport/tcp", "./internal/transport/coap", "./tests/benchmark"}
-	fmt.Printf("[%s] %s -> %s\n", time.Now().Format("2006-01-02T15:04:05.000"), strings.Join(append([]string{"go"}, args...), " "), jsonFile)
-	err := capture(root, jsonFile, "go", args...)
-	writeReport(root, jsonFile, logFile)
+	args := []string{"test", "-v", "-run=^$", "-bench=.", "-benchmem", "-count=1", "-timeout=" + timeout.String(), "./internal/transport/tcp", "./internal/transport/coap", "./tests/benchmark"}
+	fmt.Printf("[%s] %s -> %s\n", time.Now().Format("2006-01-02T15:04:05"), strings.Join(append([]string{"go"}, args...), " "), logFile)
+	out, err := output(root, "go", args...)
+	_ = os.WriteFile(logFile, out, 0o644)
+	fmt.Print(string(out))
 	return err
 }
 
-func runRace(root, logs, ts string, timeout time.Duration) error {
-	jsonFile := filepath.Join(logs, ts+"_race.json")
-	logFile := filepath.Join(logs, ts+"_race.log")
-	args := []string{"test", "-json", "-race", "-v", "-count=1", "-timeout=" + timeout.String(), "./..."}
+func runRace(root, logs, ts string, timeout time.Duration, jsonMode bool) error {
 	env := raceEnv()
-	fmt.Printf("[%s] %s -> %s\n", time.Now().Format("2006-01-02T15:04:05.000"), strings.Join(append([]string{"go"}, args...), " "), jsonFile)
-	err := captureEnv(root, jsonFile, env, "go", args...)
-	writeReport(root, jsonFile, logFile)
+
+	if jsonMode {
+		jsonFile := filepath.Join(logs, ts+"_race.json")
+		logFile := filepath.Join(logs, ts+"_race.log")
+		args := []string{"test", "-json", "-race", "-v", "-count=1", "-timeout=" + timeout.String(), "./..."}
+		fmt.Printf("[%s] %s -> %s\n", time.Now().Format("2006-01-02T15:04:05"), strings.Join(append([]string{"go"}, args...), " "), jsonFile)
+		err := captureEnv(root, jsonFile, env, "go", args...)
+		writeReport(root, jsonFile, logFile)
+		return err
+	}
+
+	// Text mode
+	logFile := filepath.Join(logs, ts+"_race.log")
+	args := []string{"test", "-race", "-v", "-count=1", "-timeout=" + timeout.String(), "./..."}
+	fmt.Printf("[%s] %s -> %s\n", time.Now().Format("2006-01-02T15:04:05"), strings.Join(append([]string{"go"}, args...), " "), logFile)
+	out, err := outputEnv(root, env, "go", args...)
+	_ = os.WriteFile(logFile, out, 0o644)
+	fmt.Print(string(out))
 	return err
 }
 
@@ -112,7 +151,7 @@ func runCover(root, logs, ts string, timeout time.Duration) error {
 	logFile := filepath.Join(logs, ts+"_cover.log")
 	coverFile := filepath.Join(logs, "coverage.out")
 	args := []string{"test", "./...", "-count=1", "-coverprofile=" + coverFile, "-timeout=" + timeout.String()}
-	fmt.Printf("[%s] %s -> %s\n", time.Now().Format("2006-01-02T15:04:05.000"), strings.Join(append([]string{"go"}, args...), " "), logFile)
+	fmt.Printf("[%s] %s -> %s\n", time.Now().Format("2006-01-02T15:04:05"), strings.Join(append([]string{"go"}, args...), " "), logFile)
 	out, err := output(root, "go", args...)
 	_ = os.WriteFile(logFile, out, 0o644)
 	fmt.Print(string(out))
@@ -196,6 +235,13 @@ func output(dir, name string, args ...string) ([]byte, error) {
 	return cmd.CombinedOutput()
 }
 
+func outputEnv(dir string, env []string, name string, args ...string) ([]byte, error) {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	cmd.Env = env
+	return cmd.CombinedOutput()
+}
+
 func must(err error) {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -206,6 +252,6 @@ func must(err error) {
 func printBanner(title string) {
 	fmt.Println(strings.Repeat("=", 72))
 	fmt.Println(" ", title)
-	fmt.Println(" ", time.Now().Format("2006-01-02T15:04:05.000"))
+	fmt.Println(" ", time.Now().Format("2006-01-02T15:04:05"))
 	fmt.Println(strings.Repeat("=", 72))
 }
