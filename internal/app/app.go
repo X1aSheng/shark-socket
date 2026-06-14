@@ -270,4 +270,3 @@ func (a *App) serveHTTP(name string, server *http.Server) {
 		log.Printf("%s server failed: %v", name, err)
 	}
 }
-

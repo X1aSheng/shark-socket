@@ -63,9 +63,9 @@ type (
 	AutoBanPlugin       = plugin.AutoBan
 	ClusterPlugin       = plugin.Cluster
 	HeartbeatPlugin     = plugin.Heartbeat
-	PersistencePlugin     = plugin.Persistence
-	PersistenceV2Plugin   = plugin.PersistenceV2
-	SlowHandlerOption     = plugin.SlowHandlerOption
+	PersistencePlugin   = plugin.Persistence
+	PersistenceV2Plugin = plugin.PersistenceV2
+	SlowHandlerOption   = plugin.SlowHandlerOption
 	PrometheusMetrics   = observability.PrometheusMetrics
 	OpenTelemetryTracer = observability.OpenTelemetryTracer
 	PubSub              = pubsub.PubSub
@@ -335,4 +335,3 @@ func Run(ctx context.Context, gateway *Gateway) error {
 	}
 	return gateway.Start(ctx)
 }
-

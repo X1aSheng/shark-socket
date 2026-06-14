@@ -86,7 +86,6 @@ func TestHealthHandler(t *testing.T) {
 	}
 }
 
-
 func TestEchoHandler(t *testing.T) {
 	sess := &mockSession{}
 	err := echoHandler(sess, core.Message{Payload: []byte("hello")})
@@ -97,24 +96,24 @@ func TestEchoHandler(t *testing.T) {
 
 type mockSession struct{}
 
-func (m *mockSession) ID() uint64                    { return 0 }
-func (m *mockSession) Protocol() core.Protocol       { return core.ProtocolTCP }
-func (m *mockSession) RemoteAddr() net.Addr          { return nil }
-func (m *mockSession) LocalAddr() net.Addr           { return nil }
-func (m *mockSession) State() core.SessionState      { return core.StateActive }
-func (m *mockSession) CreatedAt() time.Time          { return time.Now() }
-func (m *mockSession) LastActiveAt() time.Time       { return time.Now() }
-func (m *mockSession) Context() context.Context      { return context.Background() }
-func (m *mockSession) SetMeta(string, any)           {}
-func (m *mockSession) GetMeta(string) (any, bool)    { return nil, false }
-func (m *mockSession) DelMeta(string)                {}
+func (m *mockSession) ID() uint64                 { return 0 }
+func (m *mockSession) Protocol() core.Protocol    { return core.ProtocolTCP }
+func (m *mockSession) RemoteAddr() net.Addr       { return nil }
+func (m *mockSession) LocalAddr() net.Addr        { return nil }
+func (m *mockSession) State() core.SessionState   { return core.StateActive }
+func (m *mockSession) CreatedAt() time.Time       { return time.Now() }
+func (m *mockSession) LastActiveAt() time.Time    { return time.Now() }
+func (m *mockSession) Context() context.Context   { return context.Background() }
+func (m *mockSession) SetMeta(string, any)        {}
+func (m *mockSession) GetMeta(string) (any, bool) { return nil, false }
+func (m *mockSession) DelMeta(string)             {}
 func (m *mockSession) Send(data []byte) error {
 	if string(data) != "hello" {
 		return fmt.Errorf("Send: got %q, want hello", data)
 	}
 	return nil
 }
-func (m *mockSession) Close(context.Context) error   { return nil }
+func (m *mockSession) Close(context.Context) error { return nil }
 
 func TestServeHTTPPortConflict(t *testing.T) {
 	// Start a listener on a port to cause a conflict

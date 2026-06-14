@@ -28,7 +28,9 @@ func main() {
 	defer stop()
 
 	if err := runtimeApp.Start(ctx); err != nil {
-		log.Fatal(err)
+		log.Printf("shark-socket start error: %v", err)
+		stop()
+		os.Exit(1)
 	}
 	log.Printf("shark-socket protocols=%v health=%s metrics=%s", runtimeApp.Protocols, cfg.HealthAddr, cfg.MetricsAddr)
 
