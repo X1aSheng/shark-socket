@@ -321,8 +321,8 @@ shark-socket/
 │       ├── ADR-005-codec-adaptation-layer.md
 │       ├── ADR-006-benchmark-driven-optimization.md
 │       ├── ADR-007-build-proxy-configurable.md
-│       ├── ADR-008-mqtt-and-protocol-boundary.md
-│       ├── ADR-009-coap-as-transport-layer.md
+│       ├── ADR-008-mqtt-external-broker.md
+│       ├── ADR-009-protocol-integration-boundary.md
 │       └── ADR-010-udp-pseudo-session-timing.md
 │
 ├── go.mod                              # module shark-socket, go 1.26
@@ -376,7 +376,7 @@ shark-socket/
 
 ## 8. 文档导航
 
-### 7.1 读者路径建议
+### 8.1 读者路径建议
 
 | 目标 | 阅读顺序 |
 |------|---------|
@@ -387,7 +387,7 @@ shark-socket/
 | 性能优化 | PERFORMANCE（需先有 benchmark 基线） |
 | 安全加固 | SECURITY → CONFIGURATION（TLS 字段） |
 
-### 7.2 文档职责边界
+### 8.2 文档职责边界
 
 | 文档 | 写什么 | 不写什么 |
 |------|--------|---------|
