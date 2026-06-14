@@ -30,10 +30,10 @@ func newMockToken(err error) *mockToken {
 	return t
 }
 
-func (t *mockToken) Wait() bool                          { return true }
-func (t *mockToken) WaitTimeout(time.Duration) bool      { return true }
-func (t *mockToken) Done() <-chan struct{}               { return t.doneCh }
-func (t *mockToken) Error() error                        { return t.err }
+func (t *mockToken) Wait() bool                     { return true }
+func (t *mockToken) WaitTimeout(time.Duration) bool { return true }
+func (t *mockToken) Done() <-chan struct{}          { return t.doneCh }
+func (t *mockToken) Error() error                   { return t.err }
 
 type mockClient struct {
 	connected    bool

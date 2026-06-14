@@ -232,13 +232,13 @@ func TestParseMessageWithOptions(t *testing.T) {
 func TestResponseCodes(t *testing.T) {
 	// Verify all response codes are unique
 	codes := map[string]byte{
-		"CodeEmpty":              CodeEmpty,
-		"CodeCreated":            CodeCreated,
-		"CodeDeleted":            CodeDeleted,
-		"CodeValid":              CodeValid,
-		"CodeChanged":            CodeChanged,
-		"CodeContent":            CodeContent,
-		"CodeBadRequest":         CodeBadRequest,
+		"CodeEmpty":               CodeEmpty,
+		"CodeCreated":             CodeCreated,
+		"CodeDeleted":             CodeDeleted,
+		"CodeValid":               CodeValid,
+		"CodeChanged":             CodeChanged,
+		"CodeContent":             CodeContent,
+		"CodeBadRequest":          CodeBadRequest,
 		"CodeInternalServerError": CodeInternalServerError,
 	}
 	seen := make(map[byte]bool)

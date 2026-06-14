@@ -26,8 +26,8 @@ func (o *Observer) NextSeq() uint32 {
 
 // ObserverRegistry manages observe subscriptions per resource path.
 type ObserverRegistry struct {
-	mu    sync.RWMutex
-	subs  map[string]map[string]*Observer
+	mu   sync.RWMutex
+	subs map[string]map[string]*Observer
 }
 
 // NewObserverRegistry creates a new observer registry.
