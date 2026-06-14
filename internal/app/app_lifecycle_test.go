@@ -146,3 +146,104 @@ func TestServeHTTPPortConflict(t *testing.T) {
 	}
 	app.Stop(ctx)
 }
+
+func TestAppStopWithHealthAndMetrics(t *testing.T) {
+	cfg := Config{
+		HealthAddr:  "127.0.0.1:0",
+		MetricsAddr: "127.0.0.1:0",
+		Protocols: []ProtocolConfig{
+			{Name: "tcp", Addr: "127.0.0.1:0"},
+			{Name: "udp", Addr: "127.0.0.1:0"},
+		},
+	}
+	app, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := app.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// Stop covers Health/MetricsHTTP non-nil paths
+	if err := app.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if app.Gateway.Ready() {
+		t.Fatal("gateway should not be ready after stop")
+	}
+}
+
+func TestAppRegisterAllProtocols(t *testing.T) {
+	cfg := Config{
+		Protocols: []ProtocolConfig{
+			{Name: "tcp", Addr: "127.0.0.1:0"},
+			{Name: "udp", Addr: "127.0.0.1:0"},
+			{Name: "http", Addr: "127.0.0.1:0"},
+			{Name: "websocket", Addr: "127.0.0.1:0"},
+			{Name: "coap", Addr: "127.0.0.1:0"},
+			{Name: "grpc-web", Addr: "127.0.0.1:0"},
+			{Name: "quic", Addr: "127.0.0.1:0", TLSCertFile: "/nonexistent/cert.pem", TLSKeyFile: "/nonexistent/key.pem"},
+		},
+	}
+	// QUIC requires TLS, so expect error from registerProtocols
+	_, err := New(cfg)
+	if err == nil {
+		t.Fatal("expected error for QUIC with missing TLS")
+	}
+}
+
+func TestAppRegisterAllProtocolsNoTLS(t *testing.T) {
+	cfg := Config{
+		Protocols: []ProtocolConfig{
+			{Name: "tcp", Addr: "127.0.0.1:0"},
+			{Name: "udp", Addr: "127.0.0.1:0"},
+			{Name: "http", Addr: "127.0.0.1:0"},
+			{Name: "websocket", Addr: "127.0.0.1:0"},
+			{Name: "coap", Addr: "127.0.0.1:0"},
+			{Name: "grpc-web", Addr: "127.0.0.1:0"},
+		},
+	}
+	app, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(app.Protocols) != 6 {
+		t.Fatalf("protocols = %d, want 6", len(app.Protocols))
+	}
+}
+
+func TestAppDisableProtocol(t *testing.T) {
+	disabled := false
+	cfg := Config{
+		Protocols: []ProtocolConfig{
+			{Name: "tcp", Addr: "127.0.0.1:0"},
+			{Name: "http", Addr: "127.0.0.1:0", Enabled: &disabled},
+		},
+	}
+	app, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(app.Protocols) != 1 {
+		t.Fatalf("protocols = %d, want 1 (disabled filtered)", len(app.Protocols))
+	}
+}
+
+func TestAppWithOriginCheck(t *testing.T) {
+	cfg := Config{
+		Protocols: []ProtocolConfig{
+			{Name: "websocket", Addr: "127.0.0.1:0", AllowedOrigins: []string{"http://example.com"}},
+			{Name: "http", Addr: "127.0.0.1:0", AllowedOrigins: []string{"*"}},
+			{Name: "grpc-web", Addr: "127.0.0.1:0", AllowedOrigins: []string{"http://localhost"}},
+		},
+	}
+	app, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(app.Protocols) != 3 {
+		t.Fatalf("protocols = %d", len(app.Protocols))
+	}
+}
