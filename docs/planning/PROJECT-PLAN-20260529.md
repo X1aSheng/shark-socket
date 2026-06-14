@@ -1,4 +1,4 @@
-# Shark-Socket-New Project Plan
+# Shark-Socket Project Plan
 
 Updated: 2026-05-30T11:35:00
 
