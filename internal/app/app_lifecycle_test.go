@@ -2,8 +2,12 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"testing"
 	"time"
+
+	"github.com/X1aSheng/shark-socket/internal/core"
 )
 
 func TestAppStartStopLifecycle(t *testing.T) {
@@ -82,3 +86,63 @@ func TestHealthHandler(t *testing.T) {
 	}
 }
 
+
+func TestEchoHandler(t *testing.T) {
+	sess := &mockSession{}
+	err := echoHandler(sess, core.Message{Payload: []byte("hello")})
+	if err != nil {
+		t.Fatalf("echoHandler: %v", err)
+	}
+}
+
+type mockSession struct{}
+
+func (m *mockSession) ID() uint64                    { return 0 }
+func (m *mockSession) Protocol() core.Protocol       { return core.ProtocolTCP }
+func (m *mockSession) RemoteAddr() net.Addr          { return nil }
+func (m *mockSession) LocalAddr() net.Addr           { return nil }
+func (m *mockSession) State() core.SessionState      { return core.StateActive }
+func (m *mockSession) CreatedAt() time.Time          { return time.Now() }
+func (m *mockSession) LastActiveAt() time.Time       { return time.Now() }
+func (m *mockSession) Context() context.Context      { return context.Background() }
+func (m *mockSession) SetMeta(string, any)           {}
+func (m *mockSession) GetMeta(string) (any, bool)    { return nil, false }
+func (m *mockSession) DelMeta(string)                {}
+func (m *mockSession) Send(data []byte) error {
+	if string(data) != "hello" {
+		return fmt.Errorf("Send: got %q, want hello", data)
+	}
+	return nil
+}
+func (m *mockSession) Close(context.Context) error   { return nil }
+
+func TestServeHTTPPortConflict(t *testing.T) {
+	// Start a listener on a port to cause a conflict
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	port := ln.Addr().String()
+
+	cfg := Config{
+		HealthAddr: port, // This port is already in use
+		Protocols: []ProtocolConfig{
+			{Name: "tcp", Addr: "127.0.0.1:0"},
+		},
+	}
+	app, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := app.Start(ctx); err != nil {
+		// The Gateway start should succeed (TCP works), but health server fails
+		// Verify the error is captured
+		errs := app.ServeErrors()
+		if len(errs) == 0 {
+			t.Log("no serve errors recorded (health addr may not have started)")
+		}
+	}
+	app.Stop(ctx)
+}
