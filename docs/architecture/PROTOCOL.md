@@ -1,7 +1,7 @@
 # PROTOCOL.md
 
 > Shark-Socket 应用协议层：LwM2M 详细设计  
-> 版本：v0.1.0  
+> 版本：v0.2.x-alpha  
 > 最后更新：2026-06-01
 
 ---

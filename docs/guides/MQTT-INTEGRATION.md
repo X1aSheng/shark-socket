@@ -1,7 +1,7 @@
 # MQTT Integration
 
 > Shark-Socket ↔ External MQTT Broker 数据契约  
-> 版本：v0.1.0
+> 版本：v0.2.x-alpha
 
 ---
 

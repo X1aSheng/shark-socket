@@ -1,7 +1,7 @@
 # TROUBLESHOOTING.md
 
 > Shark-Socket 故障排查指南  
-> 版本：v0.1.0
+> 版本：v0.2.x-alpha
 
 ---
 

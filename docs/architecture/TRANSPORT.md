@@ -1,7 +1,7 @@
 # TRANSPORT.md — Part 1/5: TCP
 
 > Shark-Socket 传输层：TCP 协议实现细节  
-> 版本：v0.1.0  
+> 版本：v0.2.x-alpha  
 > 最后更新：2026-06-01
 
 ---
@@ -1086,7 +1086,7 @@ func defaultOptions() Options {
 # TRANSPORT.md — Part 2/5: UDP
 
 > Shark-Socket 传输层：UDP 协议实现细节  
-> 版本：v0.1.0  
+> 版本：v0.2.x-alpha  
 > 最后更新：2026-06-01
 
 ---
@@ -1387,7 +1387,7 @@ CoAP（Constrained Application Protocol）是基于 UDP 的应用层协议。在
 # TRANSPORT.md — Part 3/5: CoAP
 
 > Shark-Socket 传输层：CoAP 协议实现细节  
-> 版本：v0.1.0  
+> 版本：v0.2.x-alpha  
 > 最后更新：2026-06-01
 
 ---
@@ -2719,7 +2719,7 @@ func NewServer(handler core.Handler, opts ...Option) *Server {
 # TRANSPORT.md — Part 4/5: WebSocket
 
 > Shark-Socket 传输层：WebSocket 协议实现细节  
-> 版本：v0.1.0  
+> 版本：v0.2.x-alpha  
 > 最后更新：2026-06-01
 
 ---
@@ -3661,7 +3661,7 @@ MaxMessageSize 通过 conn.SetReadLimit 在协议层强制：
 # TRANSPORT.md — Part 5/5: 汇总说明
 
 > Shark-Socket 传输层：协议汇总、对比与 StagedServer 实现表格  
-> 版本：v0.1.0  
+> 版本：v0.2.x-alpha  
 > 最后更新：2026-06-01
 
 ---

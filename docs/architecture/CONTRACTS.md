@@ -1,7 +1,7 @@
 # CONTRACTS.md
 
 > Shark-Socket 核心契约层完整定义  
-> 版本：v0.1.0  
+> 版本：v0.2.x-alpha  
 > 最后更新：2026-06-01
 
 ---

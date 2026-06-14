@@ -1,7 +1,7 @@
 # ARCHITECTURE.md
 
 > Shark-Socket 架构总览文档  
-> 版本：v0.1.0  
+> 版本：v0.2.x-alpha  
 > 最后更新：2026-06-01
 
 ---

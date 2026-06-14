@@ -1,7 +1,7 @@
 # DEPLOYMENT.md
 
 > Shark-Socket 部署指南  
-> 版本：v0.1.0
+> 版本：v0.2.x-alpha
 
 ---
 

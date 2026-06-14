@@ -1,7 +1,7 @@
 # SECURITY.md
 
 > Shark-Socket 安全与防御体系  
-> 版本：v0.1.0
+> 版本：v0.2.x-alpha
 
 ---
 

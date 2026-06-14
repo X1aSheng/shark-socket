@@ -1,7 +1,7 @@
 # OBSERVABILITY.md
 
 > Shark-Socket 可观测性体系  
-> 版本：v0.1.0  
+> 版本：v0.2.x-alpha  
 > 最后更新：2026-06-01
 
 ---
@@ -130,7 +130,7 @@ Labels 以 key-value 交替传入：`IncCounter("name", "protocol", "tcp", "stat
 |--------|------|------|---------|
 | `tcp_task_queue_full_total` | Counter | — | TCP WorkerPool 队列满 |
 
-> 当前 v0.1.0 内置指标较少，P1 阶段将补充连接数、消息吞吐、延迟等全量指标。
+> 当前 v0.2.x-alpha 内置指标较少，P1 阶段将补充连接数、消息吞吐、延迟等全量指标。
 
 ---
 
