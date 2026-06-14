@@ -20,14 +20,14 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"runtime"
+	goruntime "runtime"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
-	"github.com/X1aSheng/shark-socket/internal/runtime"
+	sharkruntime "github.com/X1aSheng/shark-socket/internal/runtime"
 	"github.com/X1aSheng/shark-socket/internal/transport/tcp"
 )
 
@@ -51,7 +51,7 @@ func main() {
 	fmt.Printf("shark-socket stress test runner\n")
 	fmt.Printf("mode=%s conns=%d duration=%s size=%d profile=%s\n",
 		*flagMode, *flagConns, *flagDuration, *flagSize, *flagProfile)
-	fmt.Printf("go=%s os=%s arch=%s\n\n", goVersion(), runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("go=%s os=%s arch=%s\n\n", goVersion(), goruntime.GOOS, goruntime.GOARCH)
 
 	if *flagProfile == "cloud" {
 		fmt.Printf("resource gate: %s\n", readResourceState())
@@ -95,9 +95,9 @@ type metrics struct {
 	mu        sync.Mutex
 	latencies []time.Duration
 	sendOK    atomic.Int64
-	sendFail  atomic.Int64
+	sendErr   atomic.Int64
 	recvOK    atomic.Int64
-	recvFail  atomic.Int64
+	recvErr   atomic.Int64
 	startTime time.Time
 	endTime   time.Time
 }
@@ -105,9 +105,9 @@ type metrics struct {
 func (m *metrics) start()                 { m.startTime = time.Now() }
 func (m *metrics) stop()                  { m.endTime = time.Now() }
 func (m *metrics) sendOk()                { m.sendOK.Add(1) }
-func (m *metrics) sendFail()              { m.sendFail.Add(1) }
+func (m *metrics) sendFail()              { m.sendErr.Add(1) }
 func (m *metrics) recvOk(d time.Duration) { m.recvOK.Add(1); m.mu.Lock(); m.latencies = append(m.latencies, d); m.mu.Unlock() }
-func (m *metrics) recvFail()              { m.recvFail.Add(1) }
+func (m *metrics) recvFail()              { m.recvErr.Add(1) }
 
 func (m *metrics) p50() time.Duration { return m.percentile(0.50) }
 func (m *metrics) p90() time.Duration { return m.percentile(0.90) }
@@ -139,11 +139,11 @@ func (m *metrics) report(name string) map[string]any {
 		"duration":      elapsed.String(),
 		"connections":   *flagConns,
 		"payload_bytes": *flagSize,
-		"sent":          m.sendOK.Load() + m.sendFail.Load(),
+		"sent":          m.sendOK.Load() + m.sendErr.Load(),
 		"send_ok":       m.sendOK.Load(),
-		"send_fail":     m.sendFail.Load(),
+		"send_fail":     m.sendErr.Load(),
 		"recv_ok":       m.recvOK.Load(),
-		"recv_fail":     m.recvFail.Load(),
+		"recv_fail":     m.recvErr.Load(),
 	}
 	recvTotal := m.recvOK.Load()
 	if recvTotal > 0 && elapsed > 0 {
@@ -333,7 +333,7 @@ func startLocalServer() string {
 			return sess.Send(msg.Payload)
 		}),
 	)
-	gw := runtime.NewGateway()
+	gw := sharkruntime.NewGateway()
 	if err := gw.Register(server); err != nil {
 		fmt.Fprintf(os.Stderr, "register: %v\n", err)
 		os.Exit(1)
@@ -365,12 +365,12 @@ func init() {
 // ---------------------------------------------------------------------------
 
 func goVersion() string {
-	return fmt.Sprintf("%s %s/%s", runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	return fmt.Sprintf("%s %s/%s", goruntime.Version(), goruntime.GOOS, goruntime.GOARCH)
 }
 
 func readResourceState() string {
-	if runtime.GOOS != "linux" {
-		return "not available on " + runtime.GOOS
+	if goruntime.GOOS != "linux" {
+		return "not available on " + goruntime.GOOS
 	}
 	data, _ := os.ReadFile("/proc/meminfo")
 	_ = data
