@@ -25,13 +25,12 @@ func main() {
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	if err := runtimeApp.Start(ctx); err != nil {
-		log.Printf("shark-socket start error: %v", err)
 		stop()
-		os.Exit(1)
+		log.Fatalf("shark-socket start error: %v", err)
 	}
+	defer stop()
 	log.Printf("shark-socket protocols=%v health=%s metrics=%s", runtimeApp.Protocols, cfg.HealthAddr, cfg.MetricsAddr)
 
 	<-ctx.Done()

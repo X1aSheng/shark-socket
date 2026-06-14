@@ -19,7 +19,7 @@ var (
 type ResourceType int
 
 const (
-	ResourceString  ResourceType = iota
+	ResourceString ResourceType = iota
 	ResourceInteger
 	ResourceFloat
 	ResourceBoolean
@@ -32,7 +32,7 @@ const (
 type OperationMask byte
 
 const (
-	OpRead    OperationMask = 1 << iota
+	OpRead OperationMask = 1 << iota
 	OpWrite
 	OpExecute
 	OpDelete

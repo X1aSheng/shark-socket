@@ -215,7 +215,7 @@ func TestMessageEmptyMeta(t *testing.T) {
 type stringCodec struct{}
 
 func (c stringCodec) Encode(s string) ([]byte, error) { return []byte(s), nil }
-func (c stringCodec) Decode(b []byte) (string, error)  { return string(b), nil }
+func (c stringCodec) Decode(b []byte) (string, error) { return string(b), nil }
 
 func TestAdaptTyped(t *testing.T) {
 	called := false

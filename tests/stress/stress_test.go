@@ -26,8 +26,8 @@ import (
 // ---------------------------------------------------------------------------
 
 var (
-	conns    = 50
-	duration = 10 * time.Second
+	conns       = 50
+	duration    = 10 * time.Second
 	payloadSize = 256
 )
 
@@ -50,12 +50,17 @@ type stressMetrics struct {
 	endTime   time.Time
 }
 
-func (m *stressMetrics) start()             { m.startTime = time.Now() }
-func (m *stressMetrics) stop()              { m.endTime = time.Now() }
-func (m *stressMetrics) incSendOK()            { m.sendOK.Add(1) }
-func (m *stressMetrics) incSendFail()          { m.sendFail.Add(1) }
-func (m *stressMetrics) incRecvOK(d time.Duration) { m.recvOK.Add(1); m.mu.Lock(); m.latencies = append(m.latencies, d); m.mu.Unlock() }
-func (m *stressMetrics) incRecvFail()          { m.recvFail.Add(1) }
+func (m *stressMetrics) start()       { m.startTime = time.Now() }
+func (m *stressMetrics) stop()        { m.endTime = time.Now() }
+func (m *stressMetrics) incSendOK()   { m.sendOK.Add(1) }
+func (m *stressMetrics) incSendFail() { m.sendFail.Add(1) }
+func (m *stressMetrics) incRecvOK(d time.Duration) {
+	m.recvOK.Add(1)
+	m.mu.Lock()
+	m.latencies = append(m.latencies, d)
+	m.mu.Unlock()
+}
+func (m *stressMetrics) incRecvFail() { m.recvFail.Add(1) }
 
 func (m *stressMetrics) percentile(p float64) time.Duration {
 	m.mu.Lock()
