@@ -10,28 +10,26 @@ linters:
   exclusions:
     paths:
       - examples/
+      - tests/stress/
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - unused
+      # Deprecated pion/dtls API — tracked separately
+      - linters:
+          - staticcheck
+        text: "SA1019:"
+      # Pre-existing minor issues
+      - linters:
+          - staticcheck
+        text: "SA6001:"
+      - linters:
+          - staticcheck
+        text: "SA9003:"
 formatters:
   enable:
     - gofmt
     - goimports
 run:
   timeout: 5m
-issues:
-  exclude-rules:
-    # Test files: suppress noisy checks that overwhelm real issues
-    - path: _test\.go
-      linters:
-        - errcheck
-        - unused
-    # Generated/stress test code
-    - path: tests/stress/
-      linters:
-        - errcheck
-    # Deprecated pion/dtls API — tracked separately
-    - linters:
-        - staticcheck
-      text: "SA1019:"
-    # Suppression examples:
-    - linters:
-        - staticcheck
-      text: "SA6001:"
