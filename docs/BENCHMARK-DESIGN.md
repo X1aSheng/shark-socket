@@ -193,16 +193,24 @@ go run scripts/run_benchmarks.go -profile local -stage smoke
 go run scripts/run_stress.go -mode tcp -conns 10 -duration 5s
 ```
 
-## Results (Local Dev Machine, Ryzen 7 8845HS)
+## Results
 
-### Stress Test: TCP Sustained (50 conns, 256B payload, 10s)
+### Local Machine (Ryzen 7 8845HS, Windows 11)
 
-| Metric | Value |
-|---|---|
-| Messages sent | 2,197,359 |
-| Messages received | 2,197,359 |
-| Throughput | **219,720 msg/s** |
-| Error rate | 0% |
-| P50 latency | ~500µs |
-| P90 latency | ~999µs |
-| P99 latency | ~1.008ms |
+| Test | Throughput | P50/P99 | Errors |
+|---|---|---|---|
+| TCP sustained (50 conns, 256B, 10s) | **219,720 msg/s** | ~500µs / 1.0ms | 0 |
+| TCP sustained (200 conns, 256B, 30s) | — | — | — |
+
+### Cloud Server 2 (8c/30GB, Ubuntu 26.04)
+
+| Test | Throughput | Errors | Notes |
+|---|---|---|---|
+| TCP sustained (50 conns, 256B, 10s) | **316,375 msg/s** | 0 | 3.16M msgs in 10s |
+| TCP burst (500 concurrent, 1 conn) | **12,331 msg/s** | 425 recv err | Single-conn burst — sequential Send/Receive model limits concurrency |
+| TCP reconnect (50 loops, 10s) | **85,922 msg/s** | 0 | 859K rapid connect/send/close cycles |
+
+> Note: The `run_stress.go` runner script connects successfully when using `-host`
+> but the `tcp.Client.Receive()` times out when connecting to a remote container.
+> Use `go test ./tests/stress/` for reliable in-situ stress testing. The runner
+> script works correctly for local (non-remote) scenarios.
