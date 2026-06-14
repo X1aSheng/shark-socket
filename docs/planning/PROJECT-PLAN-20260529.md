@@ -12,7 +12,7 @@ Updated: 2026-05-30T11:35:00
 
 This plan is based on the current repository state, not aspirational scope.
 
-- Module: `github.com/X1aSheng/shark-socket`, Go `1.26.1`.
+- Module: `github.com/X1aSheng/shark-socket`, Go `1.26.4`.
 - Current branch: `shark-socket-main`.
 - Current design reference: `docs/architecture/ARCHITECTURE.md`, including Step 1 through Step 28 validation records.
 - Forward implementation guide: `docs/planning/IMPLEMENTATION-GOALS-20260530.md`.
@@ -112,7 +112,7 @@ This plan is based on the current repository state, not aspirational scope.
 | P2 | Benchmarks and fuzzing | Done | Add protocol benchmarks and fuzz tests for CoAP/TCP framing | TCP framer and CoAP parser fuzz smoke plus benchmark baselines are recorded |
 | P2 | Plugin completeness | Done | Add cluster plugin if production use requires it | Cluster pub/sub plugin now covers cross-node local broadcast behavior |
 | P2 | Gateway restart lifecycle | Done | Allow stop/start reuse of the same Gateway and shared SessionManager | TCP restart regression covers the bug found in review |
-| P2 | GitHub Actions CI | Done | Run scripted validation, race, coverage, deploy checks, and log artifact upload on push/PR | `.github/workflows/ci.yml` runs Windows and Ubuntu matrix jobs, Ubuntu race/coverage jobs, and deploy workflow semantics test exists |
+| P2 | GitHub Actions CI | Done | Run scripted validation, race, coverage, deploy checks, and log artifact upload on push/PR | `.github/workflows/ci.yml` runs separate validate-ubuntu (with Mosquitto) and validate-windows (unit-only) jobs, plus Ubuntu race/coverage with Mosquitto service, and deploy workflow semantics test exists |
 | P2 | Protocol test methodology | Done | Document protocol-specific test strategy and required edge cases | `docs/guides/PROTOCOL-TEST-GUIDE-20260530.md` |
 | P2 | Protocol edge regressions | Done | Add targeted edge tests across TCP, UDP, HTTP, WebSocket, CoAP, LwM2M, QUIC, and gRPC-Web | Scripted unit count increased to 88 passed |
 
