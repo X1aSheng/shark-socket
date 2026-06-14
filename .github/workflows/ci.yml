@@ -65,6 +65,16 @@ jobs:
         os:
           - windows-latest
           - ubuntu-latest
+    services:
+      mosquitto:
+        image: eclipse-mosquitto:2
+        ports:
+          - 1883:1883
+        options: >-
+          --health-cmd "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 3
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -80,10 +90,14 @@ jobs:
 
       - name: Scripted unit, integration, and benchmark tests
         run: go run scripts/run_tests.go -mode all -timeout 5m
+        env:
+          SHARK_MQTT_BROKER: tcp://localhost:1883
 
       - name: Validate tests and vet
         shell: pwsh
         run: ./scripts/validate.ps1
+        env:
+          SHARK_MQTT_BROKER: tcp://localhost:1883
 
       - name: Validate deploy manifests
         shell: pwsh
@@ -101,6 +115,16 @@ jobs:
     name: Race (ubuntu-latest)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      mosquitto:
+        image: eclipse-mosquitto:2
+        ports:
+          - 1883:1883
+        options: >-
+          --health-cmd "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 3
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -116,6 +140,8 @@ jobs:
 
       - name: Race validation
         run: go run scripts/run_tests.go -mode race -timeout 5m
+        env:
+          SHARK_MQTT_BROKER: tcp://localhost:1883
 
       - name: Upload race logs
         if: always()
@@ -144,6 +170,8 @@ jobs:
 
       - name: Coverage validation
         run: go run scripts/run_tests.go -mode cover -timeout 5m
+        env:
+          SHARK_MQTT_BROKER: tcp://localhost:1883
 
       - name: Upload coverage logs
         if: always()
