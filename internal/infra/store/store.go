@@ -90,6 +90,6 @@ func (m *Memory) List(bucket string) ([]string, error) {
 func (m *Memory) Close() error { return nil }
 
 var (
-	_ Store  = (*Memory)(nil)
+	_ Store   = (*Memory)(nil)
 	_ StoreV2 = (*Memory)(nil)
 )

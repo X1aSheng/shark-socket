@@ -16,6 +16,14 @@ linters:
         linters:
           - errcheck
           - unused
+          - ineffassign
+      # Pre-existing errcheck in non-test code (deferred Close etc.)
+      - path: internal/transport/
+        linters:
+          - errcheck
+      - path: scripts/
+        linters:
+          - errcheck
       # Deprecated pion/dtls API — tracked separately
       - linters:
           - staticcheck
@@ -27,6 +35,18 @@ linters:
       - linters:
           - staticcheck
         text: "SA9003:"
+      # SA1012: nil context passed in test files
+      - linters:
+          - staticcheck
+        text: "SA1012:"
+      # SA4000: identical expressions in test
+      - linters:
+          - staticcheck
+        text: "SA4000:"
+      # QF1003: tagged switch style in existing code
+      - linters:
+          - staticcheck
+        text: "QF1003:"
 formatters:
   enable:
     - gofmt

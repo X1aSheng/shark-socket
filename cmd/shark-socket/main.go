@@ -34,13 +34,15 @@ func main() {
 	log.Printf("shark-socket protocols=%v health=%s metrics=%s", runtimeApp.Protocols, cfg.HealthAddr, cfg.MetricsAddr)
 
 	<-ctx.Done()
-	timeout, err := cfg.ShutdownDuration()
+
+	shutdownTimeout, err := cfg.ShutdownDuration()
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("shark-socket invalid shutdown duration: %v", err)
+		return
 	}
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	if err := runtimeApp.Stop(shutdownCtx); err != nil {
-		log.Fatal(err)
+		log.Printf("shark-socket stop error: %v", err)
 	}
 }
