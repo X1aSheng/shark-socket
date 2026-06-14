@@ -15,6 +15,8 @@
 - ✅ MQTT CI 集成 — workflow 中添加 mosquitto 服务
 - ✅ 7 个传输层 session 0% 方法覆盖测试（TCP/UDP/HTTP/WS/QUIC/gRPC-Web）
 - ✅ API TLS/Handler Option 构造函数测试（13 个函数）
+- ✅ BoltDB Legacy 方法测试（Save/Load/Delete/DeleteBatch）
+- ✅ examples 编译检查（11 个 examples 全部通过）
 - ✅ 总覆盖率 **73.2% → 74.1%**（+0.9%）
 
 ---
