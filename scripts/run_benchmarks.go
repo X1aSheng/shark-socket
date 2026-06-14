@@ -125,11 +125,81 @@ func selectGroups(profile, stage string) []benchmarkGroup {
 			cloud:     true,
 			medium:    true,
 		},
+		// --- New payload-size benchmarks ---
+		{
+			name:      "payload-size-light",
+			pattern:   "BenchmarkTCPEcho_PayloadSize|BenchmarkUDPEcho_PayloadSize|BenchmarkWSEcho_PayloadSize",
+			packages:  []string{"./tests/benchmark"},
+			benchtime: 200 * time.Millisecond,
+			timeout:   240 * time.Second,
+			cloud:     true,
+		},
+		{
+			name:      "payload-size-http-grpc-light",
+			pattern:   "BenchmarkHTTPEcho_PayloadSize|BenchmarkGRPCWebEcho_PayloadSize",
+			packages:  []string{"./tests/benchmark"},
+			benchtime: 200 * time.Millisecond,
+			timeout:   240 * time.Second,
+			cloud:     true,
+		},
+		{
+			name:      "payload-size-medium",
+			pattern:   "BenchmarkQUICEcho_PayloadSize",
+			packages:  []string{"./tests/benchmark"},
+			benchtime: 100 * time.Millisecond,
+			timeout:   300 * time.Second,
+			cloud:     true,
+			medium:    true,
+		},
+		// --- New concurrent benchmarks ---
+		{
+			name:      "concurrent-tcp-udp-light",
+			pattern:   "BenchmarkTCPEcho_Concurrent|BenchmarkUDPEcho_Concurrent",
+			packages:  []string{"./tests/benchmark"},
+			benchtime: 200 * time.Millisecond,
+			timeout:   240 * time.Second,
+			cloud:     true,
+		},
+		{
+			name:      "concurrent-ws-http-light",
+			pattern:   "BenchmarkWSEcho_Concurrent|BenchmarkHTTPEcho_Concurrent",
+			packages:  []string{"./tests/benchmark"},
+			benchtime: 200 * time.Millisecond,
+			timeout:   240 * time.Second,
+			cloud:     true,
+		},
+		{
+			name:      "concurrent-grpc-medium",
+			pattern:   "BenchmarkGRPCWebEcho_Concurrent",
+			packages:  []string{"./tests/benchmark"},
+			benchtime: 200 * time.Millisecond,
+			timeout:   240 * time.Second,
+			cloud:     true,
+			medium:    true,
+		},
+		// --- New plugin benchmarks ---
+		{
+			name:      "plugins-light",
+			pattern:   "BenchmarkPluginChain_Blacklist$|BenchmarkPluginChain_RateLimit$",
+			packages:  []string{"./tests/benchmark"},
+			benchtime: 200 * time.Millisecond,
+			timeout:   120 * time.Second,
+			cloud:     true,
+		},
+		{
+			name:      "plugins-medium",
+			pattern:   "BenchmarkPluginChain_BlacklistRateLimit|BenchmarkPluginChain_FullChain",
+			packages:  []string{"./tests/benchmark"},
+			benchtime: time.Second,
+			timeout:   180 * time.Second,
+			cloud:     true,
+			medium:    true,
+		},
 	}
 
-	limit := 2
+	limit := 5
 	if stage == "light" {
-		limit = 4
+		limit = 10
 	}
 	if stage == "medium" {
 		limit = len(groups)
