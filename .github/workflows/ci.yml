@@ -178,7 +178,8 @@ jobs:
         run: go mod download
 
       - name: Race validation
-        run: go run scripts/run_tests.go -mode race -timeout 5m
+        run: go test -race -v -count=1 -timeout=5m ./api ./cmd/... ./internal/... ./tests/benchmark/... ./tests/deploy/...
+        shell: bash
         env:
           SHARK_MQTT_BROKER: tcp://localhost:1883
 

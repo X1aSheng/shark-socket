@@ -17,6 +17,10 @@ linters:
           - errcheck
           - unused
           - ineffassign
+      # SA4006: value never used in test file
+      - linters:
+          - staticcheck
+        text: "SA4006:"
       # Pre-existing errcheck in non-test code (deferred Close etc.)
       - path: internal/transport/
         linters:

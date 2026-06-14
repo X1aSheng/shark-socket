@@ -8,14 +8,14 @@ import (
 )
 
 type Options struct {
-	BrokerURL  string
-	ClientID   string
-	Username   string
-	Password   string
-	TLSConfig  *tls.Config
-	Topic      string
-	QoS        byte
-	Handler    MessageHandler
+	BrokerURL      string
+	ClientID       string
+	Username       string
+	Password       string
+	TLSConfig      *tls.Config
+	Topic          string
+	QoS            byte
+	Handler        MessageHandler
 	ConnectTimeout time.Duration
 }
 

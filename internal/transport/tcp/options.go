@@ -9,36 +9,36 @@ import (
 )
 
 type Options struct {
-	Addr               string
-	Handler            core.Handler
-	Framer             Framer
-	WriteQueue         int
-	WriteTimeout       time.Duration
+	Addr                string
+	Handler             core.Handler
+	Framer              Framer
+	WriteQueue          int
+	WriteTimeout        time.Duration
 	WriteQueueHighWater float64
-	WorkerCount        int
-	TaskQueueSize      int
-	FullPolicy         FullPolicy
-	DrainTimeout       time.Duration
-	MaxFrameBytes      int
-	TLSConfig          *tls.Config
-	MaxConnections     int64
-	AcceptRate         float64
+	WorkerCount         int
+	TaskQueueSize       int
+	FullPolicy          FullPolicy
+	DrainTimeout        time.Duration
+	MaxFrameBytes       int
+	TLSConfig           *tls.Config
+	MaxConnections      int64
+	AcceptRate          float64
 }
 
 type Option func(*Options)
 
 func defaultOptions() Options {
 	return Options{
-		Addr:               "127.0.0.1:18000",
-		Framer:             LengthPrefixFramer{MaxFrameBytes: 1024 * 1024},
-		WriteQueue:         128,
-		WriteTimeout:       30 * time.Second,
+		Addr:                "127.0.0.1:18000",
+		Framer:              LengthPrefixFramer{MaxFrameBytes: 1024 * 1024},
+		WriteQueue:          128,
+		WriteTimeout:        30 * time.Second,
 		WriteQueueHighWater: 0.8,
-		WorkerCount:        4,
-		TaskQueueSize:      512,
-		FullPolicy:         PolicyDrop,
-		DrainTimeout:       5 * time.Second,
-		MaxFrameBytes:      1024 * 1024,
+		WorkerCount:         4,
+		TaskQueueSize:       512,
+		FullPolicy:          PolicyDrop,
+		DrainTimeout:        5 * time.Second,
+		MaxFrameBytes:       1024 * 1024,
 	}
 }
 
