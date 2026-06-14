@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/X1aSheng/shark-socket/api"
@@ -20,6 +21,7 @@ type App struct {
 	MetricsHTTP  *http.Server
 	Protocols    []string
 	serveErrors  []error
+	serveMu      sync.Mutex
 	certCaches   []*tlsutil.CertCache
 	certWatchers []context.CancelFunc
 	appCtx       context.Context
@@ -55,7 +57,9 @@ func New(cfg Config) (*App, error) {
 
 func (a *App) Start(ctx context.Context) error {
 	a.appCtx, a.appCancel = context.WithCancel(ctx)
+	a.serveMu.Lock()
 	a.serveErrors = nil
+	a.serveMu.Unlock()
 	if a.Health != nil {
 		go a.serveHTTP("health", a.Health)
 	}
@@ -68,7 +72,11 @@ func (a *App) Start(ctx context.Context) error {
 // ServeErrors returns errors from the health and metrics HTTP servers.
 // Call after Start() to detect port conflicts or permission errors.
 func (a *App) ServeErrors() []error {
-	return a.serveErrors
+	a.serveMu.Lock()
+	defer a.serveMu.Unlock()
+	out := make([]error, len(a.serveErrors))
+	copy(out, a.serveErrors)
+	return out
 }
 
 func (a *App) Stop(ctx context.Context) error {
@@ -256,7 +264,9 @@ func echoHandler(sess api.Session, msg api.Message) error {
 
 func (a *App) serveHTTP(name string, server *http.Server) {
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		a.serveMu.Lock()
 		a.serveErrors = append(a.serveErrors, fmt.Errorf("%s: %w", name, err))
+		a.serveMu.Unlock()
 		log.Printf("%s server failed: %v", name, err)
 	}
 }
