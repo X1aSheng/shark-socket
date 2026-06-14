@@ -7,7 +7,7 @@
 
 ## 概述
 
-遵循 [ADR-008](docs/new/adr/ADR-008-mqtt-external-broker.md) 决策，Shark-Socket **不实现完整 MQTT Broker**，而是通过 `internal/infra/mqtt` 适配器连接外部 MQTT Broker（如 Mosquitto、EMQX、VerneMQ）。
+遵循 [ADR-008](docs/decisions/ADR-008-mqtt-external-broker.md) 决策，Shark-Socket **不实现完整 MQTT Broker**，而是通过 `internal/infra/mqtt` 适配器连接外部 MQTT Broker（如 Mosquitto、EMQX、VerneMQ）。
 
 ## 架构
 
