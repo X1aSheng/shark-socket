@@ -3,6 +3,7 @@ package benchmark
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
@@ -18,10 +19,12 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/core"
 	"github.com/X1aSheng/shark-socket/internal/transport/grpcweb"
 	transporthttp "github.com/X1aSheng/shark-socket/internal/transport/http"
+	"github.com/X1aSheng/shark-socket/internal/transport/quic"
 	"github.com/X1aSheng/shark-socket/internal/transport/tcp"
 	"github.com/X1aSheng/shark-socket/internal/transport/udp"
 	"github.com/X1aSheng/shark-socket/internal/transport/websocket"
 	gws "github.com/gorilla/websocket"
+	quicgo "github.com/quic-go/quic-go"
 )
 
 // concurrentClientsForOS returns platform-appropriate concurrency levels.
@@ -265,6 +268,72 @@ func BenchmarkGRPCWebEcho_Concurrent(b *testing.B) {
 						b.Fatal(closeErr)
 					}
 					_ = got
+				}
+			})
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// QUIC concurrent — each parallel goroutine creates its own connection+stream.
+// NOTE: QUIC AcceptStream under concurrency is unreliable on most platforms;
+// the server's response-stream model does not support high-concurrency
+// round-trips well. This benchmark exists for experimental use only.
+// ---------------------------------------------------------------------------
+
+func BenchmarkQUICEcho_Concurrent(b *testing.B) {
+	b.Skip("QUIC AcceptStream unreliable under concurrency; kept for experimental use")
+	for _, n := range concurrentClientsForOS() {
+		b.Run(connCountName(n), func(b *testing.B) {
+			cfg := &tls.Config{
+				Certificates: []tls.Certificate{mustGenerateBenchCert(b)},
+				NextProtos:   []string{"shark-socket-quic"},
+			}
+			h := newEchoHarness(b, func() core.Server {
+				return quic.NewServer(
+					quic.WithAddr("127.0.0.1:0"),
+					quic.WithTLS(cfg),
+					quic.WithHandler(echoHandler),
+				)
+			})
+
+			payload := []byte("benchmark-payload")
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			b.RunParallel(func(pb *testing.PB) {
+				conn, err := quicgo.DialAddr(context.Background(), h.Addr, quic.ClientTLSConfig(true), nil)
+				if err != nil {
+					b.Fatal(err)
+				}
+				defer conn.CloseWithError(0, "")
+
+				for pb.Next() {
+					stream, err := conn.OpenStreamSync(context.Background())
+					if err != nil {
+						b.Fatal(err)
+					}
+					_, _ = stream.Write(payload)
+					if err := stream.Close(); err != nil {
+						b.Fatal(err)
+					}
+					readCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					resp, err := conn.AcceptStream(readCtx)
+					cancel()
+					if err != nil {
+						b.Fatal(err)
+					}
+					buf := make([]byte, 1024)
+					if err := resp.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+						b.Fatal(err)
+					}
+					n, err := io.ReadFull(resp, buf[:len(payload)])
+					if err != nil {
+						b.Fatal(err)
+					}
+					if !bytes.Equal(buf[:n], payload) {
+						b.Fatalf("echo = %q, want %q", buf[:n], payload)
+					}
 				}
 			})
 		})

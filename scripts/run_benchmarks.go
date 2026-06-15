@@ -103,7 +103,6 @@ func main() {
 	}
 }
 
-
 // allBenchmarkGroups returns the complete benchmark group registry.
 func allBenchmarkGroups() []benchmarkGroup {
 	return []benchmarkGroup{
@@ -218,10 +217,29 @@ func allBenchmarkGroups() []benchmarkGroup {
 			cloud:     true,
 			medium:    true,
 		},
+		// --- Plugin UDP/WS benchmarks ---
+		{
+			name:      "plugins-udp-ws-medium",
+			pattern:   "BenchmarkPluginChain_(Blacklist|RateLimit|FullChain)_(UDP|WS)",
+			packages:  []string{"./tests/benchmark"},
+			benchtime: time.Second,
+			timeout:   180 * time.Second,
+			cloud:     true,
+			medium:    true,
+		},
+		// --- QUIC concurrent benchmark ---
+		{
+			name:      "concurrent-quic-medium",
+			pattern:   "BenchmarkQUICEcho_Concurrent",
+			packages:  []string{"./tests/benchmark"},
+			benchtime: 200 * time.Millisecond,
+			timeout:   300 * time.Second,
+			cloud:     false,
+			medium:    true,
+		},
 	}
 
 }
-
 
 func selectGroups(profile, stage, benchFilter string) []benchmarkGroup {
 	if benchFilter != "" {
