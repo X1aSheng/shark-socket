@@ -152,7 +152,7 @@ func BenchmarkLineFramerRoundTrip(b *testing.B) {
 func TestWithClientFramer(t *testing.T) {
 	f := LengthPrefixFramer{MaxFrameBytes: 1024}
 	opt := WithClientFramer(f)
-	c := NewClient("127.0.0.1:0", opt)
+	c := NewClient("127.0.0.1:0", WithClientLinger(0), opt)
 	if c == nil {
 		t.Fatal("client should not be nil")
 	}
@@ -160,7 +160,7 @@ func TestWithClientFramer(t *testing.T) {
 
 func TestWithClientTLS(t *testing.T) {
 	opt := WithClientTLS(nil)
-	c := NewClient("127.0.0.1:0", opt)
+	c := NewClient("127.0.0.1:0", WithClientLinger(0), opt)
 	if c == nil {
 		t.Fatal("client should not be nil")
 	}

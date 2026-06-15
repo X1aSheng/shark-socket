@@ -38,6 +38,20 @@ type conditionalDropPlugin struct {
 
 func (p conditionalDropPlugin) Name() string { return "conditional-drop" }
 
+// dialWithLinger dials a TCP connection with SO_LINGER(0) to avoid
+// TIME_WAIT port accumulation during tests.
+func dialWithLinger(ctx context.Context, network, addr string) (net.Conn, error) {
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, network, addr)
+	if err != nil {
+		return nil, err
+	}
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		tcpConn.SetLinger(0)
+	}
+	return conn, nil
+}
+
 func (p conditionalDropPlugin) OnMessage(_ core.Session, data []byte) ([]byte, error) {
 	if string(data) == p.drop {
 		return nil, core.ErrPluginDrop
@@ -64,7 +78,7 @@ func TestGatewayTCPGlobalPluginEchoAndShutdown(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", server.Addr().String())
+	conn, err := dialWithLinger(ctx, "tcp", server.Addr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +129,7 @@ func TestTCPClientEcho(t *testing.T) {
 		_ = gateway.Stop(shutdownCtx)
 	}()
 
-	client := NewClient(server.Addr().String())
+	client := NewClient(server.Addr().String(), WithClientLinger(0))
 	if err := client.Connect(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +171,7 @@ func TestTCPServerTLSEcho(t *testing.T) {
 		_ = gateway.Stop(shutdownCtx)
 	}()
 
-	client := NewClient(server.Addr().String(), WithClientTLS(&tls.Config{InsecureSkipVerify: true}))
+	client := NewClient(server.Addr().String(), WithClientLinger(0), WithClientTLS(&tls.Config{InsecureSkipVerify: true}))
 	if err := client.Connect(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +213,7 @@ func TestTCPServerMTLSRequiresVerifiedClientCertificate(t *testing.T) {
 		_ = gateway.Stop(shutdownCtx)
 	}()
 
-	withoutCert := NewClient(server.Addr().String(), WithClientTLS(&tls.Config{InsecureSkipVerify: true}))
+	withoutCert := NewClient(server.Addr().String(), WithClientLinger(0), WithClientTLS(&tls.Config{InsecureSkipVerify: true}))
 	if err := withoutCert.Connect(ctx); err != nil {
 		_ = withoutCert.Close()
 	} else {
@@ -216,7 +230,7 @@ func TestTCPServerMTLSRequiresVerifiedClientCertificate(t *testing.T) {
 		}
 	}
 
-	withCert := NewClient(server.Addr().String(), WithClientTLS(clientTLS))
+	withCert := NewClient(server.Addr().String(), WithClientLinger(0), WithClientTLS(clientTLS))
 	if err := withCert.Connect(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +282,7 @@ func TestGatewayTCPRestartKeepsSessionManagerUsable(t *testing.T) {
 		t.Fatalf("server reused stopped listener address %s", firstAddr)
 	}
 
-	client := NewClient(server.Addr().String())
+	client := NewClient(server.Addr().String(), WithClientLinger(0))
 	if err := client.Connect(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +424,7 @@ func TestGatewayTCPPluginDropSkipsHandlerAndKeepsConnection(t *testing.T) {
 		_ = gateway.Stop(shutdownCtx)
 	}()
 
-	client := NewClient(server.Addr().String())
+	client := NewClient(server.Addr().String(), WithClientLinger(0))
 	if err := client.Connect(context.Background()); err != nil {
 		t.Fatal(err)
 	}

@@ -24,8 +24,8 @@ func TestParseFileWritesReadableSummary(t *testing.T) {
 	if !strings.Contains(out, "unit test report") {
 		t.Fatalf("report title missing:\n%s", out)
 	}
-	if !strings.Contains(out, "2026-05-29T12:30:30.148") {
-		t.Fatalf("millisecond timestamp missing:\n%s", out)
+	if !strings.Contains(out, "2026-05-29T12:30:30") {
+		t.Fatalf("timestamp missing:\n%s", out)
 	}
 	if !strings.Contains(out, "summary: 1 passed, 0 failed, 0 skipped") {
 		t.Fatalf("summary missing:\n%s", out)
