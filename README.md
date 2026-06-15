@@ -66,7 +66,7 @@ docker compose -f deploy/docker/docker-compose.yml --profile test run mqtt-test
 |-------|---------|--------|
 | Unit tests (25 suites) | `go test ./...` | ✅ |
 | Race detection | `go test -race ./...` | ✅ |
-| Coverage (50% threshold) | `go run scripts/run_tests.go -mode cover` | ✅ 72.1% |
+| Coverage (70% threshold) | `go run scripts/run_tests.go -mode cover` | ✅ 74.9% |
 | Lint (golangci-lint) | `golangci-lint run` | ✅ |
 | Security (govulncheck) | `govulncheck ./...` | ✅ |
 | Deploy manifests | `go run scripts/run_tests.go -mode deploy` | ✅ |

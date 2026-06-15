@@ -102,12 +102,17 @@ type metrics struct {
 	endTime   time.Time
 }
 
-func (m *metrics) start()                 { m.startTime = time.Now() }
-func (m *metrics) stop()                  { m.endTime = time.Now() }
-func (m *metrics) sendOk()                { m.sendOK.Add(1) }
-func (m *metrics) sendFail()              { m.sendErr.Add(1) }
-func (m *metrics) recvOk(d time.Duration) { m.recvOK.Add(1); m.mu.Lock(); m.latencies = append(m.latencies, d); m.mu.Unlock() }
-func (m *metrics) recvFail()              { m.recvErr.Add(1) }
+func (m *metrics) start()    { m.startTime = time.Now() }
+func (m *metrics) stop()     { m.endTime = time.Now() }
+func (m *metrics) sendOk()   { m.sendOK.Add(1) }
+func (m *metrics) sendFail() { m.sendErr.Add(1) }
+func (m *metrics) recvOk(d time.Duration) {
+	m.recvOK.Add(1)
+	m.mu.Lock()
+	m.latencies = append(m.latencies, d)
+	m.mu.Unlock()
+}
+func (m *metrics) recvFail() { m.recvErr.Add(1) }
 
 func (m *metrics) p50() time.Duration { return m.percentile(0.50) }
 func (m *metrics) p90() time.Duration { return m.percentile(0.90) }

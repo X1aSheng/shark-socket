@@ -7,6 +7,46 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### Benchmark & Test Hardening (2026-06-15)
+
+#### Port Exhaustion Fixes (Windows)
+- Added `WithClientLinger(0)` option to TCP client — sends RST on close, avoiding TIME_WAIT.
+- Added `lingerTransport()` helper for HTTP/gRPC-Web benchmarks — `SetLinger(0)` via `DialContext`.
+- Added `portCooldown()` to `run_benchmarks.go` — 3s wait between groups on Windows.
+- Added `integration_helpers_test.go` to http/grpcweb/websocket packages — `init()` replaces `http.DefaultTransport` and websocket `DefaultDialer` with Linger(0) dialer.
+- Fixed `TestGatewayTCPRestartKeepsSessionManagerUsable` — relaxed port reuse check for fast recycling.
+- Fixed `parse_test_log_test.go` — updated timestamp assertion for millisecond-free format.
+- All 27 network benchmarks now pass on Windows with zero port exhaustion failures.
+
+#### Benchmark Structural Improvements
+- Added `concurrentClientsForOS()` — platform-aware concurrency caps (Windows: 50, Linux: 500).
+- Added `BENCH_MAX_CONNS` env var to override concurrency levels.
+- Added read deadlines to UDP and WebSocket concurrent benchmarks.
+- Unified HTTP client timeout to 5s across all single-connection benchmarks.
+- Fixed gRPC-Web error handling — `io.ReadAll` and `Body.Close` errors now checked.
+- Fixed `BenchmarkTCPEcho_Concurrent` — each goroutine now creates its own dedicated client (was shared, causing data corruption).
+- Fixed `BenchmarkWSEcho_Concurrent` — each goroutine creates its own WebSocket connection.
+
+#### Benchmark Architecture
+- Extracted shared `echoHarness`, `echoHandler`, `newEchoHarness`, `getAddr` helpers.
+- Added `newEchoHarnessWithPlugins` for plugin benchmarks.
+- Added `skipIfShort()` for fast smoke-test mode.
+- Refactored PayloadSize (6) and Concurrent (5) benchmarks — server created once, shared across sub-benchmarks (44→11 server creations).
+- Refactored single-echo (6) and plugin (4) benchmarks to use `echoHarness`.
+- Added PluginChain UDP/WS benchmarks (6 new: Blacklist/RateLimit/FullChain × UDP + WS).
+- Added `BenchmarkQUICEcho_Concurrent` (documented with Skip for QUIC stream limitations).
+- Fixed `payloadSizes` max: `65536→65507` (safe UDP datagram limit).
+
+#### Orchestration
+- `run_benchmarks.go`: added `-list` flag (17 groups), `-bench <name>` filter, extracted `allBenchmarkGroups()`.
+- Replaced `validate.ps1` and `validate_deploy.ps1` with `run_tests.go -mode vet` and `-mode deploy`.
+- Removed millisecond precision from all timestamp formats.
+
+#### Documentation
+- Updated README coverage to 74.9%.
+- Updated CI workflow to use Go runner instead of PowerShell scripts.
+- Updated all active documentation references to use `run_tests.go` commands.
+
 ### Review Fixes (2026-06-02 Evening)
 - Fixed TCP RawFramer fuzz behavior for empty raw payload reads.
 - Fixed LwM2M TLV fuzz tests after field rename and added value length validation.

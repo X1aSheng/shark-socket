@@ -104,7 +104,6 @@ func main() {
 	}
 }
 
-
 // portCooldown waits for ephemeral ports to drain on Windows.
 func portCooldown() {
 	if runtime.GOOS == "windows" {

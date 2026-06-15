@@ -248,7 +248,7 @@ shark-socket/
 │
 ├── scripts/
 │   ├── run_tests.go                    # 跨平台脚本化测试入口（unit/race/cover/all 模式）
-│   ├── validate_deploy.go              # 部署资产语义验证
+│   ├── run_tests.go (via -mode deploy)              # 部署资产语义验证
 │   └── build.sh
 │
 ├── deploy/
@@ -1942,7 +1942,7 @@ Step 4：验证优化效果
 | 集成测试 | `tests/integration/` | 跨包端到端语义 |
 | Fuzz 测试 | `go test -fuzz` | 畸形帧安全 |
 | 基准测试 | `tests/benchmark/` | 性能回归 |
-| 部署验证 | `scripts/validate_deploy.go` | 部署资产语义检查 |
+| 部署验证 | `scripts/run_tests.go (via -mode deploy)` | 部署资产语义检查 |
 | CI | GitHub Actions（Windows + Ubuntu） | 跨平台回归 |
 
 ### 15.2 测试编写规范
@@ -2353,7 +2353,7 @@ shark-socket                  shared data plane              shark-MQTT
 2. `go vet ./...` 通过。
 3. 若是缺陷修复：相关 focused test 先失败后通过。
 4. `go run scripts/run_tests.go -mode all -timeout 5m` 通过。
-5. 部署相关改动必须更新 `tests/deploy` 并通过 `scripts/validate_deploy.go`。
+5. 部署相关改动必须更新 `tests/deploy` 并通过 `scripts/run_tests.go (via -mode deploy)`。
 6. 公共行为改变必须同步 README、配置文档、测试策略或审查报告。
 7. 云端实测结果写入 `docs/PROJECT-REVIEW-YYMMDD-HHMMSS.md`。
 8. 新协议或新功能必须有对应的 example。

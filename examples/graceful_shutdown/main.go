@@ -16,8 +16,8 @@ func main() {
 
 	gateway := api.NewGateway(
 		api.WithStageTimeouts(api.StageTimeouts{
-			StopAccept:  5 * time.Second,
-			Drain:       10 * time.Second,
+			StopAccept:    5 * time.Second,
+			Drain:         10 * time.Second,
 			CloseSessions: 10 * time.Second,
 		}),
 	)

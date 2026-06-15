@@ -278,7 +278,7 @@ shark-socket/
 │
 ├── scripts/
 │   ├── run_tests.go                    # 跨平台脚本化测试入口
-│   ├── validate_deploy.go              # 部署资产语义验证
+│   ├── run_tests.go (via -mode deploy)              # 部署资产语义验证
 │   └── build.sh
 │
 ├── deploy/
