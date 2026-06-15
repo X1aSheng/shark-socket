@@ -107,7 +107,7 @@ func BenchmarkTCPEcho(b *testing.B) {
 		)
 	})
 
-	client := tcp.NewClient(h.Addr)
+	client := tcp.NewClient(h.Addr, tcp.WithClientLinger(0))
 	if err := client.Connect(context.Background()); err != nil {
 		b.Fatal(err)
 	}

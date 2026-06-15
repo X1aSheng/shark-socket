@@ -63,7 +63,7 @@ func BenchmarkTCPEcho_Concurrent(b *testing.B) {
 			// Each parallel goroutine creates its own dedicated TCP client
 			// to avoid concurrent write/read corruption on shared connections.
 			b.RunParallel(func(pb *testing.PB) {
-				client := tcp.NewClient(h.Addr)
+				client := tcp.NewClient(h.Addr, tcp.WithClientLinger(0))
 				if err := client.Connect(context.Background()); err != nil {
 					b.Fatal(err)
 				}

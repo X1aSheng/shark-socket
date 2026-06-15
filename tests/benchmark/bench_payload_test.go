@@ -36,7 +36,7 @@ func BenchmarkTCPEcho_PayloadSize(b *testing.B) {
 	})
 	for _, size := range payloadSizes {
 		b.Run(byteSizeName(size), func(b *testing.B) {
-			client := tcp.NewClient(h.Addr)
+			client := tcp.NewClient(h.Addr, tcp.WithClientLinger(0))
 			if err := client.Connect(context.Background()); err != nil {
 				b.Fatal(err)
 			}

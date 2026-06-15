@@ -100,6 +100,15 @@ func main() {
 		if *profile == "cloud" {
 			fmt.Printf("[%s] resource after %s: %s\n", time.Now().Format(time.RFC3339), group.name, readResourceState())
 		}
+		portCooldown()
+	}
+}
+
+
+// portCooldown waits for ephemeral ports to drain on Windows.
+func portCooldown() {
+	if runtime.GOOS == "windows" {
+		time.Sleep(3 * time.Second)
 	}
 }
 

@@ -24,7 +24,7 @@ func BenchmarkPluginChain_Blacklist(b *testing.B) {
 			tcp.WithHandler(echoHandler),
 		)
 	}, plugin.NewBlacklist("192.168.0.1", "10.0.0.0/8"))
-	client := tcp.NewClient(h.Addr)
+	client := tcp.NewClient(h.Addr, tcp.WithClientLinger(0))
 	if err := client.Connect(context.Background()); err != nil {
 		b.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func BenchmarkPluginChain_RateLimit(b *testing.B) {
 			tcp.WithHandler(echoHandler),
 		)
 	}, plugin.NewRateLimit(1000000, time.Second))
-	client := tcp.NewClient(h.Addr)
+	client := tcp.NewClient(h.Addr, tcp.WithClientLinger(0))
 	if err := client.Connect(context.Background()); err != nil {
 		b.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func BenchmarkPluginChain_BlacklistRateLimit(b *testing.B) {
 			tcp.WithHandler(echoHandler),
 		)
 	}, plugin.NewBlacklist("192.168.0.1"), plugin.NewRateLimit(1000000, time.Second))
-	client := tcp.NewClient(h.Addr)
+	client := tcp.NewClient(h.Addr, tcp.WithClientLinger(0))
 	if err := client.Connect(context.Background()); err != nil {
 		b.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func BenchmarkPluginChain_FullChain(b *testing.B) {
 			tcp.WithHandler(echoHandler),
 		)
 	}, plugin.NewBlacklist("192.168.0.1"), plugin.NewAutoBan(100), plugin.NewRateLimit(1000000, time.Second), plugin.NewPersistence(store.NewMemory(), "bench"))
-	client := tcp.NewClient(h.Addr)
+	client := tcp.NewClient(h.Addr, tcp.WithClientLinger(0))
 	if err := client.Connect(context.Background()); err != nil {
 		b.Fatal(err)
 	}

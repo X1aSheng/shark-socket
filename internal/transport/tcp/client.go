@@ -15,6 +15,7 @@ type Client struct {
 	framer    Framer
 	tlsConfig *tls.Config
 	dialer    net.Dialer
+	linger    *int // SO_LINGER timeout; nil means OS default
 	conn      net.Conn
 }
 
@@ -46,10 +47,25 @@ func WithClientTLS(config *tls.Config) ClientOption {
 	}
 }
 
+// WithClientLinger sets SO_LINGER on the underlying TCP connection.
+// A zero timeout causes an RST on close instead of FIN, avoiding
+// TIME_WAIT on the client side — useful for benchmarks to prevent
+// ephemeral port exhaustion.
+func WithClientLinger(sec int) ClientOption {
+	return func(c *Client) {
+		c.linger = &sec
+	}
+}
+
 func (c *Client) Connect(ctx context.Context) error {
 	conn, err := c.dialer.DialContext(ctx, "tcp", c.addr)
 	if err != nil {
 		return fmt.Errorf("tcp client dial %s: %w", c.addr, err)
+	}
+	if c.linger != nil {
+		if tcpConn, ok := conn.(*net.TCPConn); ok {
+			_ = tcpConn.SetLinger(*c.linger)
+		}
 	}
 	if c.tlsConfig != nil {
 		tlsConn := tls.Client(conn, c.tlsConfig)
