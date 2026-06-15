@@ -99,27 +99,19 @@ func BenchmarkPluginChain_5Plugins(b *testing.B) {
 }
 
 func BenchmarkTCPEcho(b *testing.B) {
-	server := tcp.NewServer(
-		tcp.WithAddr("127.0.0.1:0"),
-		tcp.WithHandler(func(sess core.Session, msg core.Message) error {
-			return sess.Send(msg.Payload)
-		}),
-	)
-	gateway := runtime.NewGateway()
-	if err := gateway.Register(server); err != nil {
-		b.Fatal(err)
-	}
-	if err := gateway.Start(context.Background()); err != nil {
-		b.Fatal(err)
-	}
-	b.Cleanup(func() { stopGateway(b, gateway) })
+	skipIfShort(b)
+	h := newEchoHarness(b, func() core.Server {
+		return tcp.NewServer(
+			tcp.WithAddr("127.0.0.1:0"),
+			tcp.WithHandler(echoHandler),
+		)
+	})
 
-	client := tcp.NewClient(server.Addr().String())
+	client := tcp.NewClient(h.Addr)
 	if err := client.Connect(context.Background()); err != nil {
 		b.Fatal(err)
 	}
 	b.Cleanup(func() { _ = client.Close() })
-
 	payload := []byte("benchmark-payload")
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -138,27 +130,19 @@ func BenchmarkTCPEcho(b *testing.B) {
 }
 
 func BenchmarkUDPEcho(b *testing.B) {
-	server := udp.NewServer(
-		udp.WithAddr("127.0.0.1:0"),
-		udp.WithHandler(func(sess core.Session, msg core.Message) error {
-			return sess.Send(msg.Payload)
-		}),
-	)
-	gateway := runtime.NewGateway()
-	if err := gateway.Register(server); err != nil {
-		b.Fatal(err)
-	}
-	if err := gateway.Start(context.Background()); err != nil {
-		b.Fatal(err)
-	}
-	b.Cleanup(func() { stopGateway(b, gateway) })
+	skipIfShort(b)
+	h := newEchoHarness(b, func() core.Server {
+		return udp.NewServer(
+			udp.WithAddr("127.0.0.1:0"),
+			udp.WithHandler(echoHandler),
+		)
+	})
 
-	conn, err := net.Dial("udp", server.Addr().String())
+	conn, err := net.Dial("udp", h.Addr)
 	if err != nil {
 		b.Fatal(err)
 	}
 	b.Cleanup(func() { _ = conn.Close() })
-
 	payload := []byte("benchmark-payload")
 	buf := make([]byte, 1024)
 	b.ReportAllocs()
@@ -181,29 +165,21 @@ func BenchmarkUDPEcho(b *testing.B) {
 }
 
 func BenchmarkWSEcho(b *testing.B) {
-	server := websocket.NewServer(
-		websocket.WithAddr("127.0.0.1:0"),
-		websocket.WithPath("/ws"),
-		websocket.WithHandler(func(sess core.Session, msg core.Message) error {
-			return sess.Send(msg.Payload)
-		}),
-	)
-	gateway := runtime.NewGateway()
-	if err := gateway.Register(server); err != nil {
-		b.Fatal(err)
-	}
-	if err := gateway.Start(context.Background()); err != nil {
-		b.Fatal(err)
-	}
-	b.Cleanup(func() { stopGateway(b, gateway) })
+	skipIfShort(b)
+	h := newEchoHarness(b, func() core.Server {
+		return websocket.NewServer(
+			websocket.WithAddr("127.0.0.1:0"),
+			websocket.WithPath("/ws"),
+			websocket.WithHandler(echoHandler),
+		)
+	})
 
-	u := url.URL{Scheme: "ws", Host: server.Addr().String(), Path: "/ws"}
+	u := url.URL{Scheme: "ws", Host: h.Addr, Path: "/ws"}
 	conn, _, err := gws.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
 		b.Fatal(err)
 	}
 	b.Cleanup(func() { _ = conn.Close() })
-
 	payload := []byte("benchmark-payload")
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -225,23 +201,16 @@ func BenchmarkWSEcho(b *testing.B) {
 }
 
 func BenchmarkHTTPEcho(b *testing.B) {
-	server := transporthttp.NewServer(
-		transporthttp.WithAddr("127.0.0.1:0"),
-		transporthttp.WithHandler(func(sess core.Session, msg core.Message) error {
-			return sess.Send(msg.Payload)
-		}),
-	)
-	gateway := runtime.NewGateway()
-	if err := gateway.Register(server); err != nil {
-		b.Fatal(err)
-	}
-	if err := gateway.Start(context.Background()); err != nil {
-		b.Fatal(err)
-	}
-	b.Cleanup(func() { stopGateway(b, gateway) })
+	skipIfShort(b)
+	h := newEchoHarness(b, func() core.Server {
+		return transporthttp.NewServer(
+			transporthttp.WithAddr("127.0.0.1:0"),
+			transporthttp.WithHandler(echoHandler),
+		)
+	})
 
 	client := &http.Client{Timeout: 5 * time.Second}
-	endpoint := "http://" + server.Addr().String() + "/"
+	endpoint := "http://" + h.Addr + "/"
 	payload := []byte("benchmark-payload")
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -313,27 +282,20 @@ func (a benchAddr) Network() string { return string(a) }
 func (a benchAddr) String() string  { return string(a) }
 
 func BenchmarkGRPCWebEcho(b *testing.B) {
-	server := grpcweb.NewServer(
-		grpcweb.WithAddr("127.0.0.1:0"),
-		grpcweb.WithHandler(func(sess core.Session, msg core.Message) error {
-			return sess.Send(msg.Payload)
-		}),
-	)
-	gateway := runtime.NewGateway()
-	if err := gateway.Register(server); err != nil {
-		b.Fatal(err)
-	}
-	if err := gateway.Start(context.Background()); err != nil {
-		b.Fatal(err)
-	}
-	b.Cleanup(func() { stopGateway(b, gateway) })
+	skipIfShort(b)
+	h := newEchoHarness(b, func() core.Server {
+		return grpcweb.NewServer(
+			grpcweb.WithAddr("127.0.0.1:0"),
+			grpcweb.WithHandler(echoHandler),
+		)
+	})
 
+	client := &http.Client{Timeout: 5 * time.Second}
+	url := "http://" + h.Addr + "/grpc"
 	payload := []byte("benchmark-payload")
-	url := "http://" + server.Addr().String() + "/grpc"
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		// gRPC-Web framed message: 1 byte flag + 4 bytes length + payload
 		frame := make([]byte, 5+len(payload))
 		frame[0] = 0
 		frame[1] = byte(len(payload) >> 24)
@@ -341,7 +303,7 @@ func BenchmarkGRPCWebEcho(b *testing.B) {
 		frame[3] = byte(len(payload) >> 8)
 		frame[4] = byte(len(payload))
 		copy(frame[5:], payload)
-		resp, err := http.Post(url, "application/grpc-web", bytes.NewReader(frame))
+		resp, err := client.Post(url, "application/grpc-web", bytes.NewReader(frame))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -363,31 +325,24 @@ func BenchmarkGRPCWebEcho(b *testing.B) {
 // Each iteration establishes a new QUIC connection (TLS 1.3 handshake),
 // opens a stream, sends payload, and reads the echoed response.
 func BenchmarkQUICEcho(b *testing.B) {
+	skipIfShort(b)
 	cfg := &tls.Config{
 		Certificates: []tls.Certificate{mustGenerateBenchCert(b)},
 		NextProtos:   []string{"shark-socket-quic"},
 	}
-	server := quic.NewServer(
-		quic.WithAddr("127.0.0.1:0"),
-		quic.WithTLS(cfg),
-		quic.WithHandler(func(sess core.Session, msg core.Message) error {
-			return sess.Send(msg.Payload)
-		}),
-	)
-	gateway := runtime.NewGateway()
-	if err := gateway.Register(server); err != nil {
-		b.Fatal(err)
-	}
-	if err := gateway.Start(context.Background()); err != nil {
-		b.Fatal(err)
-	}
-	b.Cleanup(func() { stopGateway(b, gateway) })
+	h := newEchoHarness(b, func() core.Server {
+		return quic.NewServer(
+			quic.WithAddr("127.0.0.1:0"),
+			quic.WithTLS(cfg),
+			quic.WithHandler(echoHandler),
+		)
+	})
 
 	payload := []byte("benchmark-payload")
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		conn, err := quicgo.DialAddr(context.Background(), server.Addr().String(), quic.ClientTLSConfig(true), nil)
+		conn, err := quicgo.DialAddr(context.Background(), h.Addr, quic.ClientTLSConfig(true), nil)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -490,6 +445,21 @@ func newEchoHarness(b *testing.B, createServer func() core.Server) *echoHarness 
 	b.Helper()
 	server := createServer()
 	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		b.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { stopGateway(b, gateway) })
+	return &echoHarness{Gateway: gateway, Addr: getAddr(server)}
+}
+
+// newEchoHarnessWithPlugins is like newEchoHarness but passes plugins to the Gateway.
+func newEchoHarnessWithPlugins(b *testing.B, createServer func() core.Server, plugins ...core.Plugin) *echoHarness {
+	b.Helper()
+	server := createServer()
+	gateway := runtime.NewGateway(runtime.WithPlugins(plugins...))
 	if err := gateway.Register(server); err != nil {
 		b.Fatal(err)
 	}
