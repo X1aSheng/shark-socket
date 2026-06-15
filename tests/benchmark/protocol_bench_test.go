@@ -209,7 +209,7 @@ func BenchmarkHTTPEcho(b *testing.B) {
 		)
 	})
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{Timeout: 5 * time.Second, Transport: lingerTransport()}
 	endpoint := "http://" + h.Addr + "/"
 	payload := []byte("benchmark-payload")
 	b.ReportAllocs()
@@ -290,7 +290,7 @@ func BenchmarkGRPCWebEcho(b *testing.B) {
 		)
 	})
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{Timeout: 5 * time.Second, Transport: lingerTransport()}
 	url := "http://" + h.Addr + "/grpc"
 	payload := []byte("benchmark-payload")
 	b.ReportAllocs()
@@ -427,6 +427,26 @@ var echoHandler = func(sess core.Session, msg core.Message) error {
 
 // allowAllOrigins permits all WebSocket/gRPC-Web origins in benchmarks.
 var allowAllOrigins = func(*http.Request) bool { return true }
+
+// lingerTransport returns an http.Transport whose dialer sets SO_LINGER(0)
+// on TCP connections. This avoids TIME_WAIT port exhaustion on Windows when
+// many HTTP/gRPC-Web benchmarks run sequentially.
+func lingerTransport() *http.Transport {
+	return &http.Transport{
+		MaxIdleConnsPerHost: 100,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			d := net.Dialer{}
+			conn, err := d.DialContext(ctx, network, addr)
+			if err != nil {
+				return nil, err
+			}
+			if tcpConn, ok := conn.(*net.TCPConn); ok {
+				tcpConn.SetLinger(0)
+			}
+			return conn, nil
+		},
+	}
+}
 
 // skipIfShort skips the benchmark when -short is set.
 // Network benchmarks should call this at the top.

@@ -147,7 +147,7 @@ func BenchmarkHTTPEcho_PayloadSize(b *testing.B) {
 	})
 	for _, size := range payloadSizes {
 		b.Run(byteSizeName(size), func(b *testing.B) {
-			client := &http.Client{Timeout: 5 * time.Second}
+			client := &http.Client{Timeout: 5 * time.Second, Transport: lingerTransport()}
 			endpoint := "http://" + h.Addr + "/"
 
 			payload := make([]byte, size)
@@ -185,7 +185,7 @@ func BenchmarkGRPCWebEcho_PayloadSize(b *testing.B) {
 	})
 	for _, size := range payloadSizes {
 		b.Run(byteSizeName(size), func(b *testing.B) {
-			client := &http.Client{Timeout: 5 * time.Second}
+			client := &http.Client{Timeout: 5 * time.Second, Transport: lingerTransport()}
 			url := "http://" + h.Addr + "/grpc"
 
 			payload := make([]byte, size)

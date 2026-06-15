@@ -203,7 +203,7 @@ func BenchmarkHTTPEcho_Concurrent(b *testing.B) {
 			b.ResetTimer()
 
 			b.RunParallel(func(pb *testing.PB) {
-				client := &http.Client{Transport: &http.Transport{MaxIdleConnsPerHost: 100}}
+				client := &http.Client{Transport: lingerTransport()}
 				for pb.Next() {
 					resp, err := client.Post(endpoint, "application/octet-stream", bytes.NewReader(payload))
 					if err != nil {
@@ -253,7 +253,7 @@ func BenchmarkGRPCWebEcho_Concurrent(b *testing.B) {
 			b.ResetTimer()
 
 			b.RunParallel(func(pb *testing.PB) {
-				client := &http.Client{Transport: &http.Transport{MaxIdleConnsPerHost: 100}}
+				client := &http.Client{Transport: lingerTransport()}
 				for pb.Next() {
 					resp, err := client.Post(url, "application/grpc-web", bytes.NewReader(frame))
 					if err != nil {
