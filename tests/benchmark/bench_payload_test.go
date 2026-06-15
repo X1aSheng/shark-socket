@@ -180,7 +180,7 @@ func BenchmarkHTTPEcho_PayloadSize(b *testing.B) {
 			}
 			b.Cleanup(func() { stopGateway(b, gateway) })
 
-			client := &http.Client{}
+			client := &http.Client{Timeout: 5 * time.Second}
 			endpoint := "http://" + server.Addr().String() + "/"
 			payload := make([]byte, size)
 			b.SetBytes(int64(size))
@@ -242,8 +242,14 @@ func BenchmarkGRPCWebEcho_PayloadSize(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
-				respBody, _ := io.ReadAll(resp.Body)
-				resp.Body.Close()
+				respBody, readErr := io.ReadAll(resp.Body)
+				closeErr := resp.Body.Close()
+				if readErr != nil {
+					b.Fatal(readErr)
+				}
+				if closeErr != nil {
+					b.Fatal(closeErr)
+				}
 				if len(respBody) < 5 {
 					b.Fatal("response too short")
 				}
@@ -301,6 +307,10 @@ func BenchmarkQUICEcho_PayloadSize(b *testing.B) {
 					b.Fatal(err)
 				}
 				buf := make([]byte, size+1024)
+				if err := resp.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+					_ = conn.CloseWithError(0, "")
+					b.Fatal(err)
+				}
 				n, err := io.ReadFull(resp, buf[:size])
 				if err != nil {
 					_ = conn.CloseWithError(0, "")

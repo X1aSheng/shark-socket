@@ -8,8 +8,12 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	goruntime "runtime"
+	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
 	"github.com/X1aSheng/shark-socket/internal/runtime"
@@ -21,15 +25,27 @@ import (
 	gws "github.com/gorilla/websocket"
 )
 
-// concurrentClients defines the connection counts for concurrent benchmarks.
-var concurrentClients = []int{1, 10, 100, 500}
+// concurrentClientsForOS returns platform-appropriate concurrency levels.
+// Windows caps at 50 to avoid ephemeral port exhaustion.
+// Set BENCH_MAX_CONNS to override (e.g. BENCH_MAX_CONNS=200).
+func concurrentClientsForOS() []int {
+	if s := os.Getenv("BENCH_MAX_CONNS"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			return []int{1, n}
+		}
+	}
+	if goruntime.GOOS == "windows" {
+		return []int{1, 10, 50}
+	}
+	return []int{1, 10, 100, 500}
+}
 
 // ---------------------------------------------------------------------------
 // TCP concurrent — each parallel goroutine gets its own client
 // ---------------------------------------------------------------------------
 
 func BenchmarkTCPEcho_Concurrent(b *testing.B) {
-	for _, n := range concurrentClients {
+	for _, n := range concurrentClientsForOS() {
 		b.Run(connCountName(n), func(b *testing.B) {
 			server := tcp.NewServer(
 				tcp.WithAddr("127.0.0.1:0"),
@@ -50,24 +66,14 @@ func BenchmarkTCPEcho_Concurrent(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			// Each parallel goroutine creates its own client
-			var mu sync.Mutex
-			clients := make([]*tcp.Client, n)
-			for i := 0; i < n; i++ {
-				c := tcp.NewClient(server.Addr().String())
-				if err := c.Connect(context.Background()); err != nil {
+			// Each parallel goroutine creates its own dedicated TCP client
+			// to avoid concurrent write/read corruption on shared connections.
+			b.RunParallel(func(pb *testing.PB) {
+				client := tcp.NewClient(server.Addr().String())
+				if err := client.Connect(context.Background()); err != nil {
 					b.Fatal(err)
 				}
-				clients[i] = c
-			}
-			next := 0
-
-			b.RunParallel(func(pb *testing.PB) {
-				mu.Lock()
-				idx := next
-				next++
-				mu.Unlock()
-				client := clients[idx%len(clients)]
+				defer client.Close()
 
 				for pb.Next() {
 					if err := client.Send(payload); err != nil {
@@ -87,11 +93,9 @@ func BenchmarkTCPEcho_Concurrent(b *testing.B) {
 }
 
 // ---------------------------------------------------------------------------
-// UDP concurrent — each parallel goroutine gets its own connection
-// ---------------------------------------------------------------------------
 
 func BenchmarkUDPEcho_Concurrent(b *testing.B) {
-	for _, n := range concurrentClients {
+	for _, n := range concurrentClientsForOS() {
 		b.Run(connCountName(n), func(b *testing.B) {
 			server := udp.NewServer(
 				udp.WithAddr("127.0.0.1:0"),
@@ -135,7 +139,10 @@ func BenchmarkUDPEcho_Concurrent(b *testing.B) {
 					if _, err := conn.Write(payload); err != nil {
 						b.Fatal(err)
 					}
-					_, err := conn.Read(buf)
+					if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+					b.Fatal(err)
+				}
+				_, err := conn.Read(buf)
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -151,7 +158,7 @@ func BenchmarkUDPEcho_Concurrent(b *testing.B) {
 // ---------------------------------------------------------------------------
 
 func BenchmarkWSEcho_Concurrent(b *testing.B) {
-	for _, n := range concurrentClients {
+	for _, n := range concurrentClientsForOS() {
 		b.Run(connCountName(n), func(b *testing.B) {
 			server := websocket.NewServer(
 				websocket.WithAddr("127.0.0.1:0"),
@@ -174,26 +181,19 @@ func BenchmarkWSEcho_Concurrent(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			var mu sync.Mutex
-			conns := make([]*gws.Conn, n)
-			for i := 0; i < n; i++ {
-				c, _, err := gws.DefaultDialer.Dial(u.String(), nil)
+			// Each parallel goroutine creates its own WebSocket connection.
+			b.RunParallel(func(pb *testing.PB) {
+				conn, _, err := gws.DefaultDialer.Dial(u.String(), nil)
 				if err != nil {
 					b.Fatal(err)
 				}
-				conns[i] = c
-			}
-			next := 0
-
-			b.RunParallel(func(pb *testing.PB) {
-				mu.Lock()
-				idx := next
-				next++
-				mu.Unlock()
-				conn := conns[idx%len(conns)]
+				defer conn.Close()
 
 				for pb.Next() {
 					if err := conn.WriteMessage(gws.BinaryMessage, payload); err != nil {
+						b.Fatal(err)
+					}
+					if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
 						b.Fatal(err)
 					}
 					_, got, err := conn.ReadMessage()
@@ -209,12 +209,8 @@ func BenchmarkWSEcho_Concurrent(b *testing.B) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// HTTP concurrent — stateless per-request, safe for shared client
-// ---------------------------------------------------------------------------
-
 func BenchmarkHTTPEcho_Concurrent(b *testing.B) {
-	for _, n := range concurrentClients {
+	for _, n := range concurrentClientsForOS() {
 		b.Run(connCountName(n), func(b *testing.B) {
 			server := transporthttp.NewServer(
 				transporthttp.WithAddr("127.0.0.1:0"),
@@ -237,7 +233,7 @@ func BenchmarkHTTPEcho_Concurrent(b *testing.B) {
 			b.ResetTimer()
 
 			b.RunParallel(func(pb *testing.PB) {
-				client := &http.Client{}
+				client := &http.Client{Transport: &http.Transport{MaxIdleConnsPerHost: 100}}
 				for pb.Next() {
 					resp, err := client.Post(endpoint, "application/octet-stream", bytes.NewReader(payload))
 					if err != nil {
@@ -265,7 +261,7 @@ func BenchmarkHTTPEcho_Concurrent(b *testing.B) {
 // ---------------------------------------------------------------------------
 
 func BenchmarkGRPCWebEcho_Concurrent(b *testing.B) {
-	for _, n := range concurrentClients {
+	for _, n := range concurrentClientsForOS() {
 		b.Run(connCountName(n), func(b *testing.B) {
 			server := grpcweb.NewServer(
 				grpcweb.WithAddr("127.0.0.1:0"),
@@ -295,14 +291,21 @@ func BenchmarkGRPCWebEcho_Concurrent(b *testing.B) {
 			b.ResetTimer()
 
 			b.RunParallel(func(pb *testing.PB) {
-				client := &http.Client{}
+				client := &http.Client{Transport: &http.Transport{MaxIdleConnsPerHost: 100}}
 				for pb.Next() {
 					resp, err := client.Post(url, "application/grpc-web", bytes.NewReader(frame))
 					if err != nil {
 						b.Fatal(err)
 					}
-					_, _ = io.ReadAll(resp.Body)
-					resp.Body.Close()
+					got, readErr := io.ReadAll(resp.Body)
+					closeErr := resp.Body.Close()
+					if readErr != nil {
+						b.Fatal(readErr)
+					}
+					if closeErr != nil {
+						b.Fatal(closeErr)
+					}
+					_ = got
 				}
 			})
 		})

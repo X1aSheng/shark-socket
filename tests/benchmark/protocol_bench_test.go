@@ -345,14 +345,23 @@ func BenchmarkGRPCWebEcho(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		respBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		respBody, readErr := io.ReadAll(resp.Body)
+		closeErr := resp.Body.Close()
+		if readErr != nil {
+			b.Fatal(readErr)
+		}
+		if closeErr != nil {
+			b.Fatal(closeErr)
+		}
 		if len(respBody) < 5 {
 			b.Fatal("response too short")
 		}
 	}
 }
 
+// BenchmarkQUICEcho measures QUIC echo round-trip including connection setup.
+// Each iteration establishes a new QUIC connection (TLS 1.3 handshake),
+// opens a stream, sends payload, and reads the echoed response.
 func BenchmarkQUICEcho(b *testing.B) {
 	cfg := &tls.Config{
 		Certificates: []tls.Certificate{mustGenerateBenchCert(b)},
@@ -415,6 +424,8 @@ func BenchmarkQUICEcho(b *testing.B) {
 	}
 }
 
+
+
 func mustGenerateBenchCert(tb testing.TB) tls.Certificate {
 	tb.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -450,4 +461,54 @@ func stopGateway(tb testing.TB, gateway *runtime.Gateway) {
 	if err := gateway.Stop(ctx); err != nil {
 		tb.Fatal(err)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Shared benchmark infrastructure
+// ---------------------------------------------------------------------------
+
+// echoHandler is the canonical echo handler used by all network benchmarks.
+var echoHandler = func(sess core.Session, msg core.Message) error {
+	return sess.Send(msg.Payload)
+}
+// skipIfShort skips the benchmark when -short is set.
+// Network benchmarks should call this at the top.
+func skipIfShort(b *testing.B) {
+	if testing.Short() {
+		b.Skip("skipping network benchmark in short mode")
+	}
+}
+
+
+// echoHarness holds a running echo server and gateway for benchmarks.
+type echoHarness struct {
+	Gateway *runtime.Gateway
+	Addr    string
+}
+
+// newEchoHarness creates a server via the factory, registers it with a new
+// Gateway, starts it, and registers cleanup. Returns the address for clients.
+func newEchoHarness(b *testing.B, createServer func() core.Server) *echoHarness {
+	b.Helper()
+	server := createServer()
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		b.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { stopGateway(b, gateway) })
+	return &echoHarness{Gateway: gateway, Addr: getAddr(server)}
+}
+
+// getAddr extracts the listen address from a server.
+func getAddr(srv core.Server) string {
+	type addrProvider interface{ Addr() net.Addr }
+	if ap, ok := srv.(addrProvider); ok {
+		if addr := ap.Addr(); addr != nil {
+			return addr.String()
+		}
+	}
+	panic("server does not implement Addr() net.Addr")
 }
