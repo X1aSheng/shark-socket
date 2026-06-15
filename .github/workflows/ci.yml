@@ -96,15 +96,11 @@ jobs:
         env:
           SHARK_MQTT_BROKER: tcp://localhost:1883
 
-      - name: Validate tests and vet
-        shell: pwsh
-        run: ./scripts/validate.ps1
-        env:
-          SHARK_MQTT_BROKER: tcp://localhost:1883
+      - name: go vet
+        run: go run scripts/run_tests.go -mode vet
 
-      - name: Validate deploy manifests
-        shell: pwsh
-        run: ./scripts/validate_deploy.ps1
+      - name: Deploy validation
+        run: go run scripts/run_tests.go -mode deploy
 
       - name: Upload validation logs
         if: always()
@@ -134,13 +130,11 @@ jobs:
       - name: Unit tests (MQTT-dependent tests skipped on Windows)
         run: go run scripts/run_tests.go -mode unit -timeout 5m
 
-      - name: Validate tests and vet
-        shell: pwsh
-        run: ./scripts/validate.ps1
+      - name: go vet
+        run: go run scripts/run_tests.go -mode vet
 
-      - name: Validate deploy manifests
-        shell: pwsh
-        run: ./scripts/validate_deploy.ps1
+      - name: Deploy validation
+        run: go run scripts/run_tests.go -mode deploy
 
       - name: Upload validation logs
         if: always()

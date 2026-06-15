@@ -311,8 +311,8 @@ CI 配置位于 `.github/workflows/ci.yml`，包含五个 Job。
 运行于 `windows-latest` + `ubuntu-latest` 矩阵：
 
 1. `go run scripts/run_tests.go -mode all` — 单元 + 集成 + 基准测试
-2. `scripts/validate.ps1` — `go vet`
-3. `scripts/validate_deploy.ps1` — 部署清单静态校验
+2. `scripts/run_tests.go -mode vet` — `go vet`
+3. `scripts/run_tests.go -mode deploy` — 部署清单静态校验
 
 ### 8.4 race（竞态检测）
 
@@ -339,8 +339,8 @@ CI 配置位于 `.github/workflows/ci.yml`，包含五个 Job。
 
 ```bash
 # 全量校验（测试 + vet + 部署清单）
-pwsh scripts/validate.ps1
-pwsh scripts/validate_deploy.ps1
+go run scripts/run_tests.go -mode vet
+go run scripts/run_tests.go -mode deploy
 ```
 
 ### 9.2 部署清单测试

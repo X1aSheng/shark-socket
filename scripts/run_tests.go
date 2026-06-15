@@ -3,11 +3,14 @@
 // shark-socket scripted test runner.
 //
 // Examples:
-//   go run scripts/run_tests.go
-//   go run scripts/run_tests.go -mode unit
-//   go run scripts/run_tests.go -mode integration
-//   go run scripts/run_tests.go -mode benchmark
-//   go run scripts/run_tests.go -mode race
+//   go run scripts/run_tests.go                          # unit + integration + benchmark
+//   go run scripts/run_tests.go -mode unit               # unit tests only
+//   go run scripts/run_tests.go -mode integration        # integration tests + deploy validation
+//   go run scripts/run_tests.go -mode vet                # go vet (replaces validate.ps1)
+//   go run scripts/run_tests.go -mode race               # race detector (replaces validate.ps1 -Race)
+//   go run scripts/run_tests.go -mode cover              # coverage profile
+//   go run scripts/run_tests.go -mode benchmark          # all benchmarks
+//   go run scripts/run_tests.go -mode all                # unit + integration + benchmark
 
 package main
 
@@ -24,7 +27,7 @@ import (
 )
 
 func main() {
-	mode := flag.String("mode", "all", "test mode: unit, integration, benchmark, race, cover, all")
+	mode := flag.String("mode", "all", "test mode: unit, integration, vet, race, cover, benchmark, all")
 	logDir := flag.String("logdir", "logs", "directory for test logs")
 	timeout := flag.Duration("timeout", 5*time.Minute, "go test timeout")
 	jsonOut := flag.Bool("json", false, "output test results in JSON format (default: text log)")
@@ -38,8 +41,10 @@ func main() {
 	switch *mode {
 	case "unit":
 		must(runGoTest(root, logs, ts, "unit", *timeout, *jsonOut, "./api", "./cmd/...", "./internal/..."))
-	case "integration":
+	case "integration", "deploy":
 		must(runGoTest(root, logs, ts, "integration", *timeout, *jsonOut, "./tests/..."))
+	case "vet":
+		must(runGoVet(root, logs, ts))
 	case "benchmark":
 		must(runBenchmark(root, logs, ts, *timeout, *jsonOut))
 	case "race":
@@ -77,6 +82,16 @@ func runGoTest(root, logs, ts, mode string, timeout time.Duration, jsonMode bool
 
 	// Text mode: output directly to .log file
 	logFile := filepath.Join(logs, ts+"_"+mode+".log")
+	fmt.Printf("[%s] %s -> %s\n", time.Now().Format("2006-01-02T15:04:05"), strings.Join(append([]string{"go"}, args...), " "), logFile)
+	out, err := output(root, "go", args...)
+	_ = os.WriteFile(logFile, out, 0o644)
+	fmt.Print(string(out))
+	return err
+}
+
+func runGoVet(root, logs, ts string) error {
+	logFile := filepath.Join(logs, ts+"_vet.log")
+	args := []string{"vet", "./..."}
 	fmt.Printf("[%s] %s -> %s\n", time.Now().Format("2006-01-02T15:04:05"), strings.Join(append([]string{"go"}, args...), " "), logFile)
 	out, err := output(root, "go", args...)
 	_ = os.WriteFile(logFile, out, 0o644)

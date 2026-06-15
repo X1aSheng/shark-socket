@@ -223,8 +223,8 @@ Before a release candidate:
 
 ```powershell
 go run scripts/run_tests.go -mode all -timeout 5m
-powershell -ExecutionPolicy Bypass -File .\scripts\validate.ps1 -Race
-powershell -ExecutionPolicy Bypass -File .\scripts\validate_deploy.ps1
+go run scripts/run_tests.go -mode race
+go run scripts/run_tests.go -mode deploy
 ```
 
 When Docker, Kubectl, and Helm are available, deploy validation must include:

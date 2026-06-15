@@ -69,18 +69,18 @@ docker compose -f deploy/docker/docker-compose.yml --profile test run mqtt-test
 | Coverage (50% threshold) | `go run scripts/run_tests.go -mode cover` | ✅ 72.1% |
 | Lint (golangci-lint) | `golangci-lint run` | ✅ |
 | Security (govulncheck) | `govulncheck ./...` | ✅ |
-| Deploy manifests | `.\scripts\validate_deploy.ps1` | ✅ |
+| Deploy manifests | `go run scripts/run_tests.go -mode deploy` | ✅ |
 
 Fast validation:
 
-```powershell
-.\scripts\validate.ps1
+```bash
+go run scripts/run_tests.go -mode vet
 ```
 
-Race validation with the local Windows toolchain:
+Race validation:
 
-```powershell
-.\scripts\validate.ps1 -Race
+```bash
+go run scripts/run_tests.go -mode race
 ```
 
 The race mode expects these compiler toolchains to be available:
@@ -117,7 +117,7 @@ go run scripts/run_tests.go -mode unit
 go run scripts/run_tests.go -mode integration
 go run scripts/run_tests.go -mode benchmark
 go run scripts/run_benchmarks.go -profile local -stage light
-.\scripts\validate_deploy.ps1
+go run scripts/run_tests.go -mode deploy
 ```
 
 Docker builds support a configurable module proxy:
