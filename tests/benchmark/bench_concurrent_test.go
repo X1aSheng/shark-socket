@@ -149,7 +149,7 @@ func BenchmarkWSEcho_Concurrent(b *testing.B) {
 		return websocket.NewServer(
 			websocket.WithAddr("127.0.0.1:0"),
 			websocket.WithPath("/ws"),
-			websocket.WithHandler(echoHandler),
+			websocket.WithHandler(echoHandler), websocket.WithCheckOrigin(allowAllOrigins),
 		)
 	})
 	for _, n := range concurrentClientsForOS() {
@@ -235,7 +235,7 @@ func BenchmarkGRPCWebEcho_Concurrent(b *testing.B) {
 	h := newEchoHarness(b, func() core.Server {
 		return grpcweb.NewServer(
 			grpcweb.WithAddr("127.0.0.1:0"),
-			grpcweb.WithHandler(echoHandler),
+			grpcweb.WithHandler(echoHandler), grpcweb.WithCheckOrigin(allowAllOrigins),
 		)
 	})
 	for _, n := range concurrentClientsForOS() {

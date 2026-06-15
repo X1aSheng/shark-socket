@@ -31,6 +31,7 @@ func (p prefixPlugin) OnMessage(_ core.Session, data []byte) ([]byte, error) {
 func TestGRPCWebDirectEchoAndCleanup(t *testing.T) {
 	server := NewServer(
 		WithAddr("127.0.0.1:0"),
+		WithCheckOrigin(func(*http.Request) bool { return true }),
 		WithHandler(func(sess core.Session, msg core.Message) error {
 			return sess.Send(msg.Payload)
 		}),
@@ -64,6 +65,7 @@ func TestGRPCWebDirectEchoAndCleanup(t *testing.T) {
 func TestGRPCWebFramedUnaryEchoWithTrailers(t *testing.T) {
 	server := NewServer(
 		WithAddr("127.0.0.1:0"),
+		WithCheckOrigin(func(*http.Request) bool { return true }),
 		WithHandler(func(sess core.Session, msg core.Message) error {
 			if string(msg.Payload) != "hello" {
 				return fmt.Errorf("payload = %q, want hello", msg.Payload)
@@ -111,6 +113,7 @@ func TestGRPCWebMaxMessageSize(t *testing.T) {
 	server := NewServer(
 		WithAddr("127.0.0.1:0"),
 		WithMaxMessageBytes(3),
+		WithCheckOrigin(func(*http.Request) bool { return true }),
 		WithHandler(func(sess core.Session, msg core.Message) error {
 			return sess.Send(msg.Payload)
 		}),
@@ -137,6 +140,7 @@ func TestGRPCWebMaxMessageSize(t *testing.T) {
 func TestGRPCWebStrictMalformedFrameReturnsBadRequest(t *testing.T) {
 	server := NewServer(
 		WithAddr("127.0.0.1:0"),
+		WithCheckOrigin(func(*http.Request) bool { return true }),
 		WithHandler(func(sess core.Session, msg core.Message) error {
 			return sess.Send(msg.Payload)
 		}),
@@ -203,6 +207,7 @@ func TestGRPCWebWebSocketEchoAndCleanup(t *testing.T) {
 	server := NewServer(
 		WithAddr("127.0.0.1:0"),
 		WithWebSocketMode("/grpc/ws"),
+		WithCheckOrigin(func(*http.Request) bool { return true }),
 		WithHandler(func(sess core.Session, msg core.Message) error {
 			if msg.Protocol != core.ProtocolGRPCWeb {
 				return fmt.Errorf("protocol = %s, want %s", msg.Protocol, core.ProtocolGRPCWeb)
@@ -251,6 +256,7 @@ func TestGRPCWebWebSocketMaxMessageSize(t *testing.T) {
 		WithAddr("127.0.0.1:0"),
 		WithWebSocketMode("/grpc/ws"),
 		WithMaxMessageBytes(3),
+		WithCheckOrigin(func(*http.Request) bool { return true }),
 		WithHandler(func(sess core.Session, msg core.Message) error {
 			return sess.Send(msg.Payload)
 		}),

@@ -63,9 +63,26 @@ func WithDTLS(cfg *tls.Config) Option {
 }
 
 // dtlsConfig converts a *tls.Config to *dtls.Config.
+// Maps the most important security-relevant fields.
 func dtlsConfig(tlsCfg *tls.Config) *dtls.Config {
-	return &dtls.Config{
+	cfg := &dtls.Config{
 		Certificates:       tlsCfg.Certificates,
 		InsecureSkipVerify: tlsCfg.InsecureSkipVerify,
+		RootCAs:            tlsCfg.RootCAs,
+		ClientCAs:          tlsCfg.ClientCAs,
+		ServerName:         tlsCfg.ServerName,
 	}
+	// Map CipherSuites ([]uint16 → []CipherSuiteID)
+	if len(tlsCfg.CipherSuites) > 0 {
+		cfg.CipherSuites = make([]dtls.CipherSuiteID, len(tlsCfg.CipherSuites))
+		for i, id := range tlsCfg.CipherSuites {
+			cfg.CipherSuites[i] = dtls.CipherSuiteID(id)
+		}
+	}
+	if tlsCfg.VerifyPeerCertificate != nil {
+		cfg.VerifyPeerCertificate = tlsCfg.VerifyPeerCertificate
+	}
+	// Note: GetCertificate and GetClientCertificate have different signatures
+	// in crypto/tls vs pion/dtls, so they cannot be directly mapped.
+	return cfg
 }

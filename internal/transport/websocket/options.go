@@ -32,7 +32,7 @@ func defaultOptions() Options {
 		PongTimeout:    60 * time.Second,
 		MaxMessageSize: 1024 * 1024,
 		CheckOrigin: func(*http.Request) bool {
-			return true
+			return false // reject by default; use WithCheckOrigin to allow origins
 		},
 	}
 }

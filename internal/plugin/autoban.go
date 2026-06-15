@@ -3,6 +3,7 @@ package plugin
 import (
 	"net"
 	"sync"
+	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
 )
@@ -13,17 +14,48 @@ type AutoBan struct {
 	threshold int
 	counts    map[string]int
 	banned    map[string]struct{}
+	stopCh    chan struct{}
 }
 
 func NewAutoBan(threshold int) *AutoBan {
 	if threshold <= 0 {
 		threshold = 3
 	}
-	return &AutoBan{threshold: threshold, counts: make(map[string]int), banned: make(map[string]struct{})}
+	return &AutoBan{threshold: threshold, counts: make(map[string]int), banned: make(map[string]struct{}), stopCh: make(chan struct{})}
 }
 
 func (p *AutoBan) Name() string  { return "autoban" }
 func (p *AutoBan) Priority() int { return 5 }
+
+// Start begins periodic cleanup of stale banned entries.
+func (p *AutoBan) Start() error {
+	go func() {
+		ticker := time.NewTicker(30 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				p.sweep()
+			case <-p.stopCh:
+				return
+			}
+		}
+	}()
+	return nil
+}
+
+// Stop terminates the cleanup goroutine.
+func (p *AutoBan) Stop() error {
+	close(p.stopCh)
+	return nil
+}
+
+func (p *AutoBan) sweep() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.counts = make(map[string]int)
+	p.banned = make(map[string]struct{})
+}
 
 func (p *AutoBan) OnAccept(sess core.Session) error {
 	key := remoteKey(sess)

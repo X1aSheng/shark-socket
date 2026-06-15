@@ -233,7 +233,7 @@ func BenchmarkPluginChain_Blacklist_WS(b *testing.B) {
 		return websocket.NewServer(
 			websocket.WithAddr("127.0.0.1:0"),
 			websocket.WithPath("/ws"),
-			websocket.WithHandler(echoHandler),
+			websocket.WithHandler(echoHandler), websocket.WithCheckOrigin(allowAllOrigins),
 		)
 	}, plugin.NewBlacklist("192.168.0.1", "10.0.0.0/8"))
 	u := url.URL{Scheme: "ws", Host: h.Addr, Path: "/ws"}
@@ -267,7 +267,7 @@ func BenchmarkPluginChain_RateLimit_WS(b *testing.B) {
 		return websocket.NewServer(
 			websocket.WithAddr("127.0.0.1:0"),
 			websocket.WithPath("/ws"),
-			websocket.WithHandler(echoHandler),
+			websocket.WithHandler(echoHandler), websocket.WithCheckOrigin(allowAllOrigins),
 		)
 	}, plugin.NewRateLimit(1000000, time.Second))
 	u := url.URL{Scheme: "ws", Host: h.Addr, Path: "/ws"}
@@ -301,7 +301,7 @@ func BenchmarkPluginChain_FullChain_WS(b *testing.B) {
 		return websocket.NewServer(
 			websocket.WithAddr("127.0.0.1:0"),
 			websocket.WithPath("/ws"),
-			websocket.WithHandler(echoHandler),
+			websocket.WithHandler(echoHandler), websocket.WithCheckOrigin(allowAllOrigins),
 		)
 	}, plugin.NewBlacklist("192.168.0.1"), plugin.NewAutoBan(100), plugin.NewRateLimit(1000000, time.Second), plugin.NewPersistence(store.NewMemory(), "bench"))
 	u := url.URL{Scheme: "ws", Host: h.Addr, Path: "/ws"}

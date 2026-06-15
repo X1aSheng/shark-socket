@@ -55,6 +55,7 @@ func TestWebSocketTLSGatewayEchoAndShutdown(t *testing.T) {
 	server := NewServer(
 		WithAddr("127.0.0.1:0"),
 		WithTLSConfig(testWSTLSConfig(t)),
+		WithCheckOrigin(func(*http.Request) bool { return true }),
 		WithHandler(func(sess core.Session, msg core.Message) error {
 			return sess.Send(msg.Payload)
 		}),

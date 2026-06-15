@@ -34,7 +34,7 @@ func defaultOptions() Options {
 		WriteTimeout:    10 * time.Second,
 		WebSocketPath:   "/grpc/ws",
 		CheckOrigin: func(*http.Request) bool {
-			return true
+			return false // reject by default; use WithCheckOrigin to allow origins
 		},
 	}
 }

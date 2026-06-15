@@ -170,7 +170,7 @@ func BenchmarkWSEcho(b *testing.B) {
 		return websocket.NewServer(
 			websocket.WithAddr("127.0.0.1:0"),
 			websocket.WithPath("/ws"),
-			websocket.WithHandler(echoHandler),
+			websocket.WithHandler(echoHandler), websocket.WithCheckOrigin(allowAllOrigins),
 		)
 	})
 
@@ -286,7 +286,7 @@ func BenchmarkGRPCWebEcho(b *testing.B) {
 	h := newEchoHarness(b, func() core.Server {
 		return grpcweb.NewServer(
 			grpcweb.WithAddr("127.0.0.1:0"),
-			grpcweb.WithHandler(echoHandler),
+			grpcweb.WithHandler(echoHandler), grpcweb.WithCheckOrigin(allowAllOrigins),
 		)
 	})
 
@@ -424,6 +424,9 @@ func stopGateway(tb testing.TB, gateway *runtime.Gateway) {
 var echoHandler = func(sess core.Session, msg core.Message) error {
 	return sess.Send(msg.Payload)
 }
+
+// allowAllOrigins permits all WebSocket/gRPC-Web origins in benchmarks.
+var allowAllOrigins = func(*http.Request) bool { return true }
 
 // skipIfShort skips the benchmark when -short is set.
 // Network benchmarks should call this at the top.

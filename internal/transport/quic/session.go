@@ -93,7 +93,11 @@ func (s *session) writeLoop() {
 		if s.writeTimeout > 0 {
 			stream.SetWriteDeadline(time.Now().Add(s.writeTimeout))
 		}
-		_, _ = stream.Write(payload)
+		n, err := stream.Write(payload)
+		if err != nil || n < len(payload) {
+			_ = stream.Close()
+			return
+		}
 		_ = stream.Close()
 	}
 }

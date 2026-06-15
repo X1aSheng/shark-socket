@@ -14,6 +14,7 @@ type RateLimit struct {
 	rate     int
 	window   time.Duration
 	counters map[string]counter
+	stopCh   chan struct{}
 }
 
 type counter struct {
@@ -28,11 +29,44 @@ func NewRateLimit(rate int, window time.Duration) *RateLimit {
 	if window <= 0 {
 		window = time.Second
 	}
-	return &RateLimit{rate: rate, window: window, counters: make(map[string]counter)}
+	return &RateLimit{rate: rate, window: window, counters: make(map[string]counter), stopCh: make(chan struct{})}
 }
 
 func (p *RateLimit) Name() string  { return "ratelimit" }
 func (p *RateLimit) Priority() int { return 10 }
+
+// Start begins periodic cleanup of stale counter entries.
+func (p *RateLimit) Start() error {
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				p.sweep()
+			case <-p.stopCh:
+				return
+			}
+		}
+	}()
+	return nil
+}
+
+// Stop terminates the cleanup goroutine.
+func (p *RateLimit) Stop() error {
+	close(p.stopCh)
+	return nil
+}
+
+func (p *RateLimit) sweep() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for k, c := range p.counters {
+		if time.Since(c.start) >= p.window*2 {
+			delete(p.counters, k)
+		}
+	}
+}
 
 func (p *RateLimit) OnMessage(sess core.Session, data []byte) ([]byte, error) {
 	key := "unknown"

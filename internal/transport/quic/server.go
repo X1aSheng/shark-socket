@@ -145,7 +145,11 @@ func (s *Server) handleConn(conn *quicgo.Conn) {
 		s.closeSession(context.Background(), id, sess)
 		return
 	}
-	go sess.writeLoop()
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		sess.writeLoop()
+	}()
 	defer s.closeSession(context.Background(), id, sess)
 	for {
 		stream, err := conn.AcceptStream(sess.Context())
