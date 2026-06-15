@@ -424,8 +424,6 @@ func BenchmarkQUICEcho(b *testing.B) {
 	}
 }
 
-
-
 func mustGenerateBenchCert(tb testing.TB) tls.Certificate {
 	tb.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -471,6 +469,7 @@ func stopGateway(tb testing.TB, gateway *runtime.Gateway) {
 var echoHandler = func(sess core.Session, msg core.Message) error {
 	return sess.Send(msg.Payload)
 }
+
 // skipIfShort skips the benchmark when -short is set.
 // Network benchmarks should call this at the top.
 func skipIfShort(b *testing.B) {
@@ -478,7 +477,6 @@ func skipIfShort(b *testing.B) {
 		b.Skip("skipping network benchmark in short mode")
 	}
 }
-
 
 // echoHarness holds a running echo server and gateway for benchmarks.
 type echoHarness struct {

@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
-	"github.com/X1aSheng/shark-socket/internal/runtime"
 	"github.com/X1aSheng/shark-socket/internal/transport/grpcweb"
 	transporthttp "github.com/X1aSheng/shark-socket/internal/transport/http"
 	"github.com/X1aSheng/shark-socket/internal/transport/tcp"
@@ -45,23 +44,15 @@ func concurrentClientsForOS() []int {
 // ---------------------------------------------------------------------------
 
 func BenchmarkTCPEcho_Concurrent(b *testing.B) {
+	skipIfShort(b)
+	h := newEchoHarness(b, func() core.Server {
+		return tcp.NewServer(
+			tcp.WithAddr("127.0.0.1:0"),
+			tcp.WithHandler(echoHandler),
+		)
+	})
 	for _, n := range concurrentClientsForOS() {
 		b.Run(connCountName(n), func(b *testing.B) {
-			server := tcp.NewServer(
-				tcp.WithAddr("127.0.0.1:0"),
-				tcp.WithHandler(func(sess core.Session, msg core.Message) error {
-					return sess.Send(msg.Payload)
-				}),
-			)
-			gateway := runtime.NewGateway()
-			if err := gateway.Register(server); err != nil {
-				b.Fatal(err)
-			}
-			if err := gateway.Start(context.Background()); err != nil {
-				b.Fatal(err)
-			}
-			b.Cleanup(func() { stopGateway(b, gateway) })
-
 			payload := []byte("benchmark-payload")
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -69,7 +60,7 @@ func BenchmarkTCPEcho_Concurrent(b *testing.B) {
 			// Each parallel goroutine creates its own dedicated TCP client
 			// to avoid concurrent write/read corruption on shared connections.
 			b.RunParallel(func(pb *testing.PB) {
-				client := tcp.NewClient(server.Addr().String())
+				client := tcp.NewClient(h.Addr)
 				if err := client.Connect(context.Background()); err != nil {
 					b.Fatal(err)
 				}
@@ -95,23 +86,15 @@ func BenchmarkTCPEcho_Concurrent(b *testing.B) {
 // ---------------------------------------------------------------------------
 
 func BenchmarkUDPEcho_Concurrent(b *testing.B) {
+	skipIfShort(b)
+	h := newEchoHarness(b, func() core.Server {
+		return udp.NewServer(
+			udp.WithAddr("127.0.0.1:0"),
+			udp.WithHandler(echoHandler),
+		)
+	})
 	for _, n := range concurrentClientsForOS() {
 		b.Run(connCountName(n), func(b *testing.B) {
-			server := udp.NewServer(
-				udp.WithAddr("127.0.0.1:0"),
-				udp.WithHandler(func(sess core.Session, msg core.Message) error {
-					return sess.Send(msg.Payload)
-				}),
-			)
-			gateway := runtime.NewGateway()
-			if err := gateway.Register(server); err != nil {
-				b.Fatal(err)
-			}
-			if err := gateway.Start(context.Background()); err != nil {
-				b.Fatal(err)
-			}
-			b.Cleanup(func() { stopGateway(b, gateway) })
-
 			payload := []byte("benchmark-payload")
 			buf := make([]byte, 1024)
 			b.ReportAllocs()
@@ -120,7 +103,7 @@ func BenchmarkUDPEcho_Concurrent(b *testing.B) {
 			var mu sync.Mutex
 			conns := make([]net.Conn, n)
 			for i := 0; i < n; i++ {
-				c, err := net.Dial("udp", server.Addr().String())
+				c, err := net.Dial("udp", h.Addr)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -140,9 +123,9 @@ func BenchmarkUDPEcho_Concurrent(b *testing.B) {
 						b.Fatal(err)
 					}
 					if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
-					b.Fatal(err)
-				}
-				_, err := conn.Read(buf)
+						b.Fatal(err)
+					}
+					_, err := conn.Read(buf)
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -158,25 +141,17 @@ func BenchmarkUDPEcho_Concurrent(b *testing.B) {
 // ---------------------------------------------------------------------------
 
 func BenchmarkWSEcho_Concurrent(b *testing.B) {
+	skipIfShort(b)
+	h := newEchoHarness(b, func() core.Server {
+		return websocket.NewServer(
+			websocket.WithAddr("127.0.0.1:0"),
+			websocket.WithPath("/ws"),
+			websocket.WithHandler(echoHandler),
+		)
+	})
 	for _, n := range concurrentClientsForOS() {
 		b.Run(connCountName(n), func(b *testing.B) {
-			server := websocket.NewServer(
-				websocket.WithAddr("127.0.0.1:0"),
-				websocket.WithPath("/ws"),
-				websocket.WithHandler(func(sess core.Session, msg core.Message) error {
-					return sess.Send(msg.Payload)
-				}),
-			)
-			gateway := runtime.NewGateway()
-			if err := gateway.Register(server); err != nil {
-				b.Fatal(err)
-			}
-			if err := gateway.Start(context.Background()); err != nil {
-				b.Fatal(err)
-			}
-			b.Cleanup(func() { stopGateway(b, gateway) })
-
-			u := url.URL{Scheme: "ws", Host: server.Addr().String(), Path: "/ws"}
+			u := url.URL{Scheme: "ws", Host: h.Addr, Path: "/ws"}
 			payload := []byte("benchmark-payload")
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -210,24 +185,16 @@ func BenchmarkWSEcho_Concurrent(b *testing.B) {
 }
 
 func BenchmarkHTTPEcho_Concurrent(b *testing.B) {
+	skipIfShort(b)
+	h := newEchoHarness(b, func() core.Server {
+		return transporthttp.NewServer(
+			transporthttp.WithAddr("127.0.0.1:0"),
+			transporthttp.WithHandler(echoHandler),
+		)
+	})
 	for _, n := range concurrentClientsForOS() {
 		b.Run(connCountName(n), func(b *testing.B) {
-			server := transporthttp.NewServer(
-				transporthttp.WithAddr("127.0.0.1:0"),
-				transporthttp.WithHandler(func(sess core.Session, msg core.Message) error {
-					return sess.Send(msg.Payload)
-				}),
-			)
-			gateway := runtime.NewGateway()
-			if err := gateway.Register(server); err != nil {
-				b.Fatal(err)
-			}
-			if err := gateway.Start(context.Background()); err != nil {
-				b.Fatal(err)
-			}
-			b.Cleanup(func() { stopGateway(b, gateway) })
-
-			endpoint := "http://" + server.Addr().String() + "/"
+			endpoint := "http://" + h.Addr + "/"
 			payload := []byte("benchmark-payload")
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -261,24 +228,16 @@ func BenchmarkHTTPEcho_Concurrent(b *testing.B) {
 // ---------------------------------------------------------------------------
 
 func BenchmarkGRPCWebEcho_Concurrent(b *testing.B) {
+	skipIfShort(b)
+	h := newEchoHarness(b, func() core.Server {
+		return grpcweb.NewServer(
+			grpcweb.WithAddr("127.0.0.1:0"),
+			grpcweb.WithHandler(echoHandler),
+		)
+	})
 	for _, n := range concurrentClientsForOS() {
 		b.Run(connCountName(n), func(b *testing.B) {
-			server := grpcweb.NewServer(
-				grpcweb.WithAddr("127.0.0.1:0"),
-				grpcweb.WithHandler(func(sess core.Session, msg core.Message) error {
-					return sess.Send(msg.Payload)
-				}),
-			)
-			gateway := runtime.NewGateway()
-			if err := gateway.Register(server); err != nil {
-				b.Fatal(err)
-			}
-			if err := gateway.Start(context.Background()); err != nil {
-				b.Fatal(err)
-			}
-			b.Cleanup(func() { stopGateway(b, gateway) })
-
-			url := "http://" + server.Addr().String() + "/grpc"
+			url := "http://" + h.Addr + "/grpc"
 			payload := []byte("benchmark-payload")
 			frame := make([]byte, 5+len(payload))
 			frame[0] = 0

@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
-	"github.com/X1aSheng/shark-socket/internal/runtime"
 	"github.com/X1aSheng/shark-socket/internal/transport/grpcweb"
 	transporthttp "github.com/X1aSheng/shark-socket/internal/transport/http"
 	"github.com/X1aSheng/shark-socket/internal/transport/quic"
@@ -25,27 +24,19 @@ import (
 )
 
 // payloadSizes is shared across all payload-size benchmarks.
-var payloadSizes = []int{64, 1024, 16384, 65536}
+var payloadSizes = []int{64, 1024, 16384, 65507}
 
 func BenchmarkTCPEcho_PayloadSize(b *testing.B) {
+	skipIfShort(b)
+	h := newEchoHarness(b, func() core.Server {
+		return tcp.NewServer(
+			tcp.WithAddr("127.0.0.1:0"),
+			tcp.WithHandler(echoHandler),
+		)
+	})
 	for _, size := range payloadSizes {
 		b.Run(byteSizeName(size), func(b *testing.B) {
-			server := tcp.NewServer(
-				tcp.WithAddr("127.0.0.1:0"),
-				tcp.WithHandler(func(sess core.Session, msg core.Message) error {
-					return sess.Send(msg.Payload)
-				}),
-			)
-			gateway := runtime.NewGateway()
-			if err := gateway.Register(server); err != nil {
-				b.Fatal(err)
-			}
-			if err := gateway.Start(context.Background()); err != nil {
-				b.Fatal(err)
-			}
-			b.Cleanup(func() { stopGateway(b, gateway) })
-
-			client := tcp.NewClient(server.Addr().String())
+			client := tcp.NewClient(h.Addr)
 			if err := client.Connect(context.Background()); err != nil {
 				b.Fatal(err)
 			}
@@ -72,24 +63,16 @@ func BenchmarkTCPEcho_PayloadSize(b *testing.B) {
 }
 
 func BenchmarkUDPEcho_PayloadSize(b *testing.B) {
+	skipIfShort(b)
+	h := newEchoHarness(b, func() core.Server {
+		return udp.NewServer(
+			udp.WithAddr("127.0.0.1:0"),
+			udp.WithHandler(echoHandler),
+		)
+	})
 	for _, size := range payloadSizes {
 		b.Run(byteSizeName(size), func(b *testing.B) {
-			server := udp.NewServer(
-				udp.WithAddr("127.0.0.1:0"),
-				udp.WithHandler(func(sess core.Session, msg core.Message) error {
-					return sess.Send(msg.Payload)
-				}),
-			)
-			gateway := runtime.NewGateway()
-			if err := gateway.Register(server); err != nil {
-				b.Fatal(err)
-			}
-			if err := gateway.Start(context.Background()); err != nil {
-				b.Fatal(err)
-			}
-			b.Cleanup(func() { stopGateway(b, gateway) })
-
-			conn, err := net.Dial("udp", server.Addr().String())
+			conn, err := net.Dial("udp", h.Addr)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -117,25 +100,17 @@ func BenchmarkUDPEcho_PayloadSize(b *testing.B) {
 }
 
 func BenchmarkWSEcho_PayloadSize(b *testing.B) {
+	skipIfShort(b)
+	h := newEchoHarness(b, func() core.Server {
+		return websocket.NewServer(
+			websocket.WithAddr("127.0.0.1:0"),
+			websocket.WithPath("/ws"),
+			websocket.WithHandler(echoHandler),
+		)
+	})
 	for _, size := range payloadSizes {
 		b.Run(byteSizeName(size), func(b *testing.B) {
-			server := websocket.NewServer(
-				websocket.WithAddr("127.0.0.1:0"),
-				websocket.WithPath("/ws"),
-				websocket.WithHandler(func(sess core.Session, msg core.Message) error {
-					return sess.Send(msg.Payload)
-				}),
-			)
-			gateway := runtime.NewGateway()
-			if err := gateway.Register(server); err != nil {
-				b.Fatal(err)
-			}
-			if err := gateway.Start(context.Background()); err != nil {
-				b.Fatal(err)
-			}
-			b.Cleanup(func() { stopGateway(b, gateway) })
-
-			u := url.URL{Scheme: "ws", Host: server.Addr().String(), Path: "/ws"}
+			u := url.URL{Scheme: "ws", Host: h.Addr, Path: "/ws"}
 			conn, _, err := gws.DefaultDialer.Dial(u.String(), nil)
 			if err != nil {
 				b.Fatal(err)
@@ -163,25 +138,18 @@ func BenchmarkWSEcho_PayloadSize(b *testing.B) {
 }
 
 func BenchmarkHTTPEcho_PayloadSize(b *testing.B) {
+	skipIfShort(b)
+	h := newEchoHarness(b, func() core.Server {
+		return transporthttp.NewServer(
+			transporthttp.WithAddr("127.0.0.1:0"),
+			transporthttp.WithHandler(echoHandler),
+		)
+	})
 	for _, size := range payloadSizes {
 		b.Run(byteSizeName(size), func(b *testing.B) {
-			server := transporthttp.NewServer(
-				transporthttp.WithAddr("127.0.0.1:0"),
-				transporthttp.WithHandler(func(sess core.Session, msg core.Message) error {
-					return sess.Send(msg.Payload)
-				}),
-			)
-			gateway := runtime.NewGateway()
-			if err := gateway.Register(server); err != nil {
-				b.Fatal(err)
-			}
-			if err := gateway.Start(context.Background()); err != nil {
-				b.Fatal(err)
-			}
-			b.Cleanup(func() { stopGateway(b, gateway) })
-
 			client := &http.Client{Timeout: 5 * time.Second}
-			endpoint := "http://" + server.Addr().String() + "/"
+			endpoint := "http://" + h.Addr + "/"
+
 			payload := make([]byte, size)
 			b.SetBytes(int64(size))
 			b.ReportAllocs()
@@ -208,24 +176,18 @@ func BenchmarkHTTPEcho_PayloadSize(b *testing.B) {
 }
 
 func BenchmarkGRPCWebEcho_PayloadSize(b *testing.B) {
+	skipIfShort(b)
+	h := newEchoHarness(b, func() core.Server {
+		return grpcweb.NewServer(
+			grpcweb.WithAddr("127.0.0.1:0"),
+			grpcweb.WithHandler(echoHandler),
+		)
+	})
 	for _, size := range payloadSizes {
 		b.Run(byteSizeName(size), func(b *testing.B) {
-			server := grpcweb.NewServer(
-				grpcweb.WithAddr("127.0.0.1:0"),
-				grpcweb.WithHandler(func(sess core.Session, msg core.Message) error {
-					return sess.Send(msg.Payload)
-				}),
-			)
-			gateway := runtime.NewGateway()
-			if err := gateway.Register(server); err != nil {
-				b.Fatal(err)
-			}
-			if err := gateway.Start(context.Background()); err != nil {
-				b.Fatal(err)
-			}
-			b.Cleanup(func() { stopGateway(b, gateway) })
+			client := &http.Client{Timeout: 5 * time.Second}
+			url := "http://" + h.Addr + "/grpc"
 
-			url := "http://" + server.Addr().String() + "/grpc"
 			payload := make([]byte, size)
 			b.SetBytes(int64(size))
 			b.ReportAllocs()
@@ -238,7 +200,7 @@ func BenchmarkGRPCWebEcho_PayloadSize(b *testing.B) {
 				frame[3] = byte(size >> 8)
 				frame[4] = byte(size)
 				copy(frame[5:], payload)
-				resp, err := http.Post(url, "application/grpc-web", bytes.NewReader(frame))
+				resp, err := client.Post(url, "application/grpc-web", bytes.NewReader(frame))
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -259,34 +221,26 @@ func BenchmarkGRPCWebEcho_PayloadSize(b *testing.B) {
 }
 
 func BenchmarkQUICEcho_PayloadSize(b *testing.B) {
+	skipIfShort(b)
+	tlsCfg := &tls.Config{
+		Certificates: []tls.Certificate{mustGenerateBenchCert(b)},
+		NextProtos:   []string{"shark-socket-quic"},
+	}
+	h := newEchoHarness(b, func() core.Server {
+		return quic.NewServer(
+			quic.WithAddr("127.0.0.1:0"),
+			quic.WithTLS(tlsCfg),
+			quic.WithHandler(echoHandler),
+		)
+	})
 	for _, size := range payloadSizes {
 		b.Run(byteSizeName(size), func(b *testing.B) {
-			tlsCfg := &tls.Config{
-				Certificates: []tls.Certificate{mustGenerateBenchCert(b)},
-				NextProtos:   []string{"shark-socket-quic"},
-			}
-			server := quic.NewServer(
-				quic.WithAddr("127.0.0.1:0"),
-				quic.WithTLS(tlsCfg),
-				quic.WithHandler(func(sess core.Session, msg core.Message) error {
-					return sess.Send(msg.Payload)
-				}),
-			)
-			gateway := runtime.NewGateway()
-			if err := gateway.Register(server); err != nil {
-				b.Fatal(err)
-			}
-			if err := gateway.Start(context.Background()); err != nil {
-				b.Fatal(err)
-			}
-			b.Cleanup(func() { stopGateway(b, gateway) })
-
 			payload := make([]byte, size)
 			b.SetBytes(int64(size))
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				conn, err := quicgo.DialAddr(context.Background(), server.Addr().String(), quic.ClientTLSConfig(true), nil)
+				conn, err := quicgo.DialAddr(context.Background(), h.Addr, quic.ClientTLSConfig(true), nil)
 				if err != nil {
 					b.Fatal(err)
 				}

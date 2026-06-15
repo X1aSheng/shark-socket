@@ -43,6 +43,8 @@ func main() {
 	profile := flag.String("profile", "local", "benchmark profile: local or cloud")
 	stage := flag.String("stage", "smoke", "benchmark stage: smoke, light, or medium")
 	logDir := flag.String("logdir", "logs", "directory for benchmark logs")
+	listGroups := flag.Bool("list", false, "list all benchmark groups and exit")
+	benchFilter := flag.String("bench", "", "run only the named benchmark group (substring match)")
 	flag.Parse()
 
 	if *profile != "local" && *profile != "cloud" {
@@ -50,6 +52,25 @@ func main() {
 	}
 	if *stage != "smoke" && *stage != "light" && *stage != "medium" {
 		exitf("unknown stage %q", *stage)
+	}
+
+	if *listGroups {
+		groups := allBenchmarkGroups()
+		if *benchFilter != "" {
+			lower := strings.ToLower(*benchFilter)
+			out := groups[:0]
+			for _, g := range groups {
+				if strings.Contains(strings.ToLower(g.name), lower) {
+					out = append(out, g)
+				}
+			}
+			groups = out
+		}
+		for _, g := range groups {
+			fmt.Printf("  %-30s  pattern=%-50s  benchtime=%-10s  cloud=%v  medium=%v\n",
+				g.name, g.pattern, g.benchtime, g.cloud, g.medium)
+		}
+		return
 	}
 
 	root := projectRoot()
@@ -61,7 +82,7 @@ func main() {
 	fmt.Printf("profile=%s stage=%s root=%s\n", *profile, *stage, root)
 	fmt.Printf("go=%s os=%s arch=%s\n\n", goVersion(root), runtime.GOOS, runtime.GOARCH)
 
-	for _, group := range selectGroups(*profile, *stage) {
+	for _, group := range selectGroups(*profile, *stage, *benchFilter) {
 		if *profile == "cloud" {
 			state := readResourceState()
 			fmt.Printf("[%s] resource before %s: %s\n", time.Now().Format(time.RFC3339), group.name, state)
@@ -82,8 +103,10 @@ func main() {
 	}
 }
 
-func selectGroups(profile, stage string) []benchmarkGroup {
-	groups := []benchmarkGroup{
+
+// allBenchmarkGroups returns the complete benchmark group registry.
+func allBenchmarkGroups() []benchmarkGroup {
+	return []benchmarkGroup{
 		{
 			name:      "core-smoke",
 			pattern:   "BenchmarkSessionManager|BenchmarkPluginChain",
@@ -197,6 +220,22 @@ func selectGroups(profile, stage string) []benchmarkGroup {
 		},
 	}
 
+}
+
+
+func selectGroups(profile, stage, benchFilter string) []benchmarkGroup {
+	if benchFilter != "" {
+		lower := strings.ToLower(benchFilter)
+		for _, g := range allBenchmarkGroups() {
+			if strings.Contains(strings.ToLower(g.name), lower) {
+				fmt.Printf("bench filter %q matched group %q (pattern=%s)\n", benchFilter, g.name, g.pattern)
+				return []benchmarkGroup{g}
+			}
+		}
+		exitf("no benchmark group matches %q; use -list to see available groups", benchFilter)
+	}
+
+	groups := allBenchmarkGroups()
 	limit := 5
 	if stage == "light" {
 		limit = 10
