@@ -1,17 +1,39 @@
+# VCS
 .git
-.claude
+.gitignore
+.dockerignore
+
+# CI
+.github
+.golangci.yml
+
+# IDE
 .idea
 .vscode
-.github
-logs
+
+# Claude
+.claude
+.skills
+
+# Docs (not needed at runtime)
 *.md
 docs
-*.exe
-*.test
-coverage.out
+
+# Dev scripts (not needed at runtime)
+scripts
+
+# Examples
+examples
+
+# Logs & coverage
+logs
+*.out
+
+# Deploy — keep only Docker
 deploy/k8s
 deploy/helm
-!deploy/docker
-examples
-scripts
+
+# Binaries
+*.exe
+*.test
 shark-socket

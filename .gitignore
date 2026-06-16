@@ -1,6 +1,34 @@
+# Binary outputs
 *.exe
 *.test
+*.out
+shark-socket
+
+# IDE
 .idea/
 .vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs & artifacts
+logs/
 coverage.out
-logs/**
+
+# Environment
+.env
+.env.*
+
+# Python
+__pycache__/
+*.pyc
+
+# Temp
+*.tmp
+*.swp
+*.bak
+*~
+
+# Project-specific
+.skills/
