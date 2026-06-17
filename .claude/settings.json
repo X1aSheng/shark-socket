@@ -12,7 +12,20 @@
       "WebFetch(domain:github.com)",
       "Read(//tmp/**)",
       "Read(//g/shark-socket/.github/**)",
-      "WebSearch"
+      "WebSearch",
+      "Read(//g/c-module/spi_flash/**)",
+      "Read(//g/c-module/FatFs/**)",
+      "Read(//g/cubeide/f407ve-spitf/FatFs/**)",
+      "Read(//g/cubeide/f407ve-spitf/**)",
+      "Read(//g/c-module/**)"
+    ],
+    "additionalDirectories": [
+      "g:\\c-module\\spi_flash",
+      "g:\\c-module\\FatFs",
+      "g:\\cubeide\\f407ve-spitf\\FatFs",
+      "g:\\cubeide\\f407ve-spitf\\Core\\Src",
+      "g:\\cubeide\\f407ve-spitf\\MDK-ARM",
+      "g:\\cubeide\\f407ve-spitf\\spi_sdcard"
     ]
   }
 }
