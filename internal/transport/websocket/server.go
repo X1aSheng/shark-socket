@@ -59,10 +59,22 @@ func (s *Server) Start(context.Context) error {
 	if s.opts.TLSConfig != nil {
 		// Use tls.Listen for TLS; do NOT set TLSConfig on http.Server
 		// to avoid HTTP/2 negotiation that conflicts with WebSocket upgrades.
-		s.server = &http.Server{Addr: s.opts.Addr, Handler: mux}
+		s.server = &http.Server{
+			Addr:         s.opts.Addr,
+			Handler:      mux,
+			ReadTimeout:  s.opts.ReadTimeout,
+			WriteTimeout: s.opts.WriteTimeout,
+			IdleTimeout:  s.opts.IdleTimeout,
+		}
 		ln, err = tls.Listen("tcp", s.opts.Addr, s.opts.TLSConfig)
 	} else {
-		s.server = &http.Server{Addr: s.opts.Addr, Handler: mux}
+		s.server = &http.Server{
+			Addr:         s.opts.Addr,
+			Handler:      mux,
+			ReadTimeout:  s.opts.ReadTimeout,
+			WriteTimeout: s.opts.WriteTimeout,
+			IdleTimeout:  s.opts.IdleTimeout,
+		}
 		ln, err = net.Listen("tcp", s.opts.Addr)
 	}
 	if err != nil {

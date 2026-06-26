@@ -82,7 +82,9 @@ func dtlsConfig(tlsCfg *tls.Config) *dtls.Config {
 	if tlsCfg.VerifyPeerCertificate != nil {
 		cfg.VerifyPeerCertificate = tlsCfg.VerifyPeerCertificate
 	}
-	// Note: GetCertificate and GetClientCertificate have different signatures
-	// in crypto/tls vs pion/dtls, so they cannot be directly mapped.
+	// Note: GetCertificate, GetClientCertificate, and MinVersion have different
+	// signatures/semantics in crypto/tls vs pion/dtls, so they cannot be directly
+	// mapped. DTLS version negotiation is handled through cipher suite selection:
+	// restrict CipherSuites to DTLS 1.3 suites if TLS 1.3 is required.
 	return cfg
 }

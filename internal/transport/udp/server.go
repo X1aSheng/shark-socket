@@ -111,6 +111,9 @@ func (s *Server) StopAccept(context.Context) error {
 }
 
 func (s *Server) Drain(ctx context.Context) error {
+	// Wait for read/sweep/DTLS goroutines to finish. The drain goroutine is
+	// fire-and-forget: StopAccept already closed the listener and cancelled
+	// the context, so all tracked goroutines exit promptly.
 	done := make(chan struct{})
 	go func() {
 		s.wg.Wait()

@@ -116,6 +116,9 @@ func (s *Server) StopAccept(context.Context) error {
 }
 
 func (s *Server) Drain(ctx context.Context) error {
+	// Wait for read/sweep/cleanup goroutines to finish. The drain goroutine
+	// is fire-and-forget: StopAccept already closed the listener/connection
+	// and cancelled the context, so all tracked goroutines exit promptly.
 	done := make(chan struct{})
 	go func() {
 		s.wg.Wait()
@@ -496,8 +499,10 @@ func dtlsConfig(tlsCfg *tls.Config) *dtls.Config {
 	if tlsCfg.VerifyPeerCertificate != nil {
 		cfg.VerifyPeerCertificate = tlsCfg.VerifyPeerCertificate
 	}
-	// Note: GetCertificate and GetClientCertificate have different signatures
-	// in crypto/tls vs pion/dtls, so they cannot be directly mapped.
+	// Note: GetCertificate, GetClientCertificate, and MinVersion have different
+	// signatures/semantics in crypto/tls vs pion/dtls, so they cannot be directly
+	// mapped. DTLS version negotiation is handled through cipher suite selection:
+	// restrict CipherSuites to DTLS 1.3 suites if TLS 1.3 is required.
 	return cfg
 }
 

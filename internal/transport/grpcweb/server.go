@@ -67,6 +67,7 @@ func (s *Server) Start(context.Context) error {
 			Handler:      mux,
 			ReadTimeout:  s.opts.ReadTimeout,
 			WriteTimeout: s.opts.WriteTimeout,
+			IdleTimeout:  s.opts.IdleTimeout,
 		}
 		ln, err = tls.Listen("tcp", s.opts.Addr, s.opts.TLSConfig)
 	} else {
@@ -75,6 +76,7 @@ func (s *Server) Start(context.Context) error {
 			Handler:      mux,
 			ReadTimeout:  s.opts.ReadTimeout,
 			WriteTimeout: s.opts.WriteTimeout,
+			IdleTimeout:  s.opts.IdleTimeout,
 		}
 		ln, err = net.Listen("tcp", s.opts.Addr)
 	}
@@ -108,6 +110,9 @@ func (s *Server) StopAccept(ctx context.Context) error {
 }
 
 func (s *Server) Drain(ctx context.Context) error {
+	// Wait for WebSocket read loops to finish. The drain goroutine is
+	// fire-and-forget: StopAccept already called http.Server.Shutdown,
+	// so all tracked goroutines exit promptly.
 	done := make(chan struct{})
 	go func() {
 		s.wg.Wait()

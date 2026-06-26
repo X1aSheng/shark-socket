@@ -89,6 +89,9 @@ func (s *Server) StopAccept(context.Context) error {
 }
 
 func (s *Server) Drain(ctx context.Context) error {
+	// Wait for acceptLoop to finish. The drain goroutine is fire-and-forget:
+	// StopAccept already closed the listener, so acceptLoop will exit promptly
+	// and the goroutine completes in bounded time.
 	done := make(chan struct{})
 	go func() {
 		s.acceptWG.Wait()
@@ -180,7 +183,11 @@ func (s *Server) handleConn(conn net.Conn) {
 		return
 	}
 
-	go sess.writeLoop()
+	s.connWG.Add(1)
+	go func() {
+		defer s.connWG.Done()
+		sess.writeLoop()
+	}()
 	sess.readLoop(func(payload []byte) {
 		payload, err := s.rt.Plugins().OnMessage(sess, payload)
 		if err != nil {

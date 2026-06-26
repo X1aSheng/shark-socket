@@ -18,6 +18,8 @@ type Options struct {
 	PongTimeout    time.Duration
 	MaxMessageSize int64
 	WriteTimeout   time.Duration
+	ReadTimeout    time.Duration
+	IdleTimeout    time.Duration
 	MaxConnections int64
 	AcceptRate     float64
 }
@@ -31,6 +33,9 @@ func defaultOptions() Options {
 		PingInterval:   30 * time.Second,
 		PongTimeout:    60 * time.Second,
 		MaxMessageSize: 1024 * 1024,
+		ReadTimeout:    10 * time.Second,
+		WriteTimeout:   10 * time.Second,
+		IdleTimeout:    120 * time.Second,
 		CheckOrigin: func(*http.Request) bool {
 			return false // reject by default; use WithCheckOrigin to allow origins
 		},

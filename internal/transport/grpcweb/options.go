@@ -18,6 +18,7 @@ type Options struct {
 	AcceptRate      float64
 	ReadTimeout     time.Duration
 	WriteTimeout    time.Duration
+	IdleTimeout     time.Duration
 	WebSocket       bool
 	WebSocketPath   string
 	CheckOrigin     func(*http.Request) bool
@@ -32,6 +33,7 @@ func defaultOptions() Options {
 		MaxMessageBytes: 4 * 1024 * 1024,
 		ReadTimeout:     10 * time.Second,
 		WriteTimeout:    10 * time.Second,
+		IdleTimeout:     60 * time.Second,
 		WebSocketPath:   "/grpc/ws",
 		CheckOrigin: func(*http.Request) bool {
 			return false // reject by default; use WithCheckOrigin to allow origins
