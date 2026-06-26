@@ -31,14 +31,11 @@
 
 | 文件 | 职责 |
 |------|------|
-| `protocol.go` | Protocol 枚举类型 + String() 方法 |
+| `types.go` | Protocol 类型 (string alias) + 协议常量 |
 | `session.go` | Session 接口 + SessionState 枚举 + SessionManager 接口 |
-| `server.go` | Server 接口 + RuntimeConfigurable + StagedServer |
-| `runtime.go` | Runtime 接口（依赖容器） |
-| `message.go` | Message 结构体 |
-| `handler.go` | Handler 函数类型 + TypedHandler + AdaptTyped |
-| `plugin.go` | Plugin 接口 + PluginRunner 接口 + 控制错误 |
-| `codec.go` | Codec[M] 泛型接口 + 内置实现 |
+| `server.go` | Server 接口 + RuntimeConfigurable + StagedServer + PluginRunner 接口 |
+| `message.go` | Message 结构体 + Handler 类型 + AdaptTyped + Codec[M] 接口 |
+| `plugin.go` | Plugin 接口 + BasePlugin + 控制错误 |
 | `errors.go` | 完整错误体系（详见 ERRORS.md） |
 | `observability.go` | Logger / Metrics / Tracer 接口 |
 
@@ -49,33 +46,26 @@
 ### 2.1 定义
 
 ```go
-// Protocol 是协议身份标识，uint8 底层，编译期常量。
-type Protocol uint8
+// Protocol is a string alias identifying the transport protocol.
+// Defined in internal/core/types.go.
+type Protocol string
 
 const (
-    TCP       Protocol = 1
-    UDP       Protocol = 2
-    CoAP      Protocol = 3
-    LwM2M     Protocol = 4
-    WebSocket Protocol = 5
-    HTTP      Protocol = 6  // 保留（轻量支持）
-    QUIC      Protocol = 7  // P1 扩展
-    GRPCWeb   Protocol = 8  // P1 扩展
-    Custom    Protocol = 99 // 自定义协议
+    ProtocolTCP     Protocol = "tcp"
+    ProtocolUDP     Protocol = "udp"
+    ProtocolCoAP    Protocol = "coap"
+    ProtocolWS      Protocol = "websocket"
+    ProtocolHTTP    Protocol = "http"
+    ProtocolQUIC    Protocol = "quic"
+    ProtocolGRPCWeb Protocol = "grpc-web"
+    ProtocolCustom  Protocol = "custom"
 )
 ```
 
-### 2.2 String() 方法
+### 2.2 用途
 
-```go
-func (p Protocol) String() string
-```
+Protocol 是 string 别名，无需显式 String() 方法。Go 原生支持 string 类型的 fmt.Stringer。
 
-**实现要求：**
-- 满足 `fmt.Stringer` 接口
-- 返回小写字符串（`"tcp"`, `"udp"`, `"coap"`, `"lwm2m"`, `"websocket"`, `"http"`, `"quic"`, `"grpc-web"`, `"custom"`）
-- 未知值返回 `"unknown"`
-- Go 1.26 使用 `unique` 包池化协议标签字符串，减少分配
 
 ### 2.3 用途
 
@@ -239,7 +229,7 @@ type SessionManager interface {
     // 统计与遍历
     Count() int64
     Range(func(Session) bool)     // 可中断遍历，返回 false 停止
-    All() iter.Seq[Session]       // Go 1.26 iter 包
+    Snapshot() []Session  -- returns a copy of all active sessions
 
     // 广播（内部快照，不持锁发送）
     Broadcast([]byte) error
@@ -471,17 +461,16 @@ func (BasePlugin) OnClose(Session)                                  {}
 ### 8.3 PluginRunner 接口
 
 ```go
-// PluginRunner 是插件链运行器接口。
+// PluginRunner is the plugin chain execution interface.
+// Defined in internal/core/server.go.
 type PluginRunner interface {
-    // 注册插件，重复 Name 后注册覆盖（记录 Warn 日志）。
-    Register(Plugin) error
-
-    // 执行入口：以下方法在热路径调用，panic 必须隔离。
-    RunAccept(Session) error
-    RunMessage(Session, []byte) ([]byte, error)
-    RunClose(Session)
+    OnAccept(Session) error
+    OnMessage(Session, []byte) ([]byte, error)
+    OnClose(Session)
 }
 ```
+
+**Note:** Plugin registration is handled by the concrete `PluginChain` type, not the `PluginRunner` interface.
 
 ### 8.4 特殊控制错误
 
@@ -497,33 +486,31 @@ var (
 
 ### 8.5 PluginRunner 执行规则
 
-**RunAccept（按 Priority 升序）：**
+**OnAccept（按 Priority 升序）：**
 
 ```
-→ ErrPluginBlock：中断 + Close(sess) + 记录 metrics
-→ 普通 error + stopOnError=true：中断 + Close(sess)
-→ 普通 error + stopOnError=false：记录日志 + 继续
-→ panic：recover + 记录 error + 继续或中断（可配置）
+→ Plugin returns non-nil error：中断 + Close(sess)
+→ panic：recover + log via configured logger + return ErrPluginPanic
+→ nil：continue to next plugin
 ```
 
-**RunMessage（按 Priority 升序，支持 payload 改写）：**
+**OnMessage（按 Priority 升序，支持 payload 改写）：**
 
 ```
 data = originalPayload
 for each plugin:
   out, err = plugin.OnMessage(sess, data)
-  → ErrPluginDrop：停止链，不调用 Handler，返回 nil
-  → ErrPluginBlock：停止链，Close(sess)，返回 error
-  → 普通 error：按策略处理
+  → ErrPluginDrop：停止链，不调用 Handler，返回 nil error
+  → Other error：停止链，返回 error
   → nil：data = out（允许 plugin 改写 payload）
 return data, nil
 ```
 
-**RunClose（按 Priority 逆序，不可中断）：**
+**OnClose（按 Priority 逆序，不可中断）：**
 
 ```
 for each plugin（逆序）:
-  defer-style：即使 panic 也继续执行后续插件
+  panic-safe：即使 panic 也继续执行后续插件
   plugin.OnClose(sess)
 ```
 
@@ -551,7 +538,7 @@ type TypedHandler[M any] func(Session, M) error
 
 ```go
 // AdaptTyped 将 TypedHandler[M] 包装为 Handler，解码失败返回 ErrDecodeFailure。
-func AdaptTyped[M any](h TypedHandler[M], codec Codec[M]) Handler {
+func AdaptTyped[M any](codec Codec[M], h TypedHandler[M]) Handler {
     return func(s Session, msg Message) error {
         typed, err := codec.Decode(msg.Payload)
         if err != nil {

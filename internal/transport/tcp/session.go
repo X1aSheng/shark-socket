@@ -74,7 +74,7 @@ func (s *session) Send(payload []byte) error {
 	select {
 	case s.writeCh <- copied:
 		if s.writeQueueHighWater > 0 && len(s.writeCh) >= int(float64(cap(s.writeCh))*s.writeQueueHighWater) {
-			_ = cap(s.writeCh) // avoid unused import of nothing — gauge is best-effort
+			// high-water mark reached; caller can observe via write errors
 		}
 		return nil
 	case <-s.ctx.Done():

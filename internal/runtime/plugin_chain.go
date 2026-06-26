@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"log/slog"
 	"slices"
 	"sync"
 
@@ -11,12 +10,20 @@ import (
 type PluginChain struct {
 	mu      sync.RWMutex
 	plugins []core.Plugin
+	logger  core.Logger
 }
 
 func NewPluginChain(plugins ...core.Plugin) *PluginChain {
-	c := &PluginChain{}
+	c := &PluginChain{logger: core.NopLogger()}
 	c.Append(plugins...)
 	return c
+}
+
+// SetLogger sets the logger used for panic recovery logging.
+func (c *PluginChain) SetLogger(logger core.Logger) {
+	if logger != nil {
+		c.logger = logger
+	}
 }
 
 func (c *PluginChain) Append(plugins ...core.Plugin) {
@@ -37,7 +44,7 @@ func (c *PluginChain) OnAccept(sess core.Session) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	for _, p := range c.plugins {
-		if err := safeAccept(p, sess); err != nil {
+		if err := c.safeAccept(p, sess); err != nil {
 			return err
 		}
 	}
@@ -49,7 +56,7 @@ func (c *PluginChain) OnMessage(sess core.Session, data []byte) ([]byte, error) 
 	defer c.mu.RUnlock()
 	var err error
 	for _, p := range c.plugins {
-		data, err = safeMessage(p, sess, data)
+		data, err = c.safeMessage(p, sess, data)
 		if err != nil {
 			return nil, err
 		}
@@ -61,24 +68,24 @@ func (c *PluginChain) OnClose(sess core.Session) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	for i := len(c.plugins) - 1; i >= 0; i-- {
-		safeClose(c.plugins[i], sess)
+		c.safeClose(c.plugins[i], sess)
 	}
 }
 
-func safeAccept(p core.Plugin, sess core.Session) (err error) {
+func (c *PluginChain) safeAccept(p core.Plugin, sess core.Session) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Error("plugin accept panic", "plugin", p.Name(), "panic", r)
+			c.logger.Error("plugin accept panic", "plugin", p.Name(), "panic", r)
 			err = core.ErrPluginPanic
 		}
 	}()
 	return p.OnAccept(sess)
 }
 
-func safeMessage(p core.Plugin, sess core.Session, data []byte) (out []byte, err error) {
+func (c *PluginChain) safeMessage(p core.Plugin, sess core.Session, data []byte) (out []byte, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Error("plugin message panic", "plugin", p.Name(), "panic", r)
+			c.logger.Error("plugin message panic", "plugin", p.Name(), "panic", r)
 			out = data
 			err = core.ErrPluginPanic
 		}
@@ -86,10 +93,10 @@ func safeMessage(p core.Plugin, sess core.Session, data []byte) (out []byte, err
 	return p.OnMessage(sess, data)
 }
 
-func safeClose(p core.Plugin, sess core.Session) {
+func (c *PluginChain) safeClose(p core.Plugin, sess core.Session) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Error("plugin close panic", "plugin", p.Name(), "panic", r)
+			c.logger.Error("plugin close panic", "plugin", p.Name(), "panic", r)
 		}
 	}()
 	p.OnClose(sess)

@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"sync"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
@@ -18,6 +19,7 @@ type Cluster struct {
 	cancel  func()
 	stop    chan struct{}
 	once    sync.Once
+	wg      sync.WaitGroup
 }
 
 type clusterEnvelope struct {
@@ -54,7 +56,11 @@ func (p *Cluster) Start(buffer int) {
 	p.once.Do(func() {
 		ch, cancel := p.bus.Subscribe(p.topic, buffer)
 		p.cancel = cancel
-		go p.consume(ch)
+		p.wg.Add(1)
+		go func() {
+			defer p.wg.Done()
+			p.consume(ch)
+		}()
 	})
 }
 
@@ -67,6 +73,7 @@ func (p *Cluster) Stop() {
 	default:
 		close(p.stop)
 	}
+	p.wg.Wait()
 }
 
 func (p *Cluster) OnMessage(sess core.Session, data []byte) ([]byte, error) {
@@ -109,7 +116,9 @@ func (p *Cluster) handleClusterMessage(data []byte) {
 	if env.NodeID == p.nodeID || env.Topic != p.topic || len(env.Payload) == 0 {
 		return
 	}
-	_ = p.manager.Broadcast(env.Payload)
+	if err := p.manager.Broadcast(env.Payload); err != nil {
+		log.Printf("cluster: broadcast error: %v", err)
+	}
 }
 
 func (p *Cluster) Close(context.Context) error {

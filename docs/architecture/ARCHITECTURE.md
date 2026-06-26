@@ -90,7 +90,7 @@ Shark-Socket 是**高性能、可扩展的多协议服务端网络框架**，采
 │ Layer 0: api/                                                    │
 │   对外门面层：类型别名、工厂函数、Codec 接口定义                 │
 ├─────────────────────────────────────────────────────────────────┤
-│ Layer 1: cmd/ + internal/application/                            │
+│ Layer 1: cmd/ + internal/app/                            │
 │   可运行入口 + 应用装配层                                        │
 │   配置加载（JSON + env）→ Gateway 装配 → 健康/指标服务 → 信号处理│
 │   配置验证在 application 层统一执行，不在 Start() 中执行         │
@@ -108,7 +108,7 @@ Shark-Socket 是**高性能、可扩展的多协议服务端网络框架**，采
 │   可观测接口：Logger、Metrics、Tracer                            │
 │   错误体系：完整错误变量 + 分类判断函数（详见 ERRORS.md）        │
 ├─────────────────────────────────────────────────────────────────┤
-│ Layer 5: internal/infrastructure/                                │
+│ Layer 5: internal/infra/                                │
 │   基础设施层：cache、store、pubsub、circuitbreaker、observability│
 │   P2 引入：bufferpool、timewheel、logsampler                     │
 └─────────────────────────────────────────────────────────────────┘

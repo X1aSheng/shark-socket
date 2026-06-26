@@ -59,6 +59,17 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
           govulncheck ./...
 
+  docker-build:
+    name: Docker Build (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -f deploy/docker/Dockerfile -t shark-socket:ci .
+
   validate-ubuntu:
     name: Validate (ubuntu-latest)
     runs-on: ubuntu-latest

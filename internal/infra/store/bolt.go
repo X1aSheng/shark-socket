@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -36,7 +37,9 @@ func (b *BoltStore) isClosed() bool {
 }
 
 func (b *BoltStore) Save(bucket, key string, value []byte) {
-	_ = b.SaveV2(bucket, key, value)
+	if err := b.SaveV2(bucket, key, value); err != nil {
+		log.Printf("bolt: save error in bucket %s: %v", bucket, err)
+	}
 }
 
 func (b *BoltStore) SaveV2(bucket, key string, value []byte) error {
@@ -78,7 +81,9 @@ func (b *BoltStore) LoadV2(bucket, key string) ([]byte, bool, error) {
 }
 
 func (b *BoltStore) Delete(bucket, key string) {
-	_ = b.DeleteV2(bucket, key)
+	if err := b.DeleteV2(bucket, key); err != nil {
+		log.Printf("bolt: delete error in bucket %s: %v", bucket, err)
+	}
 }
 
 func (b *BoltStore) DeleteV2(bucket, key string) error {

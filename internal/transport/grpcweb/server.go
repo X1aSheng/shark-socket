@@ -193,12 +193,17 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	if s.opts.Handler != nil {
 		msg := core.Message{SessionID: id, Protocol: core.ProtocolGRPCWeb, Payload: body}
 		if err := s.opts.Handler(sess, msg); err != nil {
+			if s.rt != nil {
+				s.rt.Logger().Error("grpc-web handler error", "session", id, "error", err)
+			}
 			_ = sess.SendTrailers(13, err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
-	_ = sess.SendTrailers(0, "")
+	if err := sess.SendTrailers(0, ""); err != nil && s.rt != nil {
+		s.rt.Logger().Warn("grpc-web send trailers error", "session", id, "error", err)
+	}
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {

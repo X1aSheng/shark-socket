@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "shark-socket.fullname" . }}
+  labels:
+    {{- include "shark-socket.labels" . | nindent 4 }}
+data:
+  SHARK_TCP_ADDR: {{ .Values.config.tcpAddr | quote }}
+  SHARK_METRICS_ADDR: {{ .Values.config.metricsAddr | quote }}
+  SHARK_HEALTH_ADDR: {{ .Values.config.healthAddr | quote }}

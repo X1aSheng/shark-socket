@@ -3,6 +3,12 @@
 .gitignore
 .dockerignore
 
+# Environment & secrets
+.env
+.env.*
+*.pem
+*.key
+
 # CI
 .github
 .golangci.yml

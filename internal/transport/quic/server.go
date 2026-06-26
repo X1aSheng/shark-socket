@@ -180,7 +180,9 @@ func (s *Server) handleStream(sess *session, stream *quicgo.Stream) {
 	}
 	if s.opts.Handler != nil {
 		msg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolQUIC, Payload: data}
-		_ = s.opts.Handler(sess, msg)
+		if err := s.opts.Handler(sess, msg); err != nil && s.rt != nil {
+			s.rt.Logger().Error("quic handler error", "session", sess.ID(), "error", err)
+		}
 	}
 }
 

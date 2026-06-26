@@ -30,6 +30,7 @@ type ProtocolConfig struct {
 	TLSKeyFile      string   `json:"tls_key_file,omitempty"`
 	TLSClientCAFile string   `json:"tls_client_ca_file,omitempty"`
 	TLSClientAuth   string   `json:"tls_client_auth,omitempty"`
+	TLSMinVersion   string   `json:"tls_min_version,omitempty"`
 	AllowedOrigins  []string `json:"allowed_origins,omitempty"`
 }
 
@@ -278,6 +279,9 @@ func mergeProtocol(base, override ProtocolConfig) ProtocolConfig {
 	if override.TLSClientAuth != "" {
 		base.TLSClientAuth = override.TLSClientAuth
 	}
+		if override.TLSMinVersion != "" {
+			base.TLSMinVersion = override.TLSMinVersion
+		}
 	if override.AllowedOrigins != nil {
 		base.AllowedOrigins = append([]string(nil), override.AllowedOrigins...)
 	}
@@ -295,7 +299,7 @@ func loadServerTLSConfig(proto ProtocolConfig, nextProtos ...string) (*tls.Confi
 	cfg := &tls.Config{
 		GetCertificate: cache.GetCertificate,
 		NextProtos:     nextProtos,
-		MinVersion:     tls.VersionTLS12,
+		MinVersion:     parseTLSMinVersion(proto.TLSMinVersion),
 	}
 	if proto.TLSClientAuth != "" {
 		clientAuth, err := parseTLSClientAuth(proto.TLSClientAuth)
@@ -308,6 +312,23 @@ func loadServerTLSConfig(proto ProtocolConfig, nextProtos ...string) (*tls.Confi
 		cfg.ClientCAs = pool
 	}
 	return cfg, cache, nil
+}
+
+// parseTLSMinVersion converts a version string ("1.2", "1.3") to a tls version constant.
+// Returns tls.VersionTLS12 by default for backward compatibility.
+func parseTLSMinVersion(version string) uint16 {
+	switch strings.TrimSpace(version) {
+	case "1.3", "13":
+		return tls.VersionTLS13
+	case "1.2", "12", "":
+		return tls.VersionTLS12
+	case "1.1", "11":
+		return tls.VersionTLS11
+	case "1.0", "10":
+		return tls.VersionTLS10
+	default:
+		return tls.VersionTLS12
+	}
 }
 
 func parseTLSClientAuth(value string) (tls.ClientAuthType, error) {

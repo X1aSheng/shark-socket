@@ -12,6 +12,7 @@ import (
 
 type Gateway struct {
 	mu        sync.RWMutex
+	stopMu    sync.Mutex
 	servers   map[core.Protocol]core.Server
 	order     []core.Protocol
 	rt        *Runtime
@@ -31,6 +32,9 @@ func NewGateway(opts ...GatewayOption) *Gateway {
 	}
 	for _, opt := range opts {
 		opt(&cfg)
+	}
+	if chain, ok := cfg.plugins.(*PluginChain); ok {
+		chain.SetLogger(cfg.logger)
 	}
 	return &Gateway{
 		servers:  make(map[core.Protocol]core.Server),
@@ -91,6 +95,9 @@ func (g *Gateway) Start(ctx context.Context) error {
 }
 
 func (g *Gateway) Stop(ctx context.Context) error {
+	g.stopMu.Lock()
+	defer g.stopMu.Unlock()
+
 	servers := g.snapshot()
 	var firstErr error
 

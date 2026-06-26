@@ -31,6 +31,7 @@ func (p *Persistence) OnAccept(sess core.Session) error {
 	}
 	value := []byte(fmt.Sprintf("accepted protocol=%s remote=%s at=%s", sess.Protocol(), sess.RemoteAddr(), time.Now().UTC().Format(time.RFC3339Nano)))
 	p.store.Save(p.bucket, p.key(sess), value)
+	// Note: V1 Store interface discards errors; use PersistenceV2 for error-aware persistence.
 	return nil
 }
 

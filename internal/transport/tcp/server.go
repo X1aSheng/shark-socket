@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"log/slog"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -147,7 +146,9 @@ func (s *Server) acceptLoop(ctx context.Context) {
 			if s.closed.Load() || ctx.Err() != nil {
 				return
 			}
-			slog.Warn("tcp accept failed", "error", err)
+			if s.rt != nil {
+				s.rt.Logger().Warn("tcp accept failed", "error", err)
+			}
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
