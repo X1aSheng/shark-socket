@@ -296,32 +296,25 @@ shark-socket/
 │           └── templates/
 │
 ├── docs/
-│   ├── ARCHITECTURE.md                 # 本文档
-│   ├── CONTRACTS.md                    # 核心契约层所有接口定义
-│   ├── LIFECYCLE.md                    # 连接生命周期、状态机汇总
-│   ├── ERRORS.md                       # 错误体系、分类函数
-│   ├── GATEWAY.md                      # 运行时层详细设计
-│   ├── TRANSPORT.md                    # 传输层协议实现细节
-│   ├── PROTOCOL.md                     # 应用协议层（LwM2M）
-│   ├── PLUGIN.md                       # 插件层设计
-│   ├── OBSERVABILITY.md                # 可观测性
-│   ├── SECURITY.md                     # 安全与防御
-│   ├── PERFORMANCE.md                  # 性能演进
-│   ├── CONFIGURATION.md                # 配置完整参考
-│   ├── TESTING.md                      # 测试策略
-│   ├── DEPLOYMENT.md                   # 部署指南
-│   ├── ROADMAP.md                      # 实施路线
-│   └── adr/
-│       ├── README.md                   # ADR 索引
-│       ├── ADR-001-session-raw-bytes.md
-│       ├── ADR-002-gateway-owns-runtime.md
-│       ├── ADR-003-staged-shutdown.md
-│       ├── ADR-004-plugin-panic-isolation.md
-│       ├── ADR-005-codec-adaptation-layer.md
-│       ├── ADR-006-benchmark-driven-optimization.md
-│       ├── ADR-007-build-proxy-configurable.md
+│   ├── architecture/
+│   │   ├── ARCHITECTURE.md                 # 本文档
+│   │   ├── CONTRACTS.md                    # 核心契约层接口定义
+│   │   ├── GATEWAY.md                      # 运行时层设计
+│   │   ├── DEPLOYMENT.md                   # 部署指南
+│   │   ├── PLUGIN.md                       # 插件层设计
+│   │   └── ARCHITECTURE-FILE-STRUCT.md     # 文件结构
+│   ├── guides/
+│   │   ├── CONFIGURATION-20260530.md       # 配置参考
+│   │   ├── TEST-STRATEGY-20260529.md       # 测试策略
+│   │   ├── PROTOCOL-TEST-GUIDE-20260530.md # 协议测试
+│   │   └── EXAMPLES.md                     # 示例
+│   ├── decisions/
+│   │   └── (ADR 文件)
+│   └── reports/
+│       ├── ARCHITECTURE-ANALYSIS-260626.md # 架构分析
+│       ├── ARCHITECTURE-METHODOLOGY-260626.md # 架构方法论
+│       └── PROJECT-REVIEW-*.md             # 项目审计报告
 │       ├── ADR-008-mqtt-external-broker.md
-│       ├── ADR-009-protocol-integration-boundary.md
 │
 ├── go.mod                              # module shark-socket, go 1.26
 ├── go.sum

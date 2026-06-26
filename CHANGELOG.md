@@ -7,7 +7,74 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
-### Benchmark & Test Hardening (2026-06-15)
+### Comprehensive Quality Hardening (2026-06-26)
+
+#### V1 Interface Cleanup (Breaking)
+- Removed legacy `Store` interface (error-discarding `Save`/`Load`/`Delete`).
+- Renamed `StoreV2` → `Store` (all methods return errors + `List`/`Close`).
+- Removed legacy `Persistence` plugin (V1). Renamed `PersistenceV2` → `Persistence`.
+- Removed `BoltStore` V1 wrapper methods (`Save`→`SaveV2` internally, etc.).
+- Removed `api.PersistenceV2Plugin` and `api.StoreV2` type aliases.
+- Updated all tests, benchmarks, and docs to use unified interfaces.
+
+#### Concurrency & Safety Fixes
+- **PubSub (Critical):** Fixed send-on-closed-channel panic — `Publish` now holds `RLock` during iteration+send, preventing concurrent `cancel()` from closing subscriber channels.
+- **PrometheusMetrics:** Fixed label slice data race — `IncCounter`/`ObserveHistogram` now copy labels instead of reusing backing arrays.
+- **Cache:** Fixed `Get()` TOCTOU race — expired items are no longer deleted inside `Get`; `Sweep` handles cleanup.
+- **MessageLog:** `Replay()` and `Prune()` now hold mutex for concurrent `Append` safety.
+
+#### Plugin Improvements
+- **RateLimit:** Replaced fixed-window counter with true sliding window (`[]time.Time` timestamp slice), eliminating 2x burst vulnerability at window boundaries.
+- **AutoBan:** Replaced global sweep (clear all every 30min) with per-IP ban expiry (`map[string]time.Time`). Expired bans auto-removed on `OnAccept` check. Sweep interval reduced to 5min.
+- **Heartbeat:** Removed `sync.Once` from `Start()` — now supports restart after `Stop()` via `running` flag + channel recreation.
+- **RateLimit/AutoBan:** `Stop()` now uses `sync.Once` to prevent double-close panic. `Start()` recreates stop channel if previously closed. Added `sync.WaitGroup` for goroutine tracking.
+- **Cluster:** Consume goroutine now tracked in `sync.WaitGroup`. Added broadcast amplification warning docs.
+- **Persistence/Cluster:** Replaced `log.Printf` with `core.Logger` field + `SetLogger()`.
+
+#### Transport Layer Fixes
+- **HTTP/WebSocket/gRPC-Web:** Added `s.closed.Store(false)` in `Start()` to enable proper restart after `Stop()`.
+- **HTTP/WebSocket/gRPC-Web:** `Serve()` goroutines now tracked in `sync.WaitGroup`.
+- **HTTP:** Added `Drain()` implementation (was no-op).
+- **WebSocket/gRPC-Web:** Added `ReadTimeout`/`WriteTimeout`/`IdleTimeout` to `http.Server`.
+- **TCP:** Unified `Stop()` order to `StopAccept→Drain→CloseSessions` (consistent with all other transports).
+- **TCP:** `writeLoop` goroutine now tracked in `connWG`.
+- **CoAP:** ACK send errors now logged via `rt.Logger().Warn`.
+- **QUIC:** Handler errors now logged.
+- **DTLS:** Extracted shared `DTLSConfig()` to `transport/shared/`, eliminating 22-line duplication between UDP and CoAP.
+
+#### Gateway & Runtime
+- **Gateway.Stop():** Added `stopMu` mutex for concurrent `Stop()` call protection.
+- **Gateway rollback:** `Start()` failure rollback now logs individual `Stop()` errors.
+- **PluginChain:** Panic recovery now uses configured `core.Logger` instead of `slog` directly.
+- **PluginChain:** `safeAccept/safeMessage/safeClose` converted to methods with logger access.
+
+#### Security Hardening
+- **TLS MinVersion:** Now configurable via `TLSMinVersion` field (was hardcoded TLS 1.2).
+- **TLS:** `parseTLSMinVersion` rejects versions below 1.2 (1.0/1.1 are insecure).
+- **Health/Metrics HTTP:** Added `ReadTimeout`/`WriteTimeout`/`IdleTimeout` to internal servers.
+- **allowedOriginChecker:** Added docs warning that `"*"` wildcard is dev-only.
+
+#### Deploy & CI
+- **CI Actions:** Fixed versions — `checkout@v4`, `setup-go@v5`, `golangci-lint@v6`, `upload-artifact@v4`.
+- **CI:** Added `docker-build` job for image validation.
+- **Dockerfile:** Added `ENV GOTOOLCHAIN=auto` for Go toolchain compatibility.
+- **docker-compose:** Added Mosquitto config mount with security notes.
+- **Helm:** Added `configmap.yaml` and `serviceaccount.yaml` templates.
+- **K8s:** Added `namespace: shark-socket` to Deployment and Service for consistency.
+- **.dockerignore:** Added `.env`, `.env.*`, `*.pem`, `*.key` exclusions.
+- **.gitignore:** Added `.claude/` exclusion.
+
+#### Documentation
+- Updated `ARCHITECTURE.md` directory tree (application/→app/, infrastructure/→infra/, core file list).
+- Updated `CONTRACTS.md` Protocol type, PluginRunner methods, file references.
+- Updated `PLUGIN.md` §9 from `PersistenceV2Plugin` to `Persistence Plugin`.
+- Updated `README.md` coverage number, feature matrix, plugin list.
+- Added `ARCHITECTURE-ANALYSIS-260626.md` — comprehensive architecture analysis.
+- Added `ARCHITECTURE-METHODOLOGY-260626.md` — design decisions and methodology.
+- Updated `PROJECT-REVIEW-260626-V3.md` — V3 audit with 22 findings.
+- Updated `PROJECT-REVIEW-260626-230000.md` — V2 audit with 31 findings.
+
+### Protocol Test Coverage (2026-06-15)
 
 #### Port Exhaustion Fixes (Windows)
 - Added `WithClientLinger(0)` option to TCP client — sends RST on close, avoiding TIME_WAIT.

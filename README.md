@@ -25,7 +25,7 @@ runtime ownership, plugin execution, and graceful shutdown explicit.
 | LwM2M | Implemented | Object/resource model with operation masks, TLV binary codec, discover/register/update/deregister/write/read, Observer notifications |
 | QUIC | Implemented | TLS-required stream transport using quic-go, write deadlines, accept rate limiting |
 | gRPC-Web | Implemented | Direct HTTP mode, binary framing/trailers, and WebSocket mode |
-| Plugins | Implemented | Blacklist, RateLimit, Heartbeat, Persistence, AutoBan, SlowHandler, Cluster |
+| Plugins | Implemented | Blacklist, RateLimit (sliding window), Heartbeat, Persistence (Store+MessageLog), AutoBan (per-IP expiry), SlowHandler, Cluster |
 | Security | Implemented | TLS cert hot-reload via file watcher, mTLS client auth, DTLS for UDP/CoAP |
 | Persistence | Implemented | Store interface (error-returning), BoltDB backend, durable message log with sequence numbers, session snapshots |
 | Infra | Implemented | In-memory cache/store/pubsub/circuitbreaker/observability, Prometheus metrics exporter, OpenTelemetry tracer adapter, TLS cert cache |
@@ -64,7 +64,7 @@ docker compose -f deploy/docker/docker-compose.yml --profile test run mqtt-test
 
 | Check | Command | Status |
 |-------|---------|--------|
-| Unit tests (25 suites) | `go test ./...` | ✅ |
+| Unit tests (26 suites) | `go test ./...` | ✅ |
 | Race detection | `go test -race ./...` | ✅ |
 | Coverage (70% threshold) | `go run scripts/run_tests.go -mode cover` | ✅ 75.0% |
 | Lint (golangci-lint) | `golangci-lint run` | ✅ |
@@ -139,5 +139,7 @@ Raw JSON and readable reports are written to `logs/`.
 - [Test Strategy](docs/guides/TEST-STRATEGY-20260529.md)
 - [Protocol Test Guide](docs/guides/PROTOCOL-TEST-GUIDE-20260530.md)
 - [Examples](docs/guides/EXAMPLES.md)
-- [Latest Project Review](docs/reports/PROJECT-REVIEW-260615-211500.md)
+- [Architecture Analysis](docs/reports/ARCHITECTURE-ANALYSIS-260626.md)
+- [Architecture Methodology](docs/reports/ARCHITECTURE-METHODOLOGY-260626.md)
+- [Latest Project Review (V3)](docs/reports/PROJECT-REVIEW-260626-V3.md)
 - [Changelog](CHANGELOG.md)
