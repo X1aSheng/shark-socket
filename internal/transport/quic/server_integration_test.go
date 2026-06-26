@@ -167,3 +167,61 @@ func testTLSConfig(t *testing.T) *tls.Config {
 	}
 	return &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"shark-socket-quic"}}
 }
+
+func TestGatewayQUICPluginDropSuppressesResponse(t *testing.T) {
+	dropAll := dropPlugin{name: "drop"}
+	tlsCfg := testTLSConfig(t)
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithTLS(tlsCfg),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			t.Error("handler should not be called when plugin drops")
+			return nil
+		}),
+	)
+	gateway := runtime.NewGateway(runtime.WithPlugins(dropAll))
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer stopGateway(t, gateway)
+
+	conn, err := quicgo.DialAddr(context.Background(), server.Addr().String(), ClientTLSConfig(true), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseWithError(0, "")
+
+	stream, err := conn.OpenStreamSync(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = stream.Write([]byte("should-be-dropped"))
+	_ = stream.Close()
+
+	// The plugin drops the message; the server should keep the session alive.
+	time.Sleep(200 * time.Millisecond)
+	if count := gateway.Runtime().Sessions().Count(); count != 1 {
+		t.Errorf("session count = %d, want 1 (session kept alive)", count)
+	}
+}
+
+type dropPlugin struct {
+	core.BasePlugin
+	name string
+}
+
+func (p dropPlugin) Name() string { return p.name }
+
+func (p dropPlugin) OnMessage(_ core.Session, _ []byte) ([]byte, error) {
+	return nil, core.ErrPluginDrop
+}
+
+func stopGateway(tb testing.TB, gateway *runtime.Gateway) {
+	tb.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_ = gateway.Stop(ctx)
+}

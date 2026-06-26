@@ -1,9 +1,11 @@
 package lwm2m
 
 import (
+	"bytes"
 	"encoding/binary"
 	"math"
 	"testing"
+	"time"
 )
 
 func TestTLVRoundTripString(t *testing.T) {
@@ -99,6 +101,56 @@ func TestTLVDecodeTruncated(t *testing.T) {
 	_, err := DecodeTLV([]byte{0x80})
 	if err == nil {
 		t.Fatal("expected error for truncated data")
+	}
+}
+
+func TestTLVRoundTripObjLink(t *testing.T) {
+	// ObjLink is two uint16 values packed into 4 bytes (big-endian).
+	// ResourceValue() returns []byte for ObjLink type.
+	objLinkBytes := []byte{0x00, 0x01, 0x00, 0x02}
+	entries := []tlvEntry{
+		{ResourceID: 3, Type: ResourceObjLink, Value: objLinkBytes},
+	}
+	data, err := EncodeTLV(entries)
+	if err != nil {
+		t.Fatalf("EncodeTLV: %v", err)
+	}
+	results, err := DecodeTLV(data)
+	if err != nil {
+		t.Fatalf("DecodeTLV: %v", err)
+	}
+	v, ok := results[0].ResourceValue().([]byte)
+	if !ok {
+		t.Fatalf("Value type = %T, want []byte", results[0].ResourceValue())
+	}
+	if !bytes.Equal(v, objLinkBytes) {
+		t.Fatalf("Value = %v, want %v", v, objLinkBytes)
+	}
+	if results[0].Type != ResourceObjLink {
+		t.Fatalf("Type = %d, want ResourceObjLink", results[0].Type)
+	}
+}
+
+func TestTLVRoundTripTime(t *testing.T) {
+	// Time returns time.Time from ResourceValue().
+	entries := []tlvEntry{
+		{ResourceID: 4, Type: ResourceTime, Value: []byte{0x60, 0x00, 0x00, 0x00}},
+	}
+	data, err := EncodeTLV(entries)
+	if err != nil {
+		t.Fatalf("EncodeTLV: %v", err)
+	}
+	results, err := DecodeTLV(data)
+	if err != nil {
+		t.Fatalf("DecodeTLV: %v", err)
+	}
+	v, ok := results[0].ResourceValue().(time.Time)
+	if !ok {
+		t.Fatalf("Value type = %T, want time.Time", results[0].ResourceValue())
+	}
+	// 0x60000000 = 1610612736 Unix timestamp
+	if v.Unix() != 1610612736 {
+		t.Fatalf("Unix = %d, want 1610612736", v.Unix())
 	}
 }
 
