@@ -89,14 +89,15 @@ func (s *session) Send(payload []byte) error {
 }
 
 func (s *session) Close(context.Context) error {
+	var err error
 	s.closeOnce.Do(func() {
 		s.state.Store(uint32(core.StateClosed))
 		if s.dtlsConn != nil {
-			s.dtlsConn.Close()
+			err = s.dtlsConn.Close()
 		}
 		s.cancel()
 	})
-	return nil
+	return err
 }
 
 var _ core.Session = (*session)(nil)

@@ -22,6 +22,7 @@ type session struct {
 	meta      sync.Map
 	ctx       context.Context
 	cancel    context.CancelFunc
+	closeOnce sync.Once
 }
 
 func newSession(id uint64, w stdhttp.ResponseWriter, r *stdhttp.Request) *session {
@@ -63,8 +64,10 @@ func (s *session) Send(payload []byte) error {
 }
 
 func (s *session) Close(context.Context) error {
-	s.state.Store(uint32(core.StateClosed))
-	s.cancel()
+	s.closeOnce.Do(func() {
+		s.state.Store(uint32(core.StateClosed))
+		s.cancel()
+	})
 	return nil
 }
 
