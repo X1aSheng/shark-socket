@@ -3,7 +3,6 @@ package plugin
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"sync"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
@@ -20,6 +19,7 @@ type Cluster struct {
 	stop    chan struct{}
 	once    sync.Once
 	wg      sync.WaitGroup
+	logger  core.Logger
 }
 
 type clusterEnvelope struct {
@@ -33,7 +33,7 @@ func NewCluster(nodeID string, bus *pubsub.PubSub, manager core.SessionManager) 
 	if nodeID == "" {
 		nodeID = "local"
 	}
-	return &Cluster{nodeID: nodeID, topic: "shark.cluster.messages", bus: bus, manager: manager, stop: make(chan struct{})}
+	return &Cluster{nodeID: nodeID, topic: "shark.cluster.messages", bus: bus, manager: manager, stop: make(chan struct{}), logger: core.NopLogger()}
 }
 
 func (p *Cluster) Name() string  { return "cluster" }
@@ -117,7 +117,7 @@ func (p *Cluster) handleClusterMessage(data []byte) {
 		return
 	}
 	if err := p.manager.Broadcast(env.Payload); err != nil {
-		log.Printf("cluster: broadcast error: %v", err)
+		p.logger.Warn("cluster: broadcast error", "error", err)
 	}
 }
 

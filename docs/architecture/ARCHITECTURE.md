@@ -173,14 +173,14 @@ shark-socket/
 │
 ├── internal/
 │   ├── core/
-│   │   ├── protocol.go                 # Protocol 类型 + 内置常量
+│   │   ├── types.go                 # Protocol 类型 + 内置常量
 │   │   ├── session.go                  # Session 接口 + SessionManager 接口
 │   │   ├── server.go                   # Server 接口 + RuntimeConfigurable + StagedServer
-│   │   ├── runtime.go                  # Runtime 接口
+│   │   ├── server.go                  # Runtime 接口
 │   │   ├── message.go                  # Message 结构体
-│   │   ├── handler.go                  # Handler 函数类型 + TypedHandler + AdaptTyped
+│   │   ├── message.go                  # Handler 函数类型 + TypedHandler + AdaptTyped
 │   │   ├── plugin.go                   # Plugin 接口 + PluginRunner 接口 + 控制错误
-│   │   ├── codec.go                    # Codec[M] 泛型接口 + 内置 RawCodec / JSONCodec
+│   │   ├── message.go                    # Codec[M] 泛型接口 + 内置 RawCodec / JSONCodec
 │   │   ├── errors.go                   # 完整错误体系（详见 ERRORS.md）
 │   │   └── observability.go            # Logger / Metrics / Tracer 接口定义
 │   │
@@ -230,7 +230,7 @@ shark-socket/
 │   │   ├── autoban.go                  # 自动封禁
 │   │   ├── persistence.go              # 异步持久化（Channel 缓冲 + CircuitBreaker）
 │   │   ├── cluster.go                  # 跨节点路由（PubSub + Cache）
-│   │   ├── slowhandler.go              # 慢处理日志
+│   │   ├── slow_handler.go              # 慢处理日志
 │   │   └── options.go                  # 插件通用 Options
 │   │
 │   ├── application/

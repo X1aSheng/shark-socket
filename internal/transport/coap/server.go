@@ -245,7 +245,9 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 	}
 	seenKey := fmt.Sprintf("%s/%d", sess.remote.String(), msg.MessageID)
 	if _, loaded := s.seen.LoadOrStore(seenKey, struct{}{}); loaded && msg.Type == TypeCON {
-		_ = s.sendACK(sess, msg, CodeValid, nil)
+		if err := s.sendACK(sess, msg, CodeValid, nil); err != nil && s.rt != nil {
+			s.rt.Logger().Warn("coap dedup ack send failed", "error", err)
+		}
 		return
 	}
 	if msg.Type == TypeRST || msg.Type == TypeACK {
@@ -260,7 +262,9 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 			_ = sess.Close(context.Background())
 		}
 		if msg.Type == TypeCON {
-			_ = s.sendACK(sess, msg, CodeInternalServerError, nil)
+			if err := s.sendACK(sess, msg, CodeInternalServerError, nil); err != nil && s.rt != nil {
+				s.rt.Logger().Warn("coap error ack send failed", "error", err)
+			}
 		}
 		return
 	}
@@ -281,7 +285,9 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 	if msg.Type == TypeCON {
 		resp := ACK(msg, responseCode(msg.Code), responsePayload)
 		s.addObserveSeq(sess, msg, &resp)
-		_ = s.sendACKMsg(sess, resp)
+		if err := s.sendACKMsg(sess, resp); err != nil && s.rt != nil {
+			s.rt.Logger().Warn("coap ack send failed", "error", err)
+		}
 	}
 }
 

@@ -2,7 +2,6 @@ package plugin
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
@@ -15,6 +14,7 @@ type Persistence struct {
 	store      store.Store
 	bucket     string
 	messageLog *store.MessageLog
+	logger     core.Logger
 }
 
 // NewPersistence creates a persistence plugin backed by the given Store.
@@ -22,15 +22,22 @@ func NewPersistence(s store.Store, bucket string) *Persistence {
 	if bucket == "" {
 		bucket = "sessions"
 	}
-	var msgLog *store.MessageLog
+	p := &Persistence{store: s, bucket: bucket, logger: core.NopLogger()}
 	if s != nil {
 		var err error
-		msgLog, err = store.NewMessageLog(s, bucket+"/messages")
+		p.messageLog, err = store.NewMessageLog(s, bucket+"/messages")
 		if err != nil {
-			log.Printf("persistence: failed to init message log: %v", err)
+			p.logger.Error("persistence: failed to init message log", "error", err)
 		}
 	}
-	return &Persistence{store: s, bucket: bucket, messageLog: msgLog}
+	return p
+}
+
+// SetLogger sets the logger used for operational messages.
+func (p *Persistence) SetLogger(logger core.Logger) {
+	if logger != nil {
+		p.logger = logger
+	}
 }
 
 func (p *Persistence) Name() string  { return "persistence" }
@@ -42,7 +49,7 @@ func (p *Persistence) OnAccept(sess core.Session) error {
 	}
 	value := []byte(fmt.Sprintf("accepted protocol=%s remote=%s at=%s", sess.Protocol(), sess.RemoteAddr(), time.Now().UTC().Format(time.RFC3339Nano)))
 	if err := p.store.Save(p.bucket, p.key(sess), value); err != nil {
-		log.Printf("persistence: save on accept: %v", err)
+		p.logger.Error("persistence: save on accept", "error", err)
 	}
 	return nil
 }
@@ -53,14 +60,14 @@ func (p *Persistence) OnClose(sess core.Session) {
 	}
 	value := []byte(fmt.Sprintf("closed protocol=%s remote=%s at=%s", sess.Protocol(), sess.RemoteAddr(), time.Now().UTC().Format(time.RFC3339Nano)))
 	if err := p.store.Save(p.bucket, p.key(sess), value); err != nil {
-		log.Printf("persistence: save on close: %v", err)
+		p.logger.Error("persistence: save on close", "error", err)
 	}
 }
 
 func (p *Persistence) OnMessage(sess core.Session, data []byte) ([]byte, error) {
 	if p.messageLog != nil {
 		if _, err := p.messageLog.Append(data); err != nil {
-			log.Printf("persistence: message log append: %v", err)
+			p.logger.Error("persistence: message log append", "error", err)
 		}
 	}
 	return data, nil
