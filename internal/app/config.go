@@ -322,11 +322,8 @@ func parseTLSMinVersion(version string) uint16 {
 		return tls.VersionTLS13
 	case "1.2", "12", "":
 		return tls.VersionTLS12
-	case "1.1", "11":
-		return tls.VersionTLS11
-	case "1.0", "10":
-		return tls.VersionTLS10
 	default:
+		// Versions below 1.2 are insecure; default to 1.2.
 		return tls.VersionTLS12
 	}
 }

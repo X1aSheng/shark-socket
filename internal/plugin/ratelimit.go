@@ -15,6 +15,8 @@ type RateLimit struct {
 	window   time.Duration
 	counters map[string]counter
 	stopCh   chan struct{}
+	stopOnce sync.Once
+	wg       sync.WaitGroup
 }
 
 type counter struct {
@@ -37,7 +39,9 @@ func (p *RateLimit) Priority() int { return 10 }
 
 // Start begins periodic cleanup of stale counter entries.
 func (p *RateLimit) Start() error {
+	p.wg.Add(1)
 	go func() {
+		defer p.wg.Done()
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		for {
@@ -54,7 +58,8 @@ func (p *RateLimit) Start() error {
 
 // Stop terminates the cleanup goroutine.
 func (p *RateLimit) Stop() error {
-	close(p.stopCh)
+	p.stopOnce.Do(func() { close(p.stopCh) })
+	p.wg.Wait()
 	return nil
 }
 

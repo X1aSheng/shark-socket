@@ -15,6 +15,8 @@ type AutoBan struct {
 	counts    map[string]int
 	banned    map[string]struct{}
 	stopCh    chan struct{}
+	stopOnce  sync.Once
+	wg        sync.WaitGroup
 }
 
 func NewAutoBan(threshold int) *AutoBan {
@@ -29,7 +31,9 @@ func (p *AutoBan) Priority() int { return 5 }
 
 // Start begins periodic cleanup of stale banned entries.
 func (p *AutoBan) Start() error {
+	p.wg.Add(1)
 	go func() {
+		defer p.wg.Done()
 		ticker := time.NewTicker(30 * time.Minute)
 		defer ticker.Stop()
 		for {
@@ -46,7 +50,8 @@ func (p *AutoBan) Start() error {
 
 // Stop terminates the cleanup goroutine.
 func (p *AutoBan) Stop() error {
-	close(p.stopCh)
+	p.stopOnce.Do(func() { close(p.stopCh) })
+	p.wg.Wait()
 	return nil
 }
 

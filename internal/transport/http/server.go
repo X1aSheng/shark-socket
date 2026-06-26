@@ -49,6 +49,7 @@ func (s *Server) Start(context.Context) error {
 	if !s.started.CompareAndSwap(false, true) {
 		return fmt.Errorf("http server already started")
 	}
+	s.closed.Store(false)
 	if s.rt == nil {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
