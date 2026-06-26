@@ -16,15 +16,15 @@ import (
 // re-publish received cluster messages to avoid amplification.
 type Cluster struct {
 	core.BasePlugin
-	nodeID  string
-	topic   string
-	bus     *pubsub.PubSub
-	manager core.SessionManager
-	cancel  func()
-	stop    chan struct{}
-	once    sync.Once
-	wg      sync.WaitGroup
-	logger  core.Logger
+	nodeID   string
+	topic    string
+	bus      *pubsub.PubSub
+	manager  core.SessionManager
+	cancel   func()
+	stop     chan struct{}
+	stopOnce sync.Once
+	wg       sync.WaitGroup
+	logger   core.Logger
 }
 
 type clusterEnvelope struct {
@@ -58,26 +58,27 @@ func (p *Cluster) Start(buffer int) {
 	if buffer <= 0 {
 		buffer = 16
 	}
-	p.once.Do(func() {
-		ch, cancel := p.bus.Subscribe(p.topic, buffer)
-		p.cancel = cancel
-		p.wg.Add(1)
-		go func() {
-			defer p.wg.Done()
-			p.consume(ch)
-		}()
-	})
+	// Recreate stop channel and stopOnce if previously stopped (supports restart).
+	select {
+	case <-p.stop:
+		p.stop = make(chan struct{})
+		p.stopOnce = sync.Once{}
+	default:
+	}
+	ch, cancel := p.bus.Subscribe(p.topic, buffer)
+	p.cancel = cancel
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		p.consume(ch)
+	}()
 }
 
 func (p *Cluster) Stop() {
 	if p.cancel != nil {
 		p.cancel()
 	}
-	select {
-	case <-p.stop:
-	default:
-		close(p.stop)
-	}
+	p.stopOnce.Do(func() { close(p.stop) })
 	p.wg.Wait()
 }
 
