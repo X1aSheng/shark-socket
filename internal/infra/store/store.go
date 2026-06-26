@@ -2,19 +2,11 @@ package store
 
 import "sync"
 
-// Store is the legacy interface for backward compatibility.
+// Store is the durable store interface with error returns and lifecycle.
 type Store interface {
-	Save(bucket, key string, value []byte)
-	Load(bucket, key string) ([]byte, bool)
-	Delete(bucket, key string)
-}
-
-// StoreV2 is the durable store interface with error returns and lifecycle.
-type StoreV2 interface {
-	Store
-	SaveV2(bucket, key string, value []byte) error
-	LoadV2(bucket, key string) ([]byte, bool, error)
-	DeleteV2(bucket, key string) error
+	Save(bucket, key string, value []byte) error
+	Load(bucket, key string) ([]byte, bool, error)
+	Delete(bucket, key string) error
 	List(bucket string) ([]string, error)
 	Close() error
 }
@@ -34,46 +26,33 @@ func NewMemory() *Memory {
 	return &Memory{buckets: make(map[string]map[string][]byte)}
 }
 
-func (m *Memory) Save(bucket, key string, value []byte) {
+func (m *Memory) Save(bucket, key string, value []byte) error {
 	m.mu.Lock()
 	if _, ok := m.buckets[bucket]; !ok {
 		m.buckets[bucket] = make(map[string][]byte)
 	}
 	m.buckets[bucket][key] = append([]byte(nil), value...)
 	m.mu.Unlock()
+	return nil
 }
 
-func (m *Memory) Load(bucket, key string) ([]byte, bool) {
+func (m *Memory) Load(bucket, key string) ([]byte, bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	values, ok := m.buckets[bucket]
 	if !ok {
-		return nil, false
+		return nil, false, nil
 	}
 	value, ok := values[key]
-	return append([]byte(nil), value...), ok
+	return append([]byte(nil), value...), ok, nil
 }
 
-func (m *Memory) Delete(bucket, key string) {
+func (m *Memory) Delete(bucket, key string) error {
 	m.mu.Lock()
 	if values, ok := m.buckets[bucket]; ok {
 		delete(values, key)
 	}
 	m.mu.Unlock()
-}
-
-func (m *Memory) SaveV2(bucket, key string, value []byte) error {
-	m.Save(bucket, key, value)
-	return nil
-}
-
-func (m *Memory) LoadV2(bucket, key string) ([]byte, bool, error) {
-	v, ok := m.Load(bucket, key)
-	return v, ok, nil
-}
-
-func (m *Memory) DeleteV2(bucket, key string) error {
-	m.Delete(bucket, key)
 	return nil
 }
 
@@ -90,6 +69,5 @@ func (m *Memory) List(bucket string) ([]string, error) {
 func (m *Memory) Close() error { return nil }
 
 var (
-	_ Store   = (*Memory)(nil)
-	_ StoreV2 = (*Memory)(nil)
+	_ Store = (*Memory)(nil)
 )

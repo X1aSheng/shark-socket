@@ -241,14 +241,6 @@ func TestPersistencePlugin(t *testing.T) {
 	}
 }
 
-func TestPersistenceV2Plugin(t *testing.T) {
-	s := NewMemoryStore()
-	p := NewPersistenceV2Plugin(s, "test-bucket")
-	if p == nil {
-		t.Fatal("persistence v2 plugin should not be nil")
-	}
-}
-
 func TestClusterPlugin(t *testing.T) {
 	bus := NewPubSub()
 	sm := NewGateway().Runtime().Sessions()

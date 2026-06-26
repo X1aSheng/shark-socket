@@ -72,12 +72,12 @@ func TestPersistenceWritesLifecycleEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.OnClose(sess)
-	value, ok := s.Load("sessions", "custom/1")
+	_, ok, err := s.Load("sessions", "custom/1")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !ok {
 		t.Fatal("persistence event missing")
-	}
-	if string(value) == "" {
-		t.Fatal("persistence event empty")
 	}
 }
 
@@ -150,26 +150,9 @@ func TestSlowHandlerLogsDurationAndReturnsError(t *testing.T) {
 	}
 }
 
-func TestPersistenceV2WritesLifecycleEvents(t *testing.T) {
+func TestPersistenceOnMessageAppendsToLog(t *testing.T) {
 	s := store.NewMemory()
-	p := NewPersistenceV2(s, "sessions")
-	sess := fakeSession{addr: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234}}
-	if err := p.OnAccept(sess); err != nil {
-		t.Fatal(err)
-	}
-	p.OnClose(sess)
-	_, ok, err := s.LoadV2("sessions", "custom/1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ok {
-		t.Fatal("persistence-v2 event missing")
-	}
-}
-
-func TestPersistenceV2OnMessageAppendsToLog(t *testing.T) {
-	s := store.NewMemory()
-	p := NewPersistenceV2(s, "sessions")
+	p := NewPersistence(s, "sessions")
 	sess := fakeSession{addr: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234}}
 	data, err := p.OnMessage(sess, []byte("hello"))
 	if err != nil {

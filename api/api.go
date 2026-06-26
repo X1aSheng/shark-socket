@@ -64,12 +64,11 @@ type (
 	ClusterPlugin       = plugin.Cluster
 	HeartbeatPlugin     = plugin.Heartbeat
 	PersistencePlugin   = plugin.Persistence
-	PersistenceV2Plugin = plugin.PersistenceV2
 	SlowHandlerOption   = plugin.SlowHandlerOption
 	PrometheusMetrics   = observability.PrometheusMetrics
 	OpenTelemetryTracer = observability.OpenTelemetryTracer
 	PubSub              = pubsub.PubSub
-	StoreV2             = store.StoreV2
+	Store               = store.Store
 	BoltStore           = store.BoltStore
 	MemoryStore         = store.Memory
 	MessageLog          = store.MessageLog
@@ -289,12 +288,8 @@ func NewHeartbeatPlugin(manager SessionManager, timeout time.Duration) *Heartbea
 	return plugin.NewHeartbeat(manager, timeout)
 }
 
-func NewPersistencePlugin(s store.Store, bucket string) *PersistencePlugin {
+func NewPersistencePlugin(s Store, bucket string) *PersistencePlugin {
 	return plugin.NewPersistence(s, bucket)
-}
-
-func NewPersistenceV2Plugin(s StoreV2, bucket string) *PersistenceV2Plugin {
-	return plugin.NewPersistenceV2(s, bucket)
 }
 
 func NewMemoryStore() *MemoryStore {
@@ -305,11 +300,11 @@ func NewBoltStore(path string) (*BoltStore, error) {
 	return store.NewBoltStore(path)
 }
 
-func NewMessageLog(s StoreV2, bucket string) (*MessageLog, error) {
+func NewMessageLog(s Store, bucket string) (*MessageLog, error) {
 	return store.NewMessageLog(s, bucket)
 }
 
-func NewSessionStore(s StoreV2, bucket string) *SessionStore {
+func NewSessionStore(s Store, bucket string) *SessionStore {
 	return store.NewSessionStore(s, bucket)
 }
 

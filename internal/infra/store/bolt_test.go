@@ -15,20 +15,20 @@ func TestBoltStoreCRUD(t *testing.T) {
 	}
 	defer bs.Close()
 
-	if err := bs.SaveV2("sessions", "abc", []byte("hello")); err != nil {
+	if err := bs.Save("sessions", "abc", []byte("hello")); err != nil {
 		t.Fatal(err)
 	}
-	v, ok, err := bs.LoadV2("sessions", "abc")
+	v, ok, err := bs.Load("sessions", "abc")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !ok || string(v) != "hello" {
-		t.Fatalf("LoadV2: ok=%v val=%s", ok, string(v))
+		t.Fatalf("Load: ok=%v val=%s", ok, string(v))
 	}
-	if err := bs.DeleteV2("sessions", "abc"); err != nil {
+	if err := bs.Delete("sessions", "abc"); err != nil {
 		t.Fatal(err)
 	}
-	_, ok, err = bs.LoadV2("sessions", "abc")
+	_, ok, err = bs.Load("sessions", "abc")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,9 +46,9 @@ func TestBoltStoreList(t *testing.T) {
 	}
 	defer bs.Close()
 
-	bs.SaveV2("data", "k1", nil)
-	bs.SaveV2("data", "k2", nil)
-	bs.SaveV2("data", "k3", nil)
+	bs.Save("data", "k1", nil)
+	bs.Save("data", "k2", nil)
+	bs.Save("data", "k3", nil)
 	keys, err := bs.List("data")
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +68,7 @@ func TestBoltStoreClose(t *testing.T) {
 	if err := bs.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := bs.SaveV2("x", "y", nil); err == nil {
+	if err := bs.Save("x", "y", nil); err == nil {
 		t.Fatal("expected error after close")
 	}
 }
@@ -80,7 +80,7 @@ func TestBoltStoreReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bs.SaveV2("bucket", "key", []byte("persist"))
+	bs.Save("bucket", "key", []byte("persist"))
 	bs.Close()
 
 	bs2, err := NewBoltStore(path)
@@ -88,7 +88,7 @@ func TestBoltStoreReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer bs2.Close()
-	v, ok, err := bs2.LoadV2("bucket", "key")
+	v, ok, err := bs2.Load("bucket", "key")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,14 +110,14 @@ func TestBoltStoreMissingDirCreated(t *testing.T) {
 	}
 }
 
-func TestMemoryStoreV2(t *testing.T) {
+func TestMemoryStore(t *testing.T) {
 	m := NewMemory()
-	if err := m.SaveV2("b", "k", []byte("v")); err != nil {
+	if err := m.Save("b", "k", []byte("v")); err != nil {
 		t.Fatal(err)
 	}
-	v, ok, err := m.LoadV2("b", "k")
+	v, ok, err := m.Load("b", "k")
 	if err != nil || !ok || string(v) != "v" {
-		t.Fatalf("LoadV2: ok=%v val=%s err=%v", ok, string(v), err)
+		t.Fatalf("Load: ok=%v val=%s err=%v", ok, string(v), err)
 	}
 	keys, err := m.List("b")
 	if err != nil || len(keys) != 1 {
@@ -125,7 +125,7 @@ func TestMemoryStoreV2(t *testing.T) {
 	}
 }
 
-func TestBoltStoreLegacySaveLoadDelete(t *testing.T) {
+func TestBoltStoreSaveLoadDelete(t *testing.T) {
 	dir := t.TempDir()
 	bs, err := NewBoltStore(filepath.Join(dir, "test.bolt"))
 	if err != nil {
@@ -133,17 +133,18 @@ func TestBoltStoreLegacySaveLoadDelete(t *testing.T) {
 	}
 	defer bs.Close()
 
-	// Legacy Save
-	bs.Save("legacy", "k1", []byte("v1"))
-	// Legacy Load
-	val, ok := bs.Load("legacy", "k1")
-	if !ok || string(val) != "v1" {
-		t.Fatalf("Load: ok=%v val=%s", ok, string(val))
+	if err := bs.Save("items", "k1", []byte("v1")); err != nil {
+		t.Fatal(err)
 	}
-	// Legacy Delete
-	bs.Delete("legacy", "k1")
-	val, ok = bs.Load("legacy", "k1")
-	if ok {
+	val, ok, err := bs.Load("items", "k1")
+	if err != nil || !ok || string(val) != "v1" {
+		t.Fatalf("Load: ok=%v val=%s err=%v", ok, string(val), err)
+	}
+	if err := bs.Delete("items", "k1"); err != nil {
+		t.Fatal(err)
+	}
+	_, ok, err = bs.Load("items", "k1")
+	if err != nil || ok {
 		t.Fatal("expected key to be deleted")
 	}
 }
@@ -158,7 +159,7 @@ func TestBoltStoreDeleteBatch(t *testing.T) {
 
 	keys := []string{"a", "b", "c"}
 	for _, k := range keys {
-		if err := bs.SaveV2("batch", k, []byte("data")); err != nil {
+		if err := bs.Save("batch", k, []byte("data")); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -2,7 +2,6 @@ package store
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -11,7 +10,7 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
-// BoltStore implements StoreV2 backed by a BoltDB file.
+// BoltStore implements Store backed by a BoltDB file.
 type BoltStore struct {
 	mu     sync.RWMutex
 	db     *bolt.DB
@@ -36,13 +35,7 @@ func (b *BoltStore) isClosed() bool {
 	return b.closed
 }
 
-func (b *BoltStore) Save(bucket, key string, value []byte) {
-	if err := b.SaveV2(bucket, key, value); err != nil {
-		log.Printf("bolt: save error in bucket %s: %v", bucket, err)
-	}
-}
-
-func (b *BoltStore) SaveV2(bucket, key string, value []byte) error {
+func (b *BoltStore) Save(bucket, key string, value []byte) error {
 	if b.isClosed() {
 		return core.ErrClosed
 	}
@@ -55,12 +48,7 @@ func (b *BoltStore) SaveV2(bucket, key string, value []byte) error {
 	})
 }
 
-func (b *BoltStore) Load(bucket, key string) ([]byte, bool) {
-	v, ok, _ := b.LoadV2(bucket, key)
-	return v, ok
-}
-
-func (b *BoltStore) LoadV2(bucket, key string) ([]byte, bool, error) {
+func (b *BoltStore) Load(bucket, key string) ([]byte, bool, error) {
 	if b.isClosed() {
 		return nil, false, core.ErrClosed
 	}
@@ -80,13 +68,7 @@ func (b *BoltStore) LoadV2(bucket, key string) ([]byte, bool, error) {
 	return val, val != nil, err
 }
 
-func (b *BoltStore) Delete(bucket, key string) {
-	if err := b.DeleteV2(bucket, key); err != nil {
-		log.Printf("bolt: delete error in bucket %s: %v", bucket, err)
-	}
-}
-
-func (b *BoltStore) DeleteV2(bucket, key string) error {
+func (b *BoltStore) Delete(bucket, key string) error {
 	if b.isClosed() {
 		return core.ErrClosed
 	}
@@ -144,6 +126,6 @@ func (b *BoltStore) Close() error {
 }
 
 var (
-	_ StoreV2     = (*BoltStore)(nil)
+	_ Store        = (*BoltStore)(nil)
 	_ BulkDeleter = (*BoltStore)(nil)
 )

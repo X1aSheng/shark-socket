@@ -18,11 +18,11 @@ type SessionSnapshot struct {
 
 // SessionStore persists session snapshots for restart recovery.
 type SessionStore struct {
-	store  StoreV2
+	store  Store
 	bucket string
 }
 
-func NewSessionStore(store StoreV2, bucket string) *SessionStore {
+func NewSessionStore(store Store, bucket string) *SessionStore {
 	if bucket == "" {
 		bucket = "snapshots"
 	}
@@ -34,11 +34,11 @@ func (s *SessionStore) SaveSnapshot(snap SessionSnapshot) error {
 	if err != nil {
 		return fmt.Errorf("session_store: marshal: %w", err)
 	}
-	return s.store.SaveV2(s.bucket, fmt.Sprintf("%d", snap.ID), data)
+	return s.store.Save(s.bucket, fmt.Sprintf("%d", snap.ID), data)
 }
 
 func (s *SessionStore) LoadSnapshot(id uint64) (SessionSnapshot, bool, error) {
-	data, ok, err := s.store.LoadV2(s.bucket, fmt.Sprintf("%d", id))
+	data, ok, err := s.store.Load(s.bucket, fmt.Sprintf("%d", id))
 	if err != nil || !ok {
 		return SessionSnapshot{}, ok, err
 	}
@@ -72,7 +72,7 @@ func (s *SessionStore) ListSnapshots() ([]SessionSnapshot, error) {
 }
 
 func (s *SessionStore) DeleteSnapshot(id uint64) error {
-	return s.store.DeleteV2(s.bucket, fmt.Sprintf("%d", id))
+	return s.store.Delete(s.bucket, fmt.Sprintf("%d", id))
 }
 
 func parseUint64(s string) (uint64, bool) {

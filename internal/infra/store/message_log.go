@@ -7,10 +7,10 @@ import (
 	"sync"
 )
 
-// MessageLog is a durable append-only message log backed by StoreV2.
+// MessageLog is a durable append-only message log backed by Store.
 // Messages are stored under a bucket with auto-incrementing sequence numbers.
 type MessageLog struct {
-	store  StoreV2
+	store  Store
 	bucket string
 	mu     sync.Mutex
 	next   uint64
@@ -18,7 +18,7 @@ type MessageLog struct {
 
 // NewMessageLog creates a message log in the given bucket. On open, it
 // scans existing keys to resume the sequence counter.
-func NewMessageLog(store StoreV2, bucket string) (*MessageLog, error) {
+func NewMessageLog(store Store, bucket string) (*MessageLog, error) {
 	keys, err := store.List(bucket)
 	if err != nil {
 		return nil, fmt.Errorf("message_log: list %s: %w", bucket, err)
@@ -41,7 +41,7 @@ func (m *MessageLog) Append(data []byte) (uint64, error) {
 	defer m.mu.Unlock()
 	seq := m.next
 	key := seqKey(seq)
-	if err := m.store.SaveV2(m.bucket, key, data); err != nil {
+	if err := m.store.Save(m.bucket, key, data); err != nil {
 		return 0, fmt.Errorf("message_log: append: %w", err)
 	}
 	m.next++
@@ -56,7 +56,7 @@ func (m *MessageLog) Replay(fn func(seq uint64, data []byte) error) error {
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		val, ok, err := m.store.LoadV2(m.bucket, key)
+		val, ok, err := m.store.Load(m.bucket, key)
 		if err != nil {
 			return err
 		}
@@ -95,7 +95,7 @@ func (m *MessageLog) Prune(beforeSeq uint64) error {
 		return bd.DeleteBatch(m.bucket, toDelete)
 	}
 	for _, key := range toDelete {
-		if err := m.store.DeleteV2(m.bucket, key); err != nil {
+		if err := m.store.Delete(m.bucket, key); err != nil {
 			return err
 		}
 	}

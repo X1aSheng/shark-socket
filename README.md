@@ -25,9 +25,9 @@ runtime ownership, plugin execution, and graceful shutdown explicit.
 | LwM2M | Implemented | Object/resource model with operation masks, TLV binary codec, discover/register/update/deregister/write/read, Observer notifications |
 | QUIC | Implemented | TLS-required stream transport using quic-go, write deadlines, accept rate limiting |
 | gRPC-Web | Implemented | Direct HTTP mode, binary framing/trailers, and WebSocket mode |
-| Plugins | Implemented | Blacklist, RateLimit, Heartbeat, Persistence V1+V2, AutoBan, SlowHandler, Cluster |
+| Plugins | Implemented | Blacklist, RateLimit, Heartbeat, Persistence, AutoBan, SlowHandler, Cluster |
 | Security | Implemented | TLS cert hot-reload via file watcher, mTLS client auth, DTLS for UDP/CoAP |
-| Persistence | Implemented | StoreV2 interface, BoltDB backend, durable message log with sequence numbers, session snapshots |
+| Persistence | Implemented | Store interface (error-returning), BoltDB backend, durable message log with sequence numbers, session snapshots |
 | Infra | Implemented | In-memory cache/store/pubsub/circuitbreaker/observability, Prometheus metrics exporter, OpenTelemetry tracer adapter, TLS cert cache |
 | MQTT | Integrated | External broker adapter (paho client), docker-compose mosquitto for E2E tests |
 | Fuzz Testing | 11 tests | TCP framers, CoAP message parse, LwM2M TLV codec — all passing |
