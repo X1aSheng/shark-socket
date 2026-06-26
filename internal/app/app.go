@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -206,9 +205,9 @@ func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 		}
 		cancel := tlsutil.WatchFiles(a.appCtx, 30*time.Second, func() {
 			if err := c.Load(); err != nil {
-				log.Printf("cert reload failed: %v", err)
+				a.Gateway.Runtime().Logger().Error("cert reload failed", "error", err)
 			} else {
-				log.Printf("cert reload successful")
+				a.Gateway.Runtime().Logger().Info("cert reload successful")
 			}
 		}, c.Files()...)
 		a.certWatchers = append(a.certWatchers, cancel)
@@ -267,6 +266,6 @@ func (a *App) serveHTTP(name string, server *http.Server) {
 		a.serveMu.Lock()
 		a.serveErrors = append(a.serveErrors, fmt.Errorf("%s: %w", name, err))
 		a.serveMu.Unlock()
-		log.Printf("%s server failed: %v", name, err)
+		a.Gateway.Runtime().Logger().Error("server failed", "name", name, "error", err)
 	}
 }

@@ -82,7 +82,9 @@ func (s *Server) Start(context.Context) error {
 		return fmt.Errorf("websocket listen %s: %w", s.opts.Addr, err)
 	}
 	s.listener = ln
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		if err := s.server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.rt.Logger().Error("websocket serve failed", "error", err)
 		}
@@ -108,6 +110,8 @@ func (s *Server) StopAccept(ctx context.Context) error {
 }
 
 func (s *Server) Drain(ctx context.Context) error {
+	// Drain is a no-op for WebSocket: http.Server.Shutdown in StopAccept
+	// already waits for the Serve loop, and CloseSessions handles connections.
 	return nil
 }
 

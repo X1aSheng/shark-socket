@@ -8,6 +8,7 @@ import (
 	"net"
 	stdhttp "net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
@@ -21,6 +22,7 @@ type Server struct {
 	server   *stdhttp.Server
 	closed   atomic.Bool
 	started  atomic.Bool
+	wg       sync.WaitGroup
 }
 
 func NewServer(opts ...Option) *Server {
@@ -72,7 +74,9 @@ func (s *Server) Start(context.Context) error {
 		return fmt.Errorf("http listen %s: %w", s.opts.Addr, err)
 	}
 	s.listener = ln
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		if err := s.server.Serve(ln); err != nil && !errors.Is(err, stdhttp.ErrServerClosed) {
 			s.rt.Logger().Error("http serve failed", "error", err)
 		}
@@ -133,8 +137,18 @@ func (s *Server) StopAccept(ctx context.Context) error {
 	return nil
 }
 
-func (s *Server) Drain(context.Context) error {
-	return nil
+func (s *Server) Drain(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (s *Server) CloseSessions(context.Context) error {

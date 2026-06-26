@@ -85,7 +85,9 @@ func (s *Server) Start(context.Context) error {
 		return fmt.Errorf("grpc-web listen %s: %w", s.opts.Addr, err)
 	}
 	s.listener = ln
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		if err := s.server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.rt.Logger().Error("grpc-web serve failed", "error", err)
 		}

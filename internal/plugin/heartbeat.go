@@ -14,8 +14,10 @@ type Heartbeat struct {
 	timeout  time.Duration
 	ticker   *time.Ticker
 	stop     chan struct{}
-	start    sync.Once
 	stopOnce sync.Once
+	wg       sync.WaitGroup
+	mu       sync.Mutex
+	running  bool
 }
 
 func NewHeartbeat(manager core.SessionManager, timeout time.Duration) *Heartbeat {
@@ -29,25 +31,37 @@ func (p *Heartbeat) Name() string  { return "heartbeat" }
 func (p *Heartbeat) Priority() int { return 50 }
 
 func (p *Heartbeat) Start(interval time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.running {
+		return
+	}
 	if interval <= 0 {
 		interval = p.timeout / 2
 	}
 	if interval <= 0 {
 		interval = time.Second
 	}
-	p.start.Do(func() {
-		p.ticker = time.NewTicker(interval)
-		go p.loop()
-	})
+	p.ticker = time.NewTicker(interval)
+	p.running = true
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		p.loop()
+	}()
 }
 
 func (p *Heartbeat) Stop() {
 	p.stopOnce.Do(func() {
+		p.mu.Lock()
+		p.running = false
 		if p.ticker != nil {
 			p.ticker.Stop()
 		}
+		p.mu.Unlock()
 		close(p.stop)
 	})
+	p.wg.Wait()
 }
 
 func (p *Heartbeat) Sweep(now time.Time) int {

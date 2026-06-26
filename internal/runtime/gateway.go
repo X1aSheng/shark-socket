@@ -81,7 +81,9 @@ func (g *Gateway) Start(ctx context.Context) error {
 			g.rt.Logger().Error("server start failed", "protocol", srv.Protocol(), "error", err)
 			rollbackCtx, cancel := context.WithTimeout(context.Background(), g.timeouts.Finalize)
 			for i := len(started) - 1; i >= 0; i-- {
-				_ = started[i].Stop(rollbackCtx)
+				if stopErr := started[i].Stop(rollbackCtx); stopErr != nil {
+				g.rt.Logger().Error("rollback stop failed", "protocol", started[i].Protocol(), "error", stopErr)
+			}
 			}
 			cancel()
 			return err
