@@ -170,7 +170,8 @@ func applyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 	tcpKeyFile, hasTCPKeyFile := lookup("SHARK_TCP_KEY_FILE")
 	tcpClientCAFile, hasTCPClientCAFile := lookup("SHARK_TCP_CLIENT_CA_FILE")
 	tcpClientAuth, hasTCPClientAuth := lookup("SHARK_TCP_CLIENT_AUTH")
-	if hasTCPAddr || hasTCPCertFile || hasTCPKeyFile || hasTCPClientCAFile || hasTCPClientAuth {
+	tcpTLSMinVersion, hasTCPTLSMinVersion := lookup("SHARK_TCP_TLS_MIN_VERSION")
+	if hasTCPAddr || hasTCPCertFile || hasTCPKeyFile || hasTCPClientCAFile || hasTCPClientAuth || hasTCPTLSMinVersion {
 		upsertProtocol(cfg, ProtocolConfig{
 			Name:            "tcp",
 			Addr:            tcpAddr,
@@ -178,6 +179,7 @@ func applyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 			TLSKeyFile:      tcpKeyFile,
 			TLSClientCAFile: tcpClientCAFile,
 			TLSClientAuth:   tcpClientAuth,
+			TLSMinVersion:   tcpTLSMinVersion,
 		})
 	}
 	if value, ok := lookup("SHARK_WS_ADDR"); ok {
@@ -212,6 +214,7 @@ func applyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 			TLSKeyFile:      envOrDefault(lookup, "SHARK_QUIC_KEY_FILE", ""),
 			TLSClientCAFile: envOrDefault(lookup, "SHARK_QUIC_CLIENT_CA_FILE", ""),
 			TLSClientAuth:   envOrDefault(lookup, "SHARK_QUIC_CLIENT_AUTH", ""),
+			TLSMinVersion:   envOrDefault(lookup, "SHARK_QUIC_TLS_MIN_VERSION", ""),
 		})
 	}
 	return nil
