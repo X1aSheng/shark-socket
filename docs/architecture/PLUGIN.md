@@ -1084,23 +1084,25 @@ func (p *PersistencePlugin) batchWriter() {
 
 ---
 
-## 9. PersistenceV2Plugin
+## 9. Persistence Plugin
 
-> StoreV2 + MessageLog durable persistence with error returns.
+> Store + MessageLog durable persistence with error returns.
 
 ### 9.1 OnMessage Hook
 ```go
-func (p *PersistenceV2) OnMessage(sess core.Session, data []byte) ([]byte, error) {
-    seq, err := p.log.Append(data)
-    return data, err  // transmit data even if log fails
+func (p *Persistence) OnMessage(sess core.Session, data []byte) ([]byte, error) {
+    if p.MessageLog() != nil {
+        p.MessageLog().Append(data)
+    }
+    return data, nil  // transmit data even if log fails
 }
 ```
 
 ### 9.2 Usage
 ```go
 store, _ := NewBoltStore("/data/shark.db")
-log, _ := NewMessageLog(store, "messages")
-p := NewPersistenceV2(store, "sessions")
+p := NewPersistence(store, "sessions")
+log := p.MessageLog()
 log.Replay(func(seq uint64, data []byte) error { return nil })
 log.Prune(1000)
 ```

@@ -51,7 +51,6 @@ func (s *Server) Start(context.Context) error {
 	if s.rt == nil {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
-	s.closed.Store(false)
 	s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate)
 	mux := http.NewServeMux()
 	mux.HandleFunc(s.opts.Path, s.handle)
