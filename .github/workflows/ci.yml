@@ -37,7 +37,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v1.64.2
           args: --timeout=5m
 
   security:
@@ -80,7 +80,7 @@ jobs:
         ports:
           - 1883:1883
         options: >-
-          --health-cmd "nc -z 127.0.0.1 1883 || exit 1"
+          --health-cmd "mosquitto_sub -t '$SYS/#' -C 1 -W 2 || exit 1"
           --health-interval 3s
           --health-timeout 2s
           --health-retries 5
@@ -165,7 +165,7 @@ jobs:
         ports:
           - 1883:1883
         options: >-
-          --health-cmd "nc -z 127.0.0.1 1883 || exit 1"
+          --health-cmd "mosquitto_sub -t '$SYS/#' -C 1 -W 2 || exit 1"
           --health-interval 3s
           --health-timeout 2s
           --health-retries 5
@@ -206,7 +206,7 @@ jobs:
         ports:
           - 1883:1883
         options: >-
-          --health-cmd "nc -z 127.0.0.1 1883 || exit 1"
+          --health-cmd "mosquitto_sub -t '$SYS/#' -C 1 -W 2 || exit 1"
           --health-interval 3s
           --health-timeout 2s
           --health-retries 5
