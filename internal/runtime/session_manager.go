@@ -83,8 +83,13 @@ func (m *SessionManager) Snapshot() []core.Session {
 	return snapshot
 }
 
+// Range iterates over sessions inline under read lock, avoiding a full
+// snapshot allocation. fn must not call methods that acquire the write
+// lock (Register, Unregister) or a deadlock will occur.
 func (m *SessionManager) Range(fn func(core.Session) bool) {
-	for _, sess := range m.Snapshot() {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, sess := range m.sessions {
 		if !fn(sess) {
 			return
 		}
@@ -102,15 +107,17 @@ func (m *SessionManager) Broadcast(data []byte) error {
 	return firstErr
 }
 
+// CloseAll closes and unregisters every session. Uses a snapshot to avoid
+// holding the write lock during session.Close() which may block on I/O.
 func (m *SessionManager) CloseAll(ctx context.Context) error {
+	sessions := m.Snapshot()
 	var firstErr error
-	m.Range(func(sess core.Session) bool {
+	for _, sess := range sessions {
 		if err := sess.Close(ctx); err != nil && firstErr == nil {
 			firstErr = err
 		}
 		m.Unregister(sess.ID())
-		return true
-	})
+	}
 	return firstErr
 }
 

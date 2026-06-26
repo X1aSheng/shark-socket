@@ -76,14 +76,13 @@ func (p *Heartbeat) Sweep(now time.Time) int {
 		return 0
 	}
 	closed := 0
-	p.manager.Range(func(sess core.Session) bool {
+	for _, sess := range p.manager.Snapshot() {
 		if now.Sub(sess.LastActiveAt()) > p.timeout {
 			_ = sess.Close(context.Background())
 			p.manager.Unregister(sess.ID())
 			closed++
 		}
-		return true
-	})
+	}
 	return closed
 }
 
