@@ -1035,7 +1035,7 @@ func (a *App) Run(ctx context.Context) error {
         return err
     }
 
-    // 阻塞等待 ctx 取消（信号处理在 cmd/server/main.go）
+    // 阻塞等待 ctx 取消（信号处理在 cmd/shark-socket/main.go）
     <-ctx.Done()
 
     shutdownCtx, cancel := context.WithTimeout(
@@ -1052,10 +1052,10 @@ func (a *App) Run(ctx context.Context) error {
 }
 ```
 
-### 7.4 cmd/server/main.go
+### 7.4 cmd/shark-socket/main.go
 
 ```go
-// cmd/server/main.go
+// cmd/shark-socket/main.go
 func main() {
     // 加载配置
     configPath := flag.String("config", "config.json", "path to config file")

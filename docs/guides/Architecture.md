@@ -1,5 +1,11 @@
 # Shark-Socket 综合架构设计文档
 
+> **⚠️ 此文档为历史归档，内容已过时。** 请参考新文档：
+> - [架构概述](../architecture/ARCHITECTURE.md)
+> - [接口契约](../architecture/CONTRACTS.md)
+> - [Gateway & 运行时](../architecture/GATEWAY.md)
+> - [部署指南](../architecture/DEPLOYMENT.md)
+
 > 高性能、可扩展的多协议服务端网络框架，采用 Go 1.26+ 开发。在 `shark-socket` 正确架构基础上，融合 `shark-socket` 成熟工程积累，提供 TCP、UDP、HTTP、WebSocket、CoAP、LwM2M、QUIC、gRPC-Web 协议的统一 Gateway 运行时。MQTT 3.1.1/5.0 由外部项目 [shark-MQTT](https://github.com/X1aSheng/shark-MQTT) 作为独立 Broker 提供，二者通过数据库、缓存、消息契约互通。
 
 ---

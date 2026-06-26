@@ -270,7 +270,7 @@ shark-socket/
 │   ├── basic_coap/main.go
 │   ├── basic_lwm2m/main.go
 │   ├── basic_websocket/main.go
-│   ├── multi_protocol/main.go
+│   ├── multi-protocol/main.go
 │   ├── tls_server/main.go
 │   ├── typed_handler/main.go           # Codec + AdaptTyped 示例
 │   ├── custom_plugin/main.go
@@ -279,7 +279,6 @@ shark-socket/
 ├── scripts/
 │   ├── run_tests.go                    # 跨平台脚本化测试入口
 │   ├── run_tests.go (via -mode deploy)              # 部署资产语义验证
-│   └── build.sh
 │
 ├── deploy/
 │   ├── docker/
@@ -323,7 +322,6 @@ shark-socket/
 │       ├── ADR-007-build-proxy-configurable.md
 │       ├── ADR-008-mqtt-external-broker.md
 │       ├── ADR-009-protocol-integration-boundary.md
-│       └── ADR-010-udp-pseudo-session-timing.md
 │
 ├── go.mod                              # module shark-socket, go 1.26
 ├── go.sum
