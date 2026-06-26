@@ -51,6 +51,7 @@ func (s *Server) Start(ctx context.Context) error {
 	s.closed.Store(false)
 	addr, err := net.ResolveUDPAddr("udp", s.opts.Addr)
 	if err != nil {
+		s.started.Store(false)
 		return fmt.Errorf("udp resolve %s: %w", s.opts.Addr, err)
 	}
 	runCtx, cancel := context.WithCancel(ctx)

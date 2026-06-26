@@ -78,6 +78,7 @@ func (s *Server) Start(context.Context) error {
 		ln, err = net.Listen("tcp", s.opts.Addr)
 	}
 	if err != nil {
+		s.started.Store(false)
 		return fmt.Errorf("websocket listen %s: %w", s.opts.Addr, err)
 	}
 	s.listener = ln

@@ -64,6 +64,7 @@ func (s *Server) Start(ctx context.Context) error {
 		ln, err := dtls.Listen("udp", addr, shared.DTLSConfig(s.opts.TLSConfig))
 		if err != nil {
 			cancel()
+			s.started.Store(false)
 			return fmt.Errorf("coap dtls listen %s: %w", s.opts.Addr, err)
 		}
 		s.dtlsLn = ln
@@ -74,6 +75,7 @@ func (s *Server) Start(ctx context.Context) error {
 		conn, err := net.ListenUDP("udp", addr)
 		if err != nil {
 			cancel()
+			s.started.Store(false)
 			return fmt.Errorf("coap listen %s: %w", s.opts.Addr, err)
 		}
 		s.udpConn = conn
