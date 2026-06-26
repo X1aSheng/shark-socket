@@ -14,6 +14,13 @@ import (
 	"github.com/pion/dtls/v3"
 )
 
+// seenKey is a struct key for the CoAP dedup map, avoiding per-message
+// string allocation from fmt.Sprintf.
+type seenKey struct {
+	remote string
+	msgID  uint16
+}
+
 type Server struct {
 	opts      Options
 	rt        core.Runtime
@@ -245,8 +252,8 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 	if err != nil {
 		return
 	}
-	seenKey := fmt.Sprintf("%s/%d", sess.remote.String(), msg.MessageID)
-	if _, loaded := s.seen.LoadOrStore(seenKey, struct{}{}); loaded && msg.Type == TypeCON {
+	sk := seenKey{remote: sess.remote.String(), msgID: msg.MessageID}
+	if _, loaded := s.seen.LoadOrStore(sk, struct{}{}); loaded && msg.Type == TypeCON {
 		if err := s.sendACK(sess, msg, CodeValid, nil); err != nil && s.rt != nil {
 			s.rt.Logger().Warn("coap dedup ack send failed", "error", err)
 		}
