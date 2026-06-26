@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"slices"
 )
 
 const (
@@ -72,7 +73,10 @@ func Parse(data []byte) (Message, error) {
 }
 
 func parseOptions(data []byte) (map[uint16][]byte, []byte) {
-	options := make(map[uint16][]byte)
+	if len(data) == 0 {
+		return nil, nil
+	}
+	var options map[uint16][]byte
 	offset := 0
 	var prevNum uint16
 	for offset < len(data) {
@@ -100,6 +104,9 @@ func parseOptions(data []byte) (map[uint16][]byte, []byte) {
 		}
 		val := make([]byte, lengthExtended)
 		copy(val, data[offset:offset+int(lengthExtended)])
+		if options == nil {
+			options = make(map[uint16][]byte)
+		}
 		options[optionNum] = val
 		offset += int(lengthExtended)
 	}
@@ -174,13 +181,7 @@ func sortedOptionNums(opts map[uint16][]byte) []uint16 {
 	for n := range opts {
 		nums = append(nums, n)
 	}
-	for i := 0; i < len(nums)-1; i++ {
-		for j := i + 1; j < len(nums); j++ {
-			if nums[i] > nums[j] {
-				nums[i], nums[j] = nums[j], nums[i]
-			}
-		}
-	}
+	slices.Sort(nums)
 	return nums
 }
 

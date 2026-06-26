@@ -169,7 +169,10 @@ func (s *Server) handleConn(conn *quicgo.Conn) {
 
 func (s *Server) handleStream(sess *session, stream *quicgo.Stream) {
 	defer stream.Close()
-	data, err := io.ReadAll(io.LimitReader(stream, int64(s.opts.MaxMessageSize)+1))
+	// +1 is intentional: LimitReader silently truncates at the limit,
+	// so we allow one extra byte to detect oversized messages.
+	lr := io.LimitReader(stream, int64(s.opts.MaxMessageSize)+1)
+	data, err := io.ReadAll(lr)
 	if err != nil || len(data) > s.opts.MaxMessageSize {
 		return
 	}
