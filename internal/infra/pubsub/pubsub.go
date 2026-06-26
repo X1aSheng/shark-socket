@@ -38,11 +38,12 @@ func (p *PubSub) Subscribe(topic string, buffer int) (<-chan Message, func()) {
 
 func (p *PubSub) Publish(topic string, data []byte) int {
 	p.mu.RLock()
-	subs := append([]chan Message(nil), p.subs[topic]...)
-	p.mu.RUnlock()
+	defer p.mu.RUnlock()
+	// Hold the read lock during iteration + send to prevent cancel()
+	// from closing a channel while we're sending to it.
 	msg := Message{Topic: topic, Data: append([]byte(nil), data...)}
 	delivered := 0
-	for _, sub := range subs {
+	for _, sub := range p.subs[topic] {
 		select {
 		case sub <- msg:
 			delivered++
