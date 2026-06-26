@@ -7,6 +7,31 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### V4 Audit Fixes (2026-06-26)
+
+#### Plugin Lifecycle
+- **Cluster:** Fixed double-close panic — `Stop()` now uses `sync.Once` for channel closure. `Start()` resets `stopOnce` and recreates `stop` channel on restart, matching RateLimit/AutoBan/Heartbeat pattern.
+
+#### Transport Lifecycle
+- **HTTP/WS/gRPC-Web/CoAP/UDP:** Reset `started` flag on listen failure (port conflict, permission denied, address resolution). Previously `started` remained true, permanently blocking recovery.
+- **CoAP/UDP:** `session.Close()` now captures and returns close errors from the underlying DTLS/UDP connection.
+- **HTTP:** Added `sync.Once` to `session.Close()` for double-close safety (matching all other session types).
+
+#### Performance
+- **SessionManager.Range():** Inlined map iteration under RLock — avoids full `[]Session` slice allocation on every `Range()` call. `CloseAll` and `Heartbeat.Sweep` use explicit `Snapshot()` for mutating operations.
+- **CoAP dedup:** Replaced `fmt.Sprintf` per-message key with struct key `{remote, msgID}` — zero allocation on hot path.
+
+#### Configuration
+- **Env vars:** Added `SHARK_TCP_TLS_MIN_VERSION` and `SHARK_QUIC_TLS_MIN_VERSION` environment variable support.
+
+#### CI & Observability
+- **golangci-lint:** Pinned to v1.64.2 (was `latest`, producing non-deterministic builds).
+- **Mosquitto health check:** Changed from `nc -z` to `mosquitto_sub` in CI service containers.
+- **App:** Health/metrics HTTP `ListenAndServe` goroutines now tracked via `serveWG sync.WaitGroup`.
+
+#### Documentation
+- **V4 Review:** Added `docs/reports/PROJECT-REVIEW-260626-163000.md` — comprehensive 4-agent parallel audit (26 findings: 7H/12M/7L, 0 Critical).
+
 ### Comprehensive Quality Hardening (2026-06-26)
 
 #### V1 Interface Cleanup (Breaking)
