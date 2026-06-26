@@ -21,6 +21,7 @@ type App struct {
 	Protocols    []string
 	serveErrors  []error
 	serveMu      sync.Mutex
+	serveWG      sync.WaitGroup
 	certCaches   []*tlsutil.CertCache
 	certWatchers []context.CancelFunc
 	certWG       sync.WaitGroup
@@ -67,9 +68,11 @@ func (a *App) Start(ctx context.Context) error {
 	a.serveErrors = nil
 	a.serveMu.Unlock()
 	if a.Health != nil {
+		a.serveWG.Add(1)
 		go a.serveHTTP("health", a.Health)
 	}
 	if a.MetricsHTTP != nil {
+		a.serveWG.Add(1)
 		go a.serveHTTP("metrics", a.MetricsHTTP)
 	}
 	return a.Gateway.Start(ctx)
@@ -107,6 +110,9 @@ func (a *App) Stop(ctx context.Context) error {
 			firstErr = err
 		}
 	}
+	// Wait for serveHTTP goroutines to exit. Shutdown() causes
+	// ListenAndServe() to return http.ErrServerClosed.
+	a.serveWG.Wait()
 	return firstErr
 }
 
@@ -272,6 +278,7 @@ func echoHandler(sess api.Session, msg api.Message) error {
 }
 
 func (a *App) serveHTTP(name string, server *http.Server) {
+	defer a.serveWG.Done()
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		a.serveMu.Lock()
 		a.serveErrors = append(a.serveErrors, fmt.Errorf("%s: %w", name, err))
