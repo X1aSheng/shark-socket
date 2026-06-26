@@ -42,6 +42,9 @@ func New(cfg Config) (*App, error) {
 		app.Health = &http.Server{
 			Addr:              cfg.HealthAddr,
 			Handler:           healthHandler(gateway),
+			ReadTimeout:       5 * time.Second,
+			WriteTimeout:      5 * time.Second,
+			IdleTimeout:       30 * time.Second,
 			ReadHeaderTimeout: 5 * time.Second,
 		}
 	}
@@ -49,6 +52,9 @@ func New(cfg Config) (*App, error) {
 		app.MetricsHTTP = &http.Server{
 			Addr:              cfg.MetricsAddr,
 			Handler:           metrics,
+			ReadTimeout:       5 * time.Second,
+			WriteTimeout:      5 * time.Second,
+			IdleTimeout:       30 * time.Second,
 			ReadHeaderTimeout: 5 * time.Second,
 		}
 	}

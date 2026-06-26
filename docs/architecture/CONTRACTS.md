@@ -317,7 +317,7 @@ type RuntimeConfigurable interface {
 - Gateway 在 `Start()` 前遍历所有 Server，检测是否实现 `RuntimeConfigurable`
 - 若实现，调用 `UseRuntime(gateway.runtime)`
 - 协议层只依赖 `Runtime` 接口，不依赖具体实现
-- 单独启动协议服务时（测试场景），可使用 `DefaultRuntime`（空实现）
+- 单独启动协议服务时（测试场景），可使用 `Runtime`（空实现）
 
 ### 6.3 StagedServer 接口
 
@@ -388,15 +388,15 @@ type Runtime interface {
 | 规则 | 说明 |
 |------|------|
 | 协议层只依赖 `Runtime` 接口 | 不依赖 `runtime/gateway.go` 具体实现 |
-| 单独启动协议时 | 可使用 `DefaultRuntime`（空实现或测试桩） |
+| 单独启动协议时 | 可使用 `Runtime`（空实现或测试桩） |
 | 通过 Gateway 启动时 | 必须接收 Gateway 注入的 Runtime |
 | 各协议实际使用的子集 | 应在实现注释中标注（便于评估后续拆分需要） |
 
-### 7.3 DefaultRuntime 示例（测试场景）
+### 7.3 Runtime 示例（测试场景）
 
 ```go
-// internal/runtime/runtime_impl.go
-type DefaultRuntime struct {
+// internal/runtime/runtime.go
+type Runtime struct {
     sessions SessionManager
     plugins  PluginRunner
     logger   Logger
@@ -404,8 +404,8 @@ type DefaultRuntime struct {
     tracer   Tracer
 }
 
-func NewDefaultRuntime(opts ...RuntimeOption) *DefaultRuntime {
-    r := &DefaultRuntime{
+func NewRuntime(opts ...RuntimeOption) *Runtime {
+    r := &Runtime{
         sessions: newManager(),
         plugins:  newRunner(),
         logger:   slogLogger{},

@@ -31,6 +31,13 @@ func (p *AutoBan) Priority() int { return 5 }
 
 // Start begins periodic cleanup of stale banned entries.
 func (p *AutoBan) Start() error {
+	// Recreate stop channel if previously closed (supports restart after Stop).
+	select {
+	case <-p.stopCh:
+		p.stopCh = make(chan struct{})
+		p.stopOnce = sync.Once{}
+	default:
+	}
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()

@@ -36,6 +36,13 @@ func (p *Heartbeat) Start(interval time.Duration) {
 	if p.running {
 		return
 	}
+	// Recreate stop channel if previously closed (supports restart after Stop).
+	select {
+	case <-p.stop:
+		p.stop = make(chan struct{})
+		p.stopOnce = sync.Once{}
+	default:
+	}
 	if interval <= 0 {
 		interval = p.timeout / 2
 	}

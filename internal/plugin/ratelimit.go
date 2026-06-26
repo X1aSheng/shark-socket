@@ -39,6 +39,13 @@ func (p *RateLimit) Priority() int { return 10 }
 
 // Start begins periodic cleanup of stale counter entries.
 func (p *RateLimit) Start() error {
+	// Recreate stop channel if previously closed (supports restart after Stop).
+	select {
+	case <-p.stopCh:
+		p.stopCh = make(chan struct{})
+		p.stopOnce = sync.Once{}
+	default:
+	}
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()

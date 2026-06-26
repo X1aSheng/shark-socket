@@ -22,6 +22,14 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
+{{- define "shark-socket.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create }}
+{{- default (include "shark-socket.fullname" .) .Values.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
 {{- define "shark-socket.selectorLabels" -}}
 app: {{ .Chart.Name }}
 {{- end }}
