@@ -34,8 +34,7 @@ func (m *Memory) Get(key string) ([]byte, bool) {
 		return nil, false
 	}
 	if !item.expiresAt.IsZero() && time.Now().After(item.expiresAt) {
-		m.Delete(key)
-		return nil, false
+		return nil, false // expired; Sweep handles cleanup
 	}
 	return append([]byte(nil), item.value...), true
 }

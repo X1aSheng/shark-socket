@@ -49,7 +49,10 @@ func (m *MessageLog) Append(data []byte) (uint64, error) {
 }
 
 // Replay calls fn for every message in the log, in sequence order.
+// Safe for concurrent use with Append; sees a point-in-time snapshot.
 func (m *MessageLog) Replay(fn func(seq uint64, data []byte) error) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	keys, err := m.store.List(m.bucket)
 	if err != nil {
 		return err
@@ -72,7 +75,10 @@ func (m *MessageLog) Replay(fn func(seq uint64, data []byte) error) error {
 }
 
 // Prune removes messages up to (but not including) the given sequence number.
+// Safe for concurrent use with Append.
 func (m *MessageLog) Prune(beforeSeq uint64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	keys, err := m.store.List(m.bucket)
 	if err != nil {
 		return err

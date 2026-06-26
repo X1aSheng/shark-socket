@@ -44,7 +44,7 @@ func (m *PrometheusMetrics) IncCounter(name string, labels ...string) {
 	m.mu.Lock()
 	metric := m.counters[key]
 	metric.name = name
-	metric.labels = append(metric.labels[:0], labels...)
+	metric.labels = append([]string(nil), labels...)
 	metric.value++
 	m.counters[key] = metric
 	m.mu.Unlock()
@@ -62,7 +62,7 @@ func (m *PrometheusMetrics) ObserveHistogram(name string, value float64, labels 
 	m.mu.Lock()
 	hist := m.histograms[key]
 	hist.name = name
-	hist.labels = append(hist.labels[:0], labels...)
+	hist.labels = append([]string(nil), labels...)
 	hist.count++
 	hist.sum += value
 	m.histograms[key] = hist

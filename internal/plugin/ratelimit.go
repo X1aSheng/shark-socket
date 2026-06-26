@@ -13,15 +13,10 @@ type RateLimit struct {
 	mu       sync.Mutex
 	rate     int
 	window   time.Duration
-	counters map[string]counter
+	counters map[string][]time.Time // sliding window: timestamps of recent requests
 	stopCh   chan struct{}
 	stopOnce sync.Once
 	wg       sync.WaitGroup
-}
-
-type counter struct {
-	start time.Time
-	count int
 }
 
 func NewRateLimit(rate int, window time.Duration) *RateLimit {
@@ -31,7 +26,7 @@ func NewRateLimit(rate int, window time.Duration) *RateLimit {
 	if window <= 0 {
 		window = time.Second
 	}
-	return &RateLimit{rate: rate, window: window, counters: make(map[string]counter), stopCh: make(chan struct{})}
+	return &RateLimit{rate: rate, window: window, counters: make(map[string][]time.Time), stopCh: make(chan struct{})}
 }
 
 func (p *RateLimit) Name() string  { return "ratelimit" }
@@ -73,9 +68,17 @@ func (p *RateLimit) Stop() error {
 func (p *RateLimit) sweep() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	for k, c := range p.counters {
-		if time.Since(c.start) >= p.window*2 {
+	cutoff := time.Now().Add(-p.window * 2)
+	for k, stamps := range p.counters {
+		// Remove timestamps older than 2 windows
+		i := 0
+		for i < len(stamps) && stamps[i].Before(cutoff) {
+			i++
+		}
+		if i >= len(stamps) {
 			delete(p.counters, k)
+		} else if i > 0 {
+			p.counters[k] = stamps[i:]
 		}
 	}
 }
@@ -90,15 +93,22 @@ func (p *RateLimit) OnMessage(sess core.Session, data []byte) ([]byte, error) {
 		key = host
 	}
 	now := time.Now()
+	cutoff := now.Add(-p.window)
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	c := p.counters[key]
-	if c.start.IsZero() || now.Sub(c.start) >= p.window {
-		c = counter{start: now}
+
+	stamps := p.counters[key]
+	// Remove expired timestamps (true sliding window)
+	i := 0
+	for i < len(stamps) && stamps[i].Before(cutoff) {
+		i++
 	}
-	c.count++
-	p.counters[key] = c
-	if c.count > p.rate {
+	stamps = stamps[i:]
+	// Add current request timestamp (sorted by time, so append is correct)
+	stamps = append(stamps, now)
+	p.counters[key] = stamps
+
+	if len(stamps) > p.rate {
 		return nil, core.ErrPluginDrop
 	}
 	return data, nil

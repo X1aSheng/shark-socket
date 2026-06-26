@@ -9,6 +9,11 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/infra/pubsub"
 )
 
+// Cluster distributes messages across nodes via PubSub.
+// NOTE: Cross-node broadcast amplification is possible if application-layer
+// handlers echo messages back through OnMessage. The env.NodeID check only
+// prevents same-node feedback, not cross-node loops. Ensure handlers do not
+// re-publish received cluster messages to avoid amplification.
 type Cluster struct {
 	core.BasePlugin
 	nodeID  string

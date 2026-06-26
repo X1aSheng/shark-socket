@@ -70,10 +70,8 @@ func (s *Server) Start(ctx context.Context) error {
 
 func (s *Server) Stop(ctx context.Context) error {
 	_ = s.StopAccept(ctx)
-	if err := s.CloseSessions(ctx); err != nil {
-		return err
-	}
-	return s.Drain(ctx)
+	_ = s.Drain(ctx)
+	return s.CloseSessions(ctx)
 }
 
 func (s *Server) StopAccept(context.Context) error {
