@@ -10,6 +10,7 @@ import (
 
 	"github.com/X1aSheng/shark-socket/internal/core"
 	"github.com/X1aSheng/shark-socket/internal/runtime"
+	"github.com/X1aSheng/shark-socket/internal/transport/shared"
 	"github.com/pion/dtls/v3"
 )
 
@@ -56,7 +57,7 @@ func (s *Server) Start(ctx context.Context) error {
 	s.cancel = cancel
 
 	if s.opts.TLSConfig != nil {
-		ln, err := dtls.Listen("udp", addr, dtlsConfig(s.opts.TLSConfig))
+		ln, err := dtls.Listen("udp", addr, shared.DTLSConfig(s.opts.TLSConfig))
 		if err != nil {
 			cancel()
 			s.started.Store(false)

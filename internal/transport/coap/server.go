@@ -2,7 +2,6 @@ package coap
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"net"
 	"sync"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/X1aSheng/shark-socket/internal/core"
 	"github.com/X1aSheng/shark-socket/internal/runtime"
+	"github.com/X1aSheng/shark-socket/internal/transport/shared"
 	"github.com/pion/dtls/v3"
 )
 
@@ -61,7 +61,7 @@ func (s *Server) Start(ctx context.Context) error {
 	s.cancel = cancel
 
 	if s.opts.TLSConfig != nil {
-		ln, err := dtls.Listen("udp", addr, dtlsConfig(s.opts.TLSConfig))
+		ln, err := dtls.Listen("udp", addr, shared.DTLSConfig(s.opts.TLSConfig))
 		if err != nil {
 			cancel()
 			return fmt.Errorf("coap dtls listen %s: %w", s.opts.Addr, err)
@@ -486,30 +486,6 @@ func responseCode(code byte) byte {
 	}
 }
 
-// dtlsConfig converts a *tls.Config to *dtls.Config.
-// NOTE: MinVersion is not directly mappable to pion/dtls v3 (no equivalent field).
-// DTLS version is negotiated through cipher suite selection.
-func dtlsConfig(tlsCfg *tls.Config) *dtls.Config {
-	cfg := &dtls.Config{
-		Certificates:       tlsCfg.Certificates,
-		InsecureSkipVerify: tlsCfg.InsecureSkipVerify,
-		RootCAs:            tlsCfg.RootCAs,
-		ClientCAs:          tlsCfg.ClientCAs,
-		ServerName:         tlsCfg.ServerName,
-	}
-	if len(tlsCfg.CipherSuites) > 0 {
-		cfg.CipherSuites = make([]dtls.CipherSuiteID, len(tlsCfg.CipherSuites))
-		for i, id := range tlsCfg.CipherSuites {
-			cfg.CipherSuites[i] = dtls.CipherSuiteID(id)
-		}
-	}
-	if tlsCfg.VerifyPeerCertificate != nil {
-		cfg.VerifyPeerCertificate = tlsCfg.VerifyPeerCertificate
-	}
-	// Note: GetCertificate and GetClientCertificate have different signatures
-	// in crypto/tls vs pion/dtls, so they cannot be directly mapped.
-	return cfg
-}
 
 var (
 	_ core.Server              = (*Server)(nil)

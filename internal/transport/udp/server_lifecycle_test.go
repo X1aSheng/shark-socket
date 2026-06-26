@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/runtime"
+	"github.com/X1aSheng/shark-socket/internal/transport/shared"
 )
 
 func TestUDPServerStopStartCycle(t *testing.T) {
@@ -209,10 +210,10 @@ func TestUDPServerDTLSOptions(t *testing.T) {
 	if opts.TLSConfig == nil {
 		t.Fatal("WithDTLS should set TLSConfig")
 	}
-	// Test dtlsConfig helper
-	dtlsCfg := dtlsConfig(cfg)
+	// Test DTLSConfig helper
+	dtlsCfg := shared.DTLSConfig(cfg)
 	if dtlsCfg == nil {
-		t.Fatal("dtlsConfig should not return nil")
+		t.Fatal("DTLSConfig should not return nil")
 	}
 }
 

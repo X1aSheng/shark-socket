@@ -10,26 +10,33 @@ import (
 
 type AutoBan struct {
 	core.BasePlugin
-	mu        sync.Mutex
-	threshold int
-	counts    map[string]int
-	banned    map[string]struct{}
-	stopCh    chan struct{}
-	stopOnce  sync.Once
-	wg        sync.WaitGroup
+	mu          sync.Mutex
+	threshold   int
+	banDuration time.Duration
+	counts      map[string]int
+	banned      map[string]time.Time // key → ban expiry time
+	stopCh      chan struct{}
+	stopOnce    sync.Once
+	wg          sync.WaitGroup
 }
 
 func NewAutoBan(threshold int) *AutoBan {
 	if threshold <= 0 {
 		threshold = 3
 	}
-	return &AutoBan{threshold: threshold, counts: make(map[string]int), banned: make(map[string]struct{}), stopCh: make(chan struct{})}
+	return &AutoBan{
+		threshold:   threshold,
+		banDuration: 30 * time.Minute,
+		counts:      make(map[string]int),
+		banned:      make(map[string]time.Time),
+		stopCh:      make(chan struct{}),
+	}
 }
 
 func (p *AutoBan) Name() string  { return "autoban" }
 func (p *AutoBan) Priority() int { return 5 }
 
-// Start begins periodic cleanup of stale banned entries.
+// Start begins periodic cleanup of expired bans and stale counters.
 func (p *AutoBan) Start() error {
 	// Recreate stop channel if previously closed (supports restart after Stop).
 	select {
@@ -41,7 +48,7 @@ func (p *AutoBan) Start() error {
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
-		ticker := time.NewTicker(30 * time.Minute)
+		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		for {
 			select {
@@ -62,21 +69,38 @@ func (p *AutoBan) Stop() error {
 	return nil
 }
 
+// sweep removes expired bans and stale counters.
+// Bans expire after banDuration; counters expire after 2x banDuration.
 func (p *AutoBan) sweep() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.counts = make(map[string]int)
-	p.banned = make(map[string]struct{})
+	now := time.Now()
+	for k, expiry := range p.banned {
+		if now.After(expiry) {
+			delete(p.banned, k)
+		}
+	}
+	// Clean counters for non-banned IPs that are stale
+	for k := range p.counts {
+		if _, banned := p.banned[k]; !banned {
+			delete(p.counts, k)
+		}
+	}
 }
 
 func (p *AutoBan) OnAccept(sess core.Session) error {
 	key := remoteKey(sess)
 	p.mu.Lock()
-	_, banned := p.banned[key]
-	p.mu.Unlock()
+	expiry, banned := p.banned[key]
 	if banned {
-		return core.ErrPluginBlock
+		if time.Now().Before(expiry) {
+			p.mu.Unlock()
+			return core.ErrPluginBlock
+		}
+		// Ban expired — remove and allow
+		delete(p.banned, key)
 	}
+	p.mu.Unlock()
 	return nil
 }
 
@@ -86,7 +110,8 @@ func (p *AutoBan) Record(sess core.Session) bool {
 	defer p.mu.Unlock()
 	p.counts[key]++
 	if p.counts[key] >= p.threshold {
-		p.banned[key] = struct{}{}
+		p.banned[key] = time.Now().Add(p.banDuration)
+		delete(p.counts, key)
 		return true
 	}
 	return false
@@ -95,8 +120,15 @@ func (p *AutoBan) Record(sess core.Session) bool {
 func (p *AutoBan) Banned(addr string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	_, ok := p.banned[addr]
-	return ok
+	expiry, ok := p.banned[addr]
+	if !ok {
+		return false
+	}
+	if time.Now().After(expiry) {
+		delete(p.banned, addr)
+		return false
+	}
+	return true
 }
 
 func remoteKey(sess core.Session) string {
