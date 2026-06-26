@@ -487,7 +487,8 @@ func responseCode(code byte) byte {
 }
 
 // dtlsConfig converts a *tls.Config to *dtls.Config.
-// pion/dtls v3 expects its own Config type, not standard crypto/tls.Config.
+// NOTE: MinVersion is not directly mappable to pion/dtls v3 (no equivalent field).
+// DTLS version is negotiated through cipher suite selection.
 func dtlsConfig(tlsCfg *tls.Config) *dtls.Config {
 	cfg := &dtls.Config{
 		Certificates:       tlsCfg.Certificates,
@@ -505,10 +506,8 @@ func dtlsConfig(tlsCfg *tls.Config) *dtls.Config {
 	if tlsCfg.VerifyPeerCertificate != nil {
 		cfg.VerifyPeerCertificate = tlsCfg.VerifyPeerCertificate
 	}
-	// Note: GetCertificate, GetClientCertificate, and MinVersion have different
-	// signatures/semantics in crypto/tls vs pion/dtls, so they cannot be directly
-	// mapped. DTLS version negotiation is handled through cipher suite selection:
-	// restrict CipherSuites to DTLS 1.3 suites if TLS 1.3 is required.
+	// Note: GetCertificate and GetClientCertificate have different signatures
+	// in crypto/tls vs pion/dtls, so they cannot be directly mapped.
 	return cfg
 }
 

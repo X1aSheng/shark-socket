@@ -23,6 +23,7 @@ type App struct {
 	serveMu      sync.Mutex
 	certCaches   []*tlsutil.CertCache
 	certWatchers []context.CancelFunc
+	certWG       sync.WaitGroup
 	appCtx       context.Context
 	appCancel    context.CancelFunc
 }
@@ -85,6 +86,7 @@ func (a *App) Stop(ctx context.Context) error {
 	for _, cancel := range a.certWatchers {
 		cancel()
 	}
+	a.certWG.Wait()
 	var firstErr error
 	if err := a.Gateway.Stop(ctx); err != nil && firstErr == nil {
 		firstErr = err
@@ -203,19 +205,21 @@ func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 		if a.appCtx == nil {
 			a.appCtx = context.Background()
 		}
-		cancel := tlsutil.WatchFiles(a.appCtx, 30*time.Second, func() {
+		cancel := tlsutil.WatchFilesWithWG(a.appCtx, 30*time.Second, func() {
 			if err := c.Load(); err != nil {
 				a.Gateway.Runtime().Logger().Error("cert reload failed", "error", err)
 			} else {
 				a.Gateway.Runtime().Logger().Info("cert reload successful")
 			}
-		}, c.Files()...)
+		}, &a.certWG, c.Files()...)
 		a.certWatchers = append(a.certWatchers, cancel)
 	}
 
 	return nil
 }
 
+// allowedOriginChecker returns a CheckOrigin function for the given allowed origins.
+// Using "*" as an origin allows all origins — only use in development.
 func allowedOriginChecker(allowed []string) func(*http.Request) bool {
 	set := make(map[string]struct{}, len(allowed))
 	allowAll := false
