@@ -60,4 +60,3 @@ func WithDTLS(cfg *tls.Config) Option {
 		o.TLSConfig = cfg
 	}
 }
-

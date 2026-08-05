@@ -511,7 +511,6 @@ func responseCode(code byte) byte {
 	}
 }
 
-
 var (
 	_ core.Server              = (*Server)(nil)
 	_ core.RuntimeConfigurable = (*Server)(nil)

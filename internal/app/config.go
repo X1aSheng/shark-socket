@@ -282,9 +282,9 @@ func mergeProtocol(base, override ProtocolConfig) ProtocolConfig {
 	if override.TLSClientAuth != "" {
 		base.TLSClientAuth = override.TLSClientAuth
 	}
-		if override.TLSMinVersion != "" {
-			base.TLSMinVersion = override.TLSMinVersion
-		}
+	if override.TLSMinVersion != "" {
+		base.TLSMinVersion = override.TLSMinVersion
+	}
 	if override.AllowedOrigins != nil {
 		base.AllowedOrigins = append([]string(nil), override.AllowedOrigins...)
 	}

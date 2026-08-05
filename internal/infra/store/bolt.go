@@ -126,6 +126,6 @@ func (b *BoltStore) Close() error {
 }
 
 var (
-	_ Store        = (*BoltStore)(nil)
+	_ Store       = (*BoltStore)(nil)
 	_ BulkDeleter = (*BoltStore)(nil)
 )

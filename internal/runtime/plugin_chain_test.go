@@ -38,9 +38,9 @@ func TestPluginChainSortsByPriority(t *testing.T) {
 
 type recordingPlugin struct {
 	core.BasePlugin
-	name    string
-	accepted bool
-	closed  bool
+	name       string
+	accepted   bool
+	closed     bool
 	failAccept bool
 }
 
