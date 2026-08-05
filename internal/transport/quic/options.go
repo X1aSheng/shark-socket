@@ -13,6 +13,7 @@ type Options struct {
 	Handler        core.Handler
 	WriteQueueSize int
 	WriteTimeout   time.Duration
+	ReadTimeout    time.Duration // stream read deadline; 0 disables
 	MaxMessageSize int
 	MaxConnections int64
 	AcceptRate     float64
@@ -25,6 +26,7 @@ func defaultOptions() Options {
 		Addr:           "127.0.0.1:18800",
 		WriteQueueSize: 128,
 		WriteTimeout:   30 * time.Second,
+		ReadTimeout:    5 * time.Minute, // bounds idle streams (anti-slowloris)
 		MaxMessageSize: 1024 * 1024,
 	}
 }

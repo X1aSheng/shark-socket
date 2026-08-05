@@ -2,6 +2,7 @@ package tcp
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"io"
 	"testing"
@@ -163,5 +164,20 @@ func TestWithClientTLS(t *testing.T) {
 	c := NewClient("127.0.0.1:0", WithClientLinger(0), opt)
 	if c == nil {
 		t.Fatal("client should not be nil")
+	}
+}
+
+// TestLengthPrefixFramerDefaultLimit verifies a zero-value LengthPrefixFramer
+// enforces a safe default frame size instead of allocating an unbounded
+// (up to 4 GiB) buffer from a malicious length prefix.
+func TestLengthPrefixFramerDefaultLimit(t *testing.T) {
+	var buf bytes.Buffer
+	header := make([]byte, 4)
+	binary.BigEndian.PutUint32(header, uint32(defaultMaxFrameBytes+1))
+	buf.Write(header)
+
+	var framer LengthPrefixFramer // MaxFrameBytes == 0
+	if _, err := framer.ReadFrame(&buf); !errors.Is(err, core.ErrFrameTooLarge) {
+		t.Fatalf("ReadFrame error = %v, want %v", err, core.ErrFrameTooLarge)
 	}
 }

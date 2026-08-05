@@ -25,6 +25,7 @@ type session struct {
 	cancel              context.CancelFunc
 	writeCh             chan []byte
 	writeTimeout        time.Duration
+	readTimeout         time.Duration
 	writeQueueHighWater float64
 	closeOnce           sync.Once
 }
@@ -100,6 +101,11 @@ func (s *session) Close(context.Context) error {
 func (s *session) readLoop(handler func([]byte)) {
 	defer func() { _ = s.Close(context.Background()) }()
 	for {
+		if s.readTimeout > 0 {
+			if err := s.conn.SetReadDeadline(time.Now().Add(s.readTimeout)); err != nil {
+				return
+			}
+		}
 		payload, err := s.framer.ReadFrame(s.conn)
 		if err != nil {
 			return

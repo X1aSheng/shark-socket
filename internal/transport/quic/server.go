@@ -8,6 +8,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
 	"github.com/X1aSheng/shark-socket/internal/runtime"
@@ -169,6 +170,13 @@ func (s *Server) handleConn(conn *quicgo.Conn) {
 
 func (s *Server) handleStream(sess *session, stream *quicgo.Stream) {
 	defer stream.Close()
+	if s.opts.ReadTimeout > 0 {
+		// Bound the read so an idle half-open stream cannot hold a
+		// goroutine indefinitely (slowloris-style exhaustion).
+		if err := stream.SetReadDeadline(time.Now().Add(s.opts.ReadTimeout)); err != nil {
+			return
+		}
+	}
 	// +1 is intentional: LimitReader silently truncates at the limit,
 	// so we allow one extra byte to detect oversized messages.
 	lr := io.LimitReader(stream, int64(s.opts.MaxMessageSize)+1)

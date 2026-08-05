@@ -14,6 +14,7 @@ type Options struct {
 	Framer              Framer
 	WriteQueue          int
 	WriteTimeout        time.Duration
+	ReadTimeout         time.Duration // idle read timeout; 0 disables
 	WriteQueueHighWater float64
 	WorkerCount         int
 	TaskQueueSize       int
@@ -33,6 +34,7 @@ func defaultOptions() Options {
 		Framer:              LengthPrefixFramer{MaxFrameBytes: 1024 * 1024},
 		WriteQueue:          128,
 		WriteTimeout:        30 * time.Second,
+		ReadTimeout:         5 * time.Minute, // bounds idle connections (anti-slowloris)
 		WriteQueueHighWater: 0.8,
 		WorkerCount:         4,
 		TaskQueueSize:       512,
@@ -70,6 +72,17 @@ func WithFramer(framer Framer) Option {
 	return func(o *Options) {
 		if framer != nil {
 			o.Framer = framer
+		}
+	}
+}
+
+// WithReadTimeout sets the per-frame read deadline. Connections that send
+// nothing within this window are closed, preventing slowloris-style resource
+// exhaustion. 0 disables the timeout.
+func WithReadTimeout(timeout time.Duration) Option {
+	return func(o *Options) {
+		if timeout > 0 {
+			o.ReadTimeout = timeout
 		}
 	}
 }

@@ -17,14 +17,27 @@ type LengthPrefixFramer struct {
 	MaxFrameBytes int
 }
 
+// defaultMaxFrameBytes bounds allocations when a framer is used with an
+// unset MaxFrameBytes (zero value), preventing a malicious length prefix
+// (up to 4 GiB) from triggering an oversized allocation.
+const defaultMaxFrameBytes = 1024 * 1024
+
+func (f LengthPrefixFramer) maxBytes() int {
+	if f.MaxFrameBytes > 0 {
+		return f.MaxFrameBytes
+	}
+	return defaultMaxFrameBytes
+}
+
 func (f LengthPrefixFramer) ReadFrame(r io.Reader) ([]byte, error) {
 	var header [4]byte
 	if _, err := io.ReadFull(r, header[:]); err != nil {
 		return nil, err
 	}
 	n := int(binary.BigEndian.Uint32(header[:]))
-	if f.MaxFrameBytes > 0 && n > f.MaxFrameBytes {
-		return nil, fmt.Errorf("%w: %d > %d", core.ErrFrameTooLarge, n, f.MaxFrameBytes)
+	max := f.maxBytes()
+	if n > max {
+		return nil, fmt.Errorf("%w: %d > %d", core.ErrFrameTooLarge, n, max)
 	}
 	payload := make([]byte, n)
 	_, err := io.ReadFull(r, payload)
@@ -32,8 +45,9 @@ func (f LengthPrefixFramer) ReadFrame(r io.Reader) ([]byte, error) {
 }
 
 func (f LengthPrefixFramer) WriteFrame(w io.Writer, payload []byte) error {
-	if f.MaxFrameBytes > 0 && len(payload) > f.MaxFrameBytes {
-		return fmt.Errorf("%w: %d > %d", core.ErrFrameTooLarge, len(payload), f.MaxFrameBytes)
+	max := f.maxBytes()
+	if len(payload) > max {
+		return fmt.Errorf("%w: %d > %d", core.ErrFrameTooLarge, len(payload), max)
 	}
 	var header [4]byte
 	binary.BigEndian.PutUint32(header[:], uint32(len(payload)))
@@ -57,6 +71,10 @@ func (f LineFramer) delimiter() byte {
 }
 
 func (f LineFramer) ReadFrame(r io.Reader) ([]byte, error) {
+	max := f.MaxFrameBytes
+	if max <= 0 {
+		max = defaultMaxFrameBytes
+	}
 	var line []byte
 	var b [1]byte
 	for {
@@ -64,8 +82,8 @@ func (f LineFramer) ReadFrame(r io.Reader) ([]byte, error) {
 			return nil, err
 		}
 		line = append(line, b[0])
-		if f.MaxFrameBytes > 0 && len(line) > f.MaxFrameBytes {
-			return nil, fmt.Errorf("%w: %d > %d", core.ErrFrameTooLarge, len(line), f.MaxFrameBytes)
+		if len(line) > max {
+			return nil, fmt.Errorf("%w: %d > %d", core.ErrFrameTooLarge, len(line), max)
 		}
 		if b[0] == f.delimiter() {
 			break
@@ -75,8 +93,12 @@ func (f LineFramer) ReadFrame(r io.Reader) ([]byte, error) {
 }
 
 func (f LineFramer) WriteFrame(w io.Writer, payload []byte) error {
-	if f.MaxFrameBytes > 0 && len(payload)+1 > f.MaxFrameBytes {
-		return fmt.Errorf("%w: %d > %d", core.ErrFrameTooLarge, len(payload)+1, f.MaxFrameBytes)
+	max := f.MaxFrameBytes
+	if max <= 0 {
+		max = defaultMaxFrameBytes
+	}
+	if len(payload)+1 > max {
+		return fmt.Errorf("%w: %d > %d", core.ErrFrameTooLarge, len(payload)+1, max)
 	}
 	if _, err := w.Write(payload); err != nil {
 		return err

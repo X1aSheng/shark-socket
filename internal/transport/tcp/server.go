@@ -166,6 +166,7 @@ func (s *Server) acceptLoop(ctx context.Context) {
 func (s *Server) handleConn(conn net.Conn) {
 	id := s.rt.Sessions().NextID()
 	sess := newSession(id, conn, s.opts.Framer, s.opts.WriteQueue, s.opts.WriteTimeout, s.opts.WriteQueueHighWater)
+	sess.readTimeout = s.opts.ReadTimeout
 	s.sessions.Store(id, sess)
 	defer func() {
 		s.sessions.Delete(id)
