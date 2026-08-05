@@ -163,12 +163,20 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	strictFraming := r.Header.Get("x-grpc-web") == "1"
-	body, framed, err := parseRequestPayload(body, strictFraming)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	grpcWeb := isGRPCWebRequest(r)
+	var framed bool
+	if grpcWeb || strictFraming {
+		// The request declares gRPC-Web (content-type or x-grpc-web header):
+		// parse the body as a frame sequence and frame the response. A raw
+		// request body with neither header is passed through untouched so it
+		// cannot be misdetected as a frame.
+		var parseErr error
+		body, framed, parseErr = parseRequestPayload(body, strictFraming)
+		if parseErr != nil {
+			http.Error(w, parseErr.Error(), http.StatusBadRequest)
+			return
+		}
 	}
-	framed = framed || isGRPCWebRequest(r) && strictFraming
 	id := s.rt.Sessions().NextID()
 	sess := newSession(id, w, r, framed)
 	if err := s.rt.Sessions().Register(sess); err != nil {
