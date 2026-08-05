@@ -66,7 +66,7 @@ docker compose -f deploy/docker/docker-compose.yml --profile test run mqtt-test
 |-------|---------|--------|
 | Unit tests (26 suites) | `go test ./...` | ✅ |
 | Race detection | `go test -race ./...` | ✅ |
-| Coverage (70% threshold) | `go run scripts/run_tests.go -mode cover` | ✅ 75.2% |
+| Coverage (70% threshold) | `go run scripts/run_tests.go -mode cover` | ✅ ~75% |
 | Lint (golangci-lint) | `golangci-lint run` | ✅ |
 | Security (govulncheck) | `govulncheck ./...` | ✅ |
 | Deploy manifests | `go run scripts/run_tests.go -mode deploy` | ✅ |
@@ -141,5 +141,5 @@ Raw JSON and readable reports are written to `logs/`.
 - [Examples](docs/guides/EXAMPLES.md)
 - [Architecture Analysis](docs/reports/ARCHITECTURE-ANALYSIS-260626.md)
 - [Architecture Methodology](docs/reports/ARCHITECTURE-METHODOLOGY-260626.md)
-- [Latest Project Review (V3)](docs/reports/PROJECT-REVIEW-260626-V3.md)
+- [Latest Project Review (V5)](docs/reports/PROJECT-REVIEW-260806-034632.md)
 - [Changelog](CHANGELOG.md)

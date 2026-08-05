@@ -7,6 +7,29 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### V5 Audit Fixes (2026-08-06)
+
+#### Crash / Concurrency
+- **TCP/QUIC session:** `Close()` no longer closes `writeCh`; `Send()` and `writeLoop` select on `ctx.Done()`, eliminating the "send on closed channel" panic when `Send` races with `Close`.
+- **TCP worker pool:** Never closes the task queue; workers terminate via a `done` channel and drain remaining tasks on `stop()`, so a blocking `submit` can no longer race `stop()` into a panic.
+- **Gateway:** `Start`/`Stop`/`Register` are serialized by a shared mutex; `Start` rejects double start; `Stop` marks not-started up front (readyz reports not-ready during shutdown) and clears stale uptime.
+- **SessionManager.Broadcast:** Sends to a snapshot instead of under the read lock, so a blocking or re-entrant `Send` cannot deadlock the manager.
+- **PluginChain.OnAccept:** On failure, already-accepted plugins receive `OnClose` (reverse order) to release their resources.
+
+#### Transport
+- **UDP/CoAP session wedge:** Error paths now call `closeSession` (removing the session and unregistering it) instead of only `sess.Close()`, so a peer is not permanently wedged to a closed session.
+- **CoAP:** Empty-payload requests (standard GET) now reach the Handler/Responder instead of being dropped by a `len(payload) > 0` gate.
+- **gRPC-Web:** Raw request bodies without gRPC-Web headers are passed through untouched; only declared gRPC-Web requests are parsed as frames.
+- **TCP/QUIC read timeouts:** New `ReadTimeout` option (default 5m) closes idle connections/streams, mitigating slowloris-style resource exhaustion.
+- **Framers:** Zero-value `LengthPrefixFramer`/`LineFramer` fall back to a 1 MiB safe default instead of allowing up-to-4 GiB allocations or unbounded line growth.
+
+#### LwM2M / Protocol
+- **LwM2M Server.Write:** Invokes `OnWrite` after releasing the lock (re-entrancy deadlock fix) and no longer performs callback I/O under the global mutex.
+- **LwM2M TLV:** 5-7 byte integers decode from all bytes (no truncation); 4-byte float32 values decode correctly instead of 0.0.
+
+#### CI & Test
+- All regression tests added pass under `go test -race`.
+
 ### V4 Audit Fixes (2026-06-26)
 
 #### Plugin Lifecycle
