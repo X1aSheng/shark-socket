@@ -243,14 +243,17 @@ func (s *Server) readLoop(ctx context.Context) {
 		payload, err = s.rt.Plugins().OnMessage(sess, payload)
 		if err != nil {
 			if err != core.ErrPluginDrop {
-				_ = sess.Close(context.Background())
+				// Remove the session so the peer is not wedged to a closed
+				// session. Plain UDP has no per-peer conn whose close would
+				// unblock a read loop, so cleanup must happen here.
+				s.closeSession(context.Background(), sess.remote.String(), sess)
 			}
 			continue
 		}
 		if s.opts.Handler != nil {
 			msg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolUDP, Payload: payload}
 			if err := s.opts.Handler(sess, msg); err != nil {
-				_ = sess.Close(context.Background())
+				s.closeSession(context.Background(), sess.remote.String(), sess)
 			}
 		}
 	}

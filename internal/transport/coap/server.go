@@ -268,7 +268,15 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 	payload, err := s.rt.Plugins().OnMessage(sess, msg.Payload)
 	if err != nil {
 		if err != core.ErrPluginDrop {
-			_ = sess.Close(context.Background())
+			// Remove the session so the peer is not wedged to a closed
+			// session. DTLS sessions self-heal via their handler defer
+			// (closing the conn unblocks the read loop); plain UDP peers
+			// are keyed by address and must be removed explicitly.
+			if sess.dtlsConn != nil {
+				_ = sess.Close(context.Background())
+			} else {
+				s.closeSession(context.Background(), sess.remote.String(), sess)
+			}
 		}
 		if msg.Type == TypeCON {
 			if err := s.sendACK(sess, msg, CodeInternalServerError, nil); err != nil && s.rt != nil {
@@ -278,17 +286,25 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 		return
 	}
 	var responsePayload []byte
-	if s.opts.Responder != nil && len(payload) > 0 {
+	if s.opts.Responder != nil {
 		handlerMsg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolCoAP, Payload: payload}
 		responsePayload, err = s.opts.Responder(sess, handlerMsg)
 		if err != nil {
-			_ = sess.Close(context.Background())
+			if sess.dtlsConn != nil {
+				_ = sess.Close(context.Background())
+			} else {
+				s.closeSession(context.Background(), sess.remote.String(), sess)
+			}
 			return
 		}
-	} else if s.opts.Handler != nil && len(payload) > 0 {
+	} else if s.opts.Handler != nil {
 		handlerMsg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolCoAP, Payload: payload}
 		if err := s.opts.Handler(sess, handlerMsg); err != nil {
-			_ = sess.Close(context.Background())
+			if sess.dtlsConn != nil {
+				_ = sess.Close(context.Background())
+			} else {
+				s.closeSession(context.Background(), sess.remote.String(), sess)
+			}
 		}
 	}
 	if msg.Type == TypeCON {
