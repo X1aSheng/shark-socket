@@ -12,7 +12,7 @@ import (
 
 type Gateway struct {
 	mu        sync.RWMutex
-	stopMu    sync.Mutex
+	startMu   sync.Mutex // serializes Start, Stop and Register against each other
 	servers   map[core.Protocol]core.Server
 	order     []core.Protocol
 	rt        *Runtime
@@ -47,11 +47,13 @@ func (g *Gateway) Register(server core.Server) error {
 	if server == nil {
 		return core.ErrNoServers
 	}
-	g.mu.Lock()
-	defer g.mu.Unlock()
+	g.startMu.Lock()
+	defer g.startMu.Unlock()
 	if g.started.Load() {
 		return fmt.Errorf("gateway: cannot register %q after Start", server.Protocol())
 	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	proto := server.Protocol()
 	if _, exists := g.servers[proto]; exists {
 		return core.ErrDuplicateProtocol
@@ -66,6 +68,11 @@ func (g *Gateway) Runtime() *Runtime {
 }
 
 func (g *Gateway) Start(ctx context.Context) error {
+	g.startMu.Lock()
+	defer g.startMu.Unlock()
+	if g.started.Load() {
+		return fmt.Errorf("gateway: already started")
+	}
 	servers := g.snapshot()
 	if len(servers) == 0 {
 		return core.ErrNoServers
@@ -97,8 +104,12 @@ func (g *Gateway) Start(ctx context.Context) error {
 }
 
 func (g *Gateway) Stop(ctx context.Context) error {
-	g.stopMu.Lock()
-	defer g.stopMu.Unlock()
+	g.startMu.Lock()
+	defer g.startMu.Unlock()
+
+	// Mark not-started up front so Register() is rejected and Ready()/readyz
+	// report not-ready for the whole shutdown window.
+	g.started.Store(false)
 
 	servers := g.snapshot()
 	var firstErr error
@@ -132,6 +143,7 @@ func (g *Gateway) Stop(ctx context.Context) error {
 		firstErr = err
 	}
 	g.started.Store(false)
+	g.startedAt.Store(nil) // clear stale uptime reported by Health()
 	return firstErr
 }
 

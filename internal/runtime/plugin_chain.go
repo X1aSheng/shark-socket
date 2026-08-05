@@ -43,8 +43,13 @@ func (c *PluginChain) Append(plugins ...core.Plugin) {
 func (c *PluginChain) OnAccept(sess core.Session) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	for _, p := range c.plugins {
+	for i, p := range c.plugins {
 		if err := c.safeAccept(p, sess); err != nil {
+			// Roll back: already-accepted plugins receive OnClose (in reverse
+			// order) so resources they allocated during OnAccept are released.
+			for j := i - 1; j >= 0; j-- {
+				c.safeClose(c.plugins[j], sess)
+			}
 			return err
 		}
 	}

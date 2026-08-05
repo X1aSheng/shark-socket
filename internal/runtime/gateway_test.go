@@ -101,3 +101,66 @@ func TestGatewayStagedStop(t *testing.T) {
 		t.Fatal("gateway is ready after stop")
 	}
 }
+
+func TestGatewayDoubleStartRejected(t *testing.T) {
+	g := NewGateway()
+	if err := g.Register(&fakeServer{proto: core.ProtocolTCP}); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.Start(context.Background()); err == nil {
+		t.Fatal("second Start succeeded, want an error")
+	}
+	if err := g.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGatewayRestartAfterStop(t *testing.T) {
+	g := NewGateway()
+	if err := g.Register(&fakeServer{proto: core.ProtocolTCP}); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// After Stop the gateway is reconfigurable (reentrancy): a new server
+	// can be registered and the gateway started again.
+	if err := g.Register(&fakeServer{proto: core.ProtocolUDP}); err != nil {
+		t.Fatalf("Register after Stop failed: %v", err)
+	}
+	if err := g.Start(context.Background()); err != nil {
+		t.Fatalf("restart after Stop failed: %v", err)
+	}
+	if !g.Ready() {
+		t.Fatal("gateway is not ready after restart")
+	}
+	if err := g.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGatewayHealthAfterStopHasNoStaleUptime(t *testing.T) {
+	g := NewGateway()
+	if err := g.Register(&fakeServer{proto: core.ProtocolTCP}); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	h := g.Health()
+	if h["started"] != false {
+		t.Fatalf("health started = %v, want false", h["started"])
+	}
+	if _, ok := h["uptime"]; ok {
+		t.Fatalf("health still reports uptime after Stop: %v", h)
+	}
+}

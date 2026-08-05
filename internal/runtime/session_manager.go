@@ -97,13 +97,15 @@ func (m *SessionManager) Range(fn func(core.Session) bool) {
 }
 
 func (m *SessionManager) Broadcast(data []byte) error {
+	// Send outside the manager lock: a session's Send may block on I/O or
+	// re-enter the manager (e.g. via Unregister), which would deadlock if
+	// the read lock were held here. Snapshot copies the set under RLock.
 	var firstErr error
-	m.Range(func(sess core.Session) bool {
+	for _, sess := range m.Snapshot() {
 		if err := sess.Send(data); err != nil && firstErr == nil {
 			firstErr = err
 		}
-		return true
-	})
+	}
 	return firstErr
 }
 
