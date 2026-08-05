@@ -27,6 +27,7 @@ type workerPool struct {
 	policy  FullPolicy
 	wg      sync.WaitGroup
 	closed  atomic.Bool
+	done    chan struct{}
 }
 
 func newWorkerPool(handler core.Handler, workers int, queueSize int, policy FullPolicy) *workerPool {
@@ -40,6 +41,7 @@ func newWorkerPool(handler core.Handler, workers int, queueSize int, policy Full
 		handler: handler,
 		queue:   make(chan task, queueSize),
 		policy:  policy,
+		done:    make(chan struct{}),
 	}
 }
 
@@ -60,8 +62,14 @@ func (p *workerPool) submit(sess *session, data []byte) error {
 	t := task{sess: sess, data: data}
 	switch p.policy {
 	case PolicyBlock:
-		p.queue <- t
-		return nil
+		// Never close p.queue; use done for termination so a blocking
+		// send cannot race with stop() and panic on a closed channel.
+		select {
+		case p.queue <- t:
+			return nil
+		case <-p.done:
+			return core.ErrClosed
+		}
 	case PolicyDrop:
 		select {
 		case p.queue <- t:
@@ -78,27 +86,49 @@ func (p *workerPool) submit(sess *session, data []byte) error {
 			return core.ErrWriteQueueFull
 		}
 	default:
-		p.queue <- t
-		return nil
+		select {
+		case p.queue <- t:
+			return nil
+		case <-p.done:
+			return core.ErrClosed
+		}
 	}
 }
 
 func (p *workerPool) stop() {
 	if p.closed.CompareAndSwap(false, true) {
-		close(p.queue)
+		close(p.done)
 	}
 	p.wg.Wait()
 }
 
+func (p *workerPool) handle(t task) {
+	if p.handler == nil {
+		return
+	}
+	msg := core.Message{SessionID: t.sess.ID(), Protocol: core.ProtocolTCP, Payload: t.data}
+	if err := p.handler(t.sess, msg); err != nil {
+		_ = t.sess.Close(context.Background())
+	}
+}
+
 func (p *workerPool) run() {
 	defer p.wg.Done()
-	for t := range p.queue {
-		if p.handler == nil {
-			continue
-		}
-		msg := core.Message{SessionID: t.sess.ID(), Protocol: core.ProtocolTCP, Payload: t.data}
-		if err := p.handler(t.sess, msg); err != nil {
-			_ = t.sess.Close(context.Background())
+	for {
+		select {
+		case t := <-p.queue:
+			p.handle(t)
+		case <-p.done:
+			// Drain any remaining queued tasks before exiting so that
+			// tasks submitted before stop() still complete.
+			for {
+				select {
+				case t := <-p.queue:
+					p.handle(t)
+				default:
+					return
+				}
+			}
 		}
 	}
 }

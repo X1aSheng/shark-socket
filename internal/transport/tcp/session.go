@@ -89,7 +89,9 @@ func (s *session) Close(context.Context) error {
 	s.closeOnce.Do(func() {
 		s.state.Store(uint32(core.StateClosed))
 		s.cancel()
-		close(s.writeCh)
+		// writeCh is intentionally never closed: Send and writeLoop
+		// both select on ctx.Done() so no "send on closed channel"
+		// panic can occur during a concurrent Close.
 		err = s.conn.Close()
 	})
 	return err
@@ -109,13 +111,18 @@ func (s *session) readLoop(handler func([]byte)) {
 
 func (s *session) writeLoop() {
 	defer func() { _ = s.Close(context.Background()) }()
-	for payload := range s.writeCh {
-		if s.writeTimeout > 0 {
-			if err := s.conn.SetWriteDeadline(time.Now().Add(s.writeTimeout)); err != nil {
+	for {
+		select {
+		case payload := <-s.writeCh:
+			if s.writeTimeout > 0 {
+				if err := s.conn.SetWriteDeadline(time.Now().Add(s.writeTimeout)); err != nil {
+					return
+				}
+			}
+			if err := s.framer.WriteFrame(s.conn, payload); err != nil {
 				return
 			}
-		}
-		if err := s.framer.WriteFrame(s.conn, payload); err != nil {
+		case <-s.ctx.Done():
 			return
 		}
 	}

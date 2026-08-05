@@ -1,7 +1,9 @@
 package tcp
 
 import (
+	"context"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -63,5 +65,76 @@ func TestSessionMethods(t *testing.T) {
 	sess.DelMeta("key1")
 	if _, ok := sess.GetMeta("key1"); ok {
 		t.Error("GetMeta after DelMeta returned ok=true")
+	}
+}
+
+// TestSessionSendCloseRace is a regression test for the Send/Close
+// concurrent-close panic (send on closed channel). It hammers Send from
+// multiple goroutines while Close runs concurrently; the test only fails
+// if a panic or unexpected error escapes.
+func TestSessionSendCloseRace(t *testing.T) {
+	conn1, conn2 := net.Pipe()
+	defer conn1.Close()
+	defer conn2.Close()
+
+	sess := newSession(1, conn1, LengthPrefixFramer{MaxFrameBytes: 1024}, 128, time.Second, 0.8)
+
+	// Drain writes so net.Pipe does not block the writer forever.
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			if _, err := conn2.Read(buf); err != nil {
+				return
+			}
+		}
+	}()
+
+	done := make(chan struct{})
+	for g := 0; g < 8; g++ {
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				_ = sess.Send([]byte("hello"))
+			}
+		}()
+	}
+	for i := 0; i < 200; i++ {
+		_ = sess.Close(context.Background())
+	}
+	close(done)
+}
+
+// TestPoolSubmitStopRace is a regression test for the submit/stop race that
+// could panic with "send on closed channel" when stop() closed the task queue.
+func TestPoolSubmitStopRace(t *testing.T) {
+	for iter := 0; iter < 200; iter++ {
+		p := newWorkerPool(nil, 1, 2, PolicyBlock)
+		p.start(1)
+		stop := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				_ = p.submit(nil, []byte("x"))
+			}
+		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			time.Sleep(5 * time.Millisecond)
+			p.stop()
+			close(stop)
+		}()
+		wg.Wait()
 	}
 }

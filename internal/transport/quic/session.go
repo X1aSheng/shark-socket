@@ -68,6 +68,8 @@ func (s *session) Send(payload []byte) error {
 	select {
 	case s.writeCh <- copied:
 		return nil
+	case <-s.ctx.Done():
+		return core.ErrSessionClosed
 	default:
 		return core.ErrWriteQueueFull
 	}
@@ -78,27 +80,34 @@ func (s *session) Close(context.Context) error {
 	s.closeOnce.Do(func() {
 		s.state.Store(uint32(core.StateClosed))
 		s.cancel()
-		close(s.writeCh)
+		// writeCh is intentionally never closed: Send and writeLoop
+		// both select on ctx.Done() so no "send on closed channel"
+		// panic can occur during a concurrent Close.
 		err = s.conn.CloseWithError(0, "closed")
 	})
 	return err
 }
 
 func (s *session) writeLoop() {
-	for payload := range s.writeCh {
-		stream, err := s.conn.OpenStreamSync(s.ctx)
-		if err != nil {
-			return
-		}
-		if s.writeTimeout > 0 {
-			stream.SetWriteDeadline(time.Now().Add(s.writeTimeout))
-		}
-		n, err := stream.Write(payload)
-		if err != nil || n < len(payload) {
+	for {
+		select {
+		case payload := <-s.writeCh:
+			stream, err := s.conn.OpenStreamSync(s.ctx)
+			if err != nil {
+				return
+			}
+			if s.writeTimeout > 0 {
+				stream.SetWriteDeadline(time.Now().Add(s.writeTimeout))
+			}
+			n, err := stream.Write(payload)
+			if err != nil || n < len(payload) {
+				_ = stream.Close()
+				return
+			}
 			_ = stream.Close()
+		case <-s.ctx.Done():
 			return
 		}
-		_ = stream.Close()
 	}
 }
 
