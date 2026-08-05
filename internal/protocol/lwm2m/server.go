@@ -123,13 +123,14 @@ func (s *Server) Registration(endpoint string) (Registration, bool) {
 
 func (s *Server) Write(endpoint string, path ObjectPath, value []byte) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if _, ok := s.registrations[endpoint]; !ok {
+		s.mu.Unlock()
 		return ErrRegistrationGone
 	}
 	if def, ok := s.objects[path.ObjectID]; ok {
 		for _, res := range def.Resources {
 			if res.ID == path.ResourceID && !res.Operations.Allows(OpWrite) {
+				s.mu.Unlock()
 				return ErrReadOnly
 			}
 		}
@@ -142,8 +143,13 @@ func (s *Server) Write(endpoint string, path ObjectPath, value []byte) error {
 		Value:     append([]byte(nil), value...),
 		UpdatedAt: time.Now(),
 	}
-	if s.OnWrite != nil {
-		s.OnWrite(path.String(), value)
+	// Snapshot the callback under the lock but invoke it after unlocking so
+	// a re-entrant OnWrite (or one doing network I/O) cannot deadlock on the
+	// non-reentrant mutex or stall every register/read/write for all peers.
+	onWrite := s.OnWrite
+	s.mu.Unlock()
+	if onWrite != nil {
+		onWrite(path.String(), value)
 	}
 	return nil
 }

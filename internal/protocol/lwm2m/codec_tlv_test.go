@@ -166,3 +166,32 @@ func TestOperationMaskAllows(t *testing.T) {
 		t.Fatal("expected OpExecute not allowed")
 	}
 }
+
+// TestResourceValueFiveByteInteger verifies a 5-byte integer is decoded from
+// all five bytes instead of silently truncating to the first four.
+func TestResourceValueFiveByteInteger(t *testing.T) {
+	r := tlvResource{ResourceID: 1, Type: ResourceInteger, Value: []byte{0x01, 0x00, 0x00, 0x00, 0x00}}
+	v, ok := r.ResourceValue().(int64)
+	if !ok {
+		t.Fatalf("Value type = %T, want int64", r.ResourceValue())
+	}
+	if v != 0x0100000000 {
+		t.Fatalf("Value = %d, want %d", v, int64(0x0100000000))
+	}
+}
+
+// TestResourceValueFloat32 verifies a 4-byte float32 is decoded instead of
+// returning 0.0.
+func TestResourceValueFloat32(t *testing.T) {
+	bits := math.Float32bits(1.5)
+	val := make([]byte, 4)
+	binary.BigEndian.PutUint32(val, bits)
+	r := tlvResource{ResourceID: 1, Type: ResourceFloat, Value: val}
+	v, ok := r.ResourceValue().(float64)
+	if !ok {
+		t.Fatalf("Value type = %T, want float64", r.ResourceValue())
+	}
+	if v != 1.5 {
+		t.Fatalf("Value = %v, want 1.5", v)
+	}
+}

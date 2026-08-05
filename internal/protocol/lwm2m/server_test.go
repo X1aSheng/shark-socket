@@ -79,3 +79,37 @@ func TestServerUpdateUnknown(t *testing.T) {
 		t.Fatal("expected error for unknown device update")
 	}
 }
+
+// TestServerWriteReentrantOnWrite verifies Write does not deadlock when the
+// OnWrite callback re-enters Server methods (e.g. Read).
+func TestServerWriteReentrantOnWrite(t *testing.T) {
+	s := NewServer()
+	obj := ObjectDefinition{ID: 3, Resources: []ResourceDefinition{{ID: 0, Operations: OpWrite}}}
+	s.RegisterObject(obj)
+	s.Register("ep1", time.Minute, ObjectPath{ObjectID: 3, InstanceID: 0, ResourceID: 0})
+
+	var onWriteCalled bool
+	s.OnWrite = func(resourcePath string, value []byte) {
+		onWriteCalled = true
+		// Re-entrant read of the resource just written must not deadlock.
+		if _, ok := s.Read("ep1", ObjectPath{ObjectID: 3, InstanceID: 0, ResourceID: 0}); !ok {
+			t.Error("Read inside OnWrite did not find the resource")
+		}
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if err := s.Write("ep1", ObjectPath{ObjectID: 3, InstanceID: 0, ResourceID: 0}, []byte("v")); err != nil {
+			t.Errorf("Write failed: %v", err)
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Write deadlocked inside OnWrite callback")
+	}
+	if !onWriteCalled {
+		t.Fatal("OnWrite callback was not called")
+	}
+}

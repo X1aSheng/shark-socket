@@ -120,9 +120,10 @@ func (r tlvResource) ResourceValue() interface{} {
 	case ResourceInteger:
 		if len(r.Value) >= 8 {
 			return int64(binary.BigEndian.Uint64(r.Value))
-		} else if len(r.Value) >= 4 {
-			return int64(binary.BigEndian.Uint32(r.Value))
 		}
+		// 1-7 byte integers: build from every byte so high bytes are not
+		// silently truncated (previously 5-7 byte values used only the
+		// first 4 bytes).
 		v := int64(0)
 		for _, b := range r.Value {
 			v = (v << 8) | int64(b)
@@ -132,6 +133,11 @@ func (r tlvResource) ResourceValue() interface{} {
 		if len(r.Value) >= 8 {
 			bits := binary.BigEndian.Uint64(r.Value)
 			return math.Float64frombits(bits)
+		}
+		if len(r.Value) == 4 {
+			// 4-byte float32 value (previously decoded as 0.0).
+			bits := binary.BigEndian.Uint32(r.Value)
+			return float64(math.Float32frombits(bits))
 		}
 		return float64(0)
 	case ResourceBoolean:
