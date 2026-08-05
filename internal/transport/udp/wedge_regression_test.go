@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,10 +17,9 @@ import (
 // session (the "wedge" bug). After one error, the next datagram must reach
 // the handler again.
 func TestUDPSessionWedgeRegression(t *testing.T) {
-	calls := 0
+	var calls atomic.Int32
 	handler := func(core.Session, core.Message) error {
-		calls++
-		if calls == 1 {
+		if calls.Add(1) == 1 {
 			return errors.New("boom")
 		}
 		return nil
@@ -56,12 +56,12 @@ func TestUDPSessionWedgeRegression(t *testing.T) {
 	}
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if calls >= 2 {
+		if calls.Load() >= 2 {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if calls < 2 {
-		t.Fatalf("handler calls = %d, want >= 2 (peer was wedged to a closed session)", calls)
+	if calls.Load() < 2 {
+		t.Fatalf("handler calls = %d, want >= 2 (peer was wedged to a closed session)", calls.Load())
 	}
 }
