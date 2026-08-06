@@ -8,16 +8,19 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/core"
 )
 
+type autoBanCount struct {
+	count int
+	last  time.Time
+}
+
 type AutoBan struct {
 	core.BasePlugin
-	mu          sync.Mutex
+	mu          sync.Mutex // guards counts/banned
 	threshold   int
 	banDuration time.Duration
-	counts      map[string]int
+	counts      map[string]autoBanCount
 	banned      map[string]time.Time // key → ban expiry time
-	stopCh      chan struct{}
-	stopOnce    sync.Once
-	wg          sync.WaitGroup
+	lc          lifecycle
 }
 
 func NewAutoBan(threshold int) *AutoBan {
@@ -27,9 +30,8 @@ func NewAutoBan(threshold int) *AutoBan {
 	return &AutoBan{
 		threshold:   threshold,
 		banDuration: 30 * time.Minute,
-		counts:      make(map[string]int),
+		counts:      make(map[string]autoBanCount),
 		banned:      make(map[string]time.Time),
-		stopCh:      make(chan struct{}),
 	}
 }
 
@@ -38,23 +40,19 @@ func (p *AutoBan) Priority() int { return 5 }
 
 // Start begins periodic cleanup of expired bans and stale counters.
 func (p *AutoBan) Start() error {
-	// Recreate stop channel if previously closed (supports restart after Stop).
-	select {
-	case <-p.stopCh:
-		p.stopCh = make(chan struct{})
-		p.stopOnce = sync.Once{}
-	default:
+	stop, ok := p.lc.begin()
+	if !ok {
+		return nil
 	}
-	p.wg.Add(1)
 	go func() {
-		defer p.wg.Done()
+		defer p.lc.done()
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
 				p.sweep()
-			case <-p.stopCh:
+			case <-stop:
 				return
 			}
 		}
@@ -64,13 +62,14 @@ func (p *AutoBan) Start() error {
 
 // Stop terminates the cleanup goroutine.
 func (p *AutoBan) Stop() error {
-	p.stopOnce.Do(func() { close(p.stopCh) })
-	p.wg.Wait()
+	p.lc.shutdown()
 	return nil
 }
 
 // sweep removes expired bans and stale counters.
-// Bans expire after banDuration; counters expire after 2x banDuration.
+// Bans expire after banDuration; a counter is removed only when it has seen no
+// activity for banDuration, so a slow client counting toward the threshold is
+// not silently forgiven every sweep cycle.
 func (p *AutoBan) sweep() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -80,12 +79,21 @@ func (p *AutoBan) sweep() {
 			delete(p.banned, k)
 		}
 	}
-	// Clean counters for non-banned IPs that are stale
-	for k := range p.counts {
-		if _, banned := p.banned[k]; !banned {
+	for k, c := range p.counts {
+		if now.Sub(c.last) > p.banDuration {
 			delete(p.counts, k)
 		}
 	}
+}
+
+// OnMessage counts every accepted message per remote IP and bans the address
+// once the threshold is reached. This is the production call site for Record;
+// without it AutoBan never accumulated counts and could not ban anyone.
+func (p *AutoBan) OnMessage(sess core.Session, data []byte) ([]byte, error) {
+	if p.Record(sess) {
+		return nil, core.ErrPluginDrop
+	}
+	return data, nil
 }
 
 func (p *AutoBan) OnAccept(sess core.Session) error {
@@ -108,8 +116,11 @@ func (p *AutoBan) Record(sess core.Session) bool {
 	key := remoteKey(sess)
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.counts[key]++
-	if p.counts[key] >= p.threshold {
+	c := p.counts[key]
+	c.count++
+	c.last = time.Now()
+	p.counts[key] = c
+	if c.count >= p.threshold {
 		p.banned[key] = time.Now().Add(p.banDuration)
 		delete(p.counts, key)
 		return true

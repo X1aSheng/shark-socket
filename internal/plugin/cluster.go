@@ -16,15 +16,13 @@ import (
 // re-publish received cluster messages to avoid amplification.
 type Cluster struct {
 	core.BasePlugin
-	nodeID   string
-	topic    string
-	bus      *pubsub.PubSub
-	manager  core.SessionManager
-	cancel   func()
-	stop     chan struct{}
-	stopOnce sync.Once
-	wg       sync.WaitGroup
-	logger   core.Logger
+	nodeID  string
+	topic   string
+	bus     *pubsub.PubSub
+	manager core.SessionManager
+	lc      lifecycle
+	mu      sync.RWMutex // guards logger
+	logger  core.Logger
 }
 
 type clusterEnvelope struct {
@@ -38,7 +36,7 @@ func NewCluster(nodeID string, bus *pubsub.PubSub, manager core.SessionManager) 
 	if nodeID == "" {
 		nodeID = "local"
 	}
-	return &Cluster{nodeID: nodeID, topic: "shark.cluster.messages", bus: bus, manager: manager, stop: make(chan struct{}), logger: core.NopLogger()}
+	return &Cluster{nodeID: nodeID, topic: "shark.cluster.messages", bus: bus, manager: manager, logger: core.NopLogger()}
 }
 
 func (p *Cluster) Name() string  { return "cluster" }
@@ -52,34 +50,27 @@ func (p *Cluster) WithTopic(topic string) *Cluster {
 }
 
 func (p *Cluster) Start(buffer int) {
+	stop, ok := p.lc.begin()
+	if !ok {
+		return
+	}
 	if p.bus == nil || p.manager == nil {
+		p.lc.done()
 		return
 	}
 	if buffer <= 0 {
 		buffer = 16
 	}
-	// Recreate stop channel and stopOnce if previously stopped (supports restart).
-	select {
-	case <-p.stop:
-		p.stop = make(chan struct{})
-		p.stopOnce = sync.Once{}
-	default:
-	}
 	ch, cancel := p.bus.Subscribe(p.topic, buffer)
-	p.cancel = cancel
-	p.wg.Add(1)
 	go func() {
-		defer p.wg.Done()
-		p.consume(ch)
+		defer p.lc.done()
+		defer cancel() // unsubscribe the consumer when it exits
+		p.consume(ch, stop)
 	}()
 }
 
 func (p *Cluster) Stop() {
-	if p.cancel != nil {
-		p.cancel()
-	}
-	p.stopOnce.Do(func() { close(p.stop) })
-	p.wg.Wait()
+	p.lc.shutdown()
 }
 
 func (p *Cluster) OnMessage(sess core.Session, data []byte) ([]byte, error) {
@@ -100,7 +91,17 @@ func (p *Cluster) OnMessage(sess core.Session, data []byte) ([]byte, error) {
 	return data, nil
 }
 
-func (p *Cluster) consume(ch <-chan pubsub.Message) {
+// SetLogger sets the logger used for operational messages.
+func (p *Cluster) SetLogger(logger core.Logger) {
+	if logger == nil {
+		return
+	}
+	p.mu.Lock()
+	p.logger = logger
+	p.mu.Unlock()
+}
+
+func (p *Cluster) consume(ch <-chan pubsub.Message, stop <-chan struct{}) {
 	for {
 		select {
 		case msg, ok := <-ch:
@@ -108,7 +109,7 @@ func (p *Cluster) consume(ch <-chan pubsub.Message) {
 				return
 			}
 			p.handleClusterMessage(msg.Data)
-		case <-p.stop:
+		case <-stop:
 			return
 		}
 	}
@@ -117,13 +118,24 @@ func (p *Cluster) consume(ch <-chan pubsub.Message) {
 func (p *Cluster) handleClusterMessage(data []byte) {
 	var env clusterEnvelope
 	if err := json.Unmarshal(data, &env); err != nil {
+		p.mu.RLock()
+		logger := p.logger
+		p.mu.RUnlock()
+		if logger != nil {
+			logger.Warn("cluster: dropping malformed message", "error", err)
+		}
 		return
 	}
 	if env.NodeID == p.nodeID || env.Topic != p.topic || len(env.Payload) == 0 {
 		return
 	}
 	if err := p.manager.Broadcast(env.Payload); err != nil {
-		p.logger.Warn("cluster: broadcast error", "error", err)
+		p.mu.RLock()
+		logger := p.logger
+		p.mu.RUnlock()
+		if logger != nil {
+			logger.Warn("cluster: broadcast error", "error", err)
+		}
 	}
 }
 

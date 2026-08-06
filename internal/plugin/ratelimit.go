@@ -10,13 +10,11 @@ import (
 
 type RateLimit struct {
 	core.BasePlugin
-	mu       sync.Mutex
+	mu       sync.Mutex // guards counters
 	rate     int
 	window   time.Duration
 	counters map[string][]time.Time // sliding window: timestamps of recent requests
-	stopCh   chan struct{}
-	stopOnce sync.Once
-	wg       sync.WaitGroup
+	lc       lifecycle
 }
 
 func NewRateLimit(rate int, window time.Duration) *RateLimit {
@@ -26,7 +24,7 @@ func NewRateLimit(rate int, window time.Duration) *RateLimit {
 	if window <= 0 {
 		window = time.Second
 	}
-	return &RateLimit{rate: rate, window: window, counters: make(map[string][]time.Time), stopCh: make(chan struct{})}
+	return &RateLimit{rate: rate, window: window, counters: make(map[string][]time.Time)}
 }
 
 func (p *RateLimit) Name() string  { return "ratelimit" }
@@ -34,23 +32,19 @@ func (p *RateLimit) Priority() int { return 10 }
 
 // Start begins periodic cleanup of stale counter entries.
 func (p *RateLimit) Start() error {
-	// Recreate stop channel if previously closed (supports restart after Stop).
-	select {
-	case <-p.stopCh:
-		p.stopCh = make(chan struct{})
-		p.stopOnce = sync.Once{}
-	default:
+	stop, ok := p.lc.begin()
+	if !ok {
+		return nil
 	}
-	p.wg.Add(1)
 	go func() {
-		defer p.wg.Done()
+		defer p.lc.done()
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
 				p.sweep()
-			case <-p.stopCh:
+			case <-stop:
 				return
 			}
 		}
@@ -60,17 +54,16 @@ func (p *RateLimit) Start() error {
 
 // Stop terminates the cleanup goroutine.
 func (p *RateLimit) Stop() error {
-	p.stopOnce.Do(func() { close(p.stopCh) })
-	p.wg.Wait()
+	p.lc.shutdown()
 	return nil
 }
 
 func (p *RateLimit) sweep() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	cutoff := time.Now().Add(-p.window * 2)
+	cutoff := time.Now().Add(-p.window)
 	for k, stamps := range p.counters {
-		// Remove timestamps older than 2 windows
+		// Remove timestamps older than one window (matches OnMessage pruning)
 		i := 0
 		for i < len(stamps) && stamps[i].Before(cutoff) {
 			i++
