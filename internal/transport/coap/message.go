@@ -92,12 +92,19 @@ func parseOptions(data []byte) (map[uint16][]byte, []byte) {
 		if advance == 0 {
 			break
 		}
+		// Nibble 15 is reserved by RFC 7252 section 3.1; reject as malformed.
+		if delta > 14 || length > 14 {
+			break
+		}
 		offset += advance
 		deltaExtended, deltaBytes := readOptionExtended(data[offset:], delta)
 		offset += deltaBytes
 		lengthExtended, lengthBytes := readOptionExtended(data[offset:], length)
 		offset += lengthBytes
 		optionNum := prevNum + uint16(deltaExtended)
+		if optionNum < prevNum {
+			break // delta overflow: malformed message
+		}
 		prevNum = optionNum
 		if offset+int(lengthExtended) > len(data) {
 			break
@@ -196,21 +203,6 @@ func encodeOption(delta uint16, value []byte) ([]byte, error) {
 	return buf, nil
 }
 
-func writeOptionExtended(buf []byte, v, base uint32) ([]byte, error) {
-	if v < base {
-		return buf, nil
-	}
-	if v < base+256 {
-		return append(buf, byte(v-base)), nil
-	}
-	if v < base+65536 {
-		ext := make([]byte, 2)
-		binary.BigEndian.PutUint16(ext, uint16(v-base))
-		return append(buf, ext...), nil
-	}
-	return buf, fmt.Errorf("%w: option extended value %d too large", ErrInvalidMessage, v)
-}
-
 func encodeOptionHeader(delta, length uint16) ([]byte, error) {
 	var d, l byte
 	switch {
@@ -231,15 +223,40 @@ func encodeOptionHeader(delta, length uint16) ([]byte, error) {
 	}
 	header := []byte{d<<4 | l}
 	var err error
-	header, err = writeOptionExtended(header, uint32(delta), 13)
+	header, err = encodeExtendedField(header, uint32(delta), uint32(d))
 	if err != nil {
 		return nil, err
 	}
-	header, err = writeOptionExtended(header, uint32(length), 13)
+	header, err = encodeExtendedField(header, uint32(length), uint32(l))
 	if err != nil {
 		return nil, err
 	}
 	return header, nil
+}
+
+// encodeExtendedField appends the RFC 7252 extended field for an option delta
+// or length. Nibble 13 uses a 1-byte value-13 (range 13..268); nibble 14 uses a
+// 2-byte value-269 (range 269..65535). The decoder readOptionExtended mirrors
+// these offsets, so both sides must agree.
+func encodeExtendedField(buf []byte, v, nibble uint32) ([]byte, error) {
+	switch nibble {
+	case 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12:
+		return buf, nil // value inline in the nibble, no extension
+	case 13:
+		if v < 13 || v > 268 {
+			return buf, fmt.Errorf("%w: option extended value %d out of range", ErrInvalidMessage, v)
+		}
+		return append(buf, byte(v-13)), nil
+	case 14:
+		if v < 269 || v > 65535 {
+			return buf, fmt.Errorf("%w: option extended value %d out of range", ErrInvalidMessage, v)
+		}
+		ext := make([]byte, 2)
+		binary.BigEndian.PutUint16(ext, uint16(v-269))
+		return append(buf, ext...), nil
+	default:
+		return buf, fmt.Errorf("%w: invalid option extended nibble %d", ErrInvalidMessage, nibble)
+	}
 }
 
 func ACK(req Message, code byte, payload []byte) Message {

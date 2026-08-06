@@ -49,29 +49,48 @@ func TestReadOptionExtended(t *testing.T) {
 }
 
 // Test writeOptionExtended edge cases
-func TestWriteOptionExtended(t *testing.T) {
-	// v < base: no extension
-	buf, err := writeOptionExtended(nil, 5, 10)
+func TestEncodeExtendedField(t *testing.T) {
+	// Inline nibbles: no extension.
+	buf, err := encodeExtendedField(nil, 5, 5)
 	if err != nil || len(buf) != 0 {
-		t.Fatalf("v<base: err=%v len=%d", err, len(buf))
+		t.Fatalf("inline: err=%v len=%d", err, len(buf))
 	}
 
-	// v in range [base, base+255]
-	buf, err = writeOptionExtended(nil, 100, 0)
-	if err != nil || len(buf) != 1 || buf[0] != 100 {
-		t.Fatalf("one-byte: got %v", buf)
+	// Nibble 13: 1-byte value-13, range [13, 268].
+	buf, err = encodeExtendedField(nil, 100, 13)
+	if err != nil || len(buf) != 1 || buf[0] != 87 {
+		t.Fatalf("nibble 13: got %v (want [87])", buf)
+	}
+	if _, err = encodeExtendedField(nil, 12, 13); err == nil {
+		t.Fatal("nibble 13: expected range error for v=12")
+	}
+	if _, err = encodeExtendedField(nil, 269, 13); err == nil {
+		t.Fatal("nibble 13: expected range error for v=269")
 	}
 
-	// v in range [base+256, base+65535]
-	buf, err = writeOptionExtended(nil, 1024, 0)
+	// Nibble 14: always 2 bytes value-269, range [269, 65535].
+	buf, err = encodeExtendedField(nil, 269, 14)
+	if err != nil || len(buf) != 2 || buf[0] != 0 || buf[1] != 0 {
+		t.Fatalf("nibble 14 min: got %v", buf)
+	}
+	buf, err = encodeExtendedField(nil, 300, 14)
+	if err != nil || len(buf) != 2 || buf[0] != 0 || buf[1] != 31 {
+		t.Fatalf("nibble 14 (300): got %v (want [0 31])", buf)
+	}
+	buf, err = encodeExtendedField(nil, 525, 14)
 	if err != nil || len(buf) != 2 {
-		t.Fatalf("two-byte: err=%v len=%d", err, len(buf))
+		t.Fatalf("nibble 14 (525): err=%v len=%d", err, len(buf))
+	}
+	if _, err = encodeExtendedField(nil, 268, 14); err == nil {
+		t.Fatal("nibble 14: expected range error for v=268")
+	}
+	if _, err = encodeExtendedField(nil, 65536, 14); err == nil {
+		t.Fatal("nibble 14: expected range error for v=65536")
 	}
 
-	// v too large (>= base+65536)
-	_, err = writeOptionExtended(nil, 100000, 0)
-	if err == nil {
-		t.Fatal("expected error for too-large value")
+	// Reserved nibble 15 must be rejected.
+	if _, err = encodeExtendedField(nil, 100, 15); err == nil {
+		t.Fatal("nibble 15: expected error")
 	}
 }
 
@@ -365,26 +384,20 @@ func TestMarshalManyOptions(t *testing.T) {
 }
 
 // Test writeOptionExtended with base offset
-func TestWriteOptionExtendedWithBase(t *testing.T) {
-	// Test encoding with non-zero base (delta encoding)
-	buf, err := writeOptionExtended(nil, 300, 269)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(buf) != 1 || buf[0] != 31 {
-		t.Fatalf("base=269: expected [31], got %v", buf)
-	}
-
-	// Boundary: base + 255
-	buf, err = writeOptionExtended(nil, 269+255, 269)
-	if err != nil || len(buf) != 1 {
-		t.Fatalf("boundary 1byte: err=%v len=%d", err, len(buf))
-	}
-
-	// Beyond boundary: needs 2 bytes
-	buf, err = writeOptionExtended(nil, 269+256, 269)
-	if err != nil || len(buf) != 2 {
-		t.Fatalf("boundary 2byte: err=%v len=%d", err, len(buf))
+// Verify the encoder and decoder agree on every delta in the nibble-13/14
+// boundary region. This is the round-trip invariant that the option encoding
+// bug violated (encoder wrote v-13 for nibble 14, decoder reads v-269).
+func TestEncodeDecodeExtendedAgreement(t *testing.T) {
+	for _, v := range []uint16{13, 100, 268, 269, 300, 524, 525, 526, 65535} {
+		hdr, err := encodeOptionHeader(v, 0)
+		if err != nil {
+			t.Fatalf("delta %d encode: %v", v, err)
+		}
+		d, _, _ := decodeOptionHeader(hdr)
+		dec, _ := readOptionExtended(hdr[1:], d)
+		if dec != uint32(v) {
+			t.Fatalf("delta %d: decoded %d", v, dec)
+		}
 	}
 }
 
@@ -452,6 +465,122 @@ func TestTokenRoundTrip(t *testing.T) {
 	}
 }
 
+// Round-trip an option whose number (delta) is in the nibble-14 range (>= 269).
+// Regression: encoder wrote v-13 for nibble=14 while the decoder reads v-269,
+// corrupting any option number >= 269.
+func TestOptionRoundTripLargeDelta(t *testing.T) {
+	for _, num := range []uint16{269, 300, 525, 526, 1000, 65535} {
+		msg := Message{
+			Type:      TypeCON,
+			Code:      CodeGet,
+			MessageID: 1,
+			Options:   map[uint16][]byte{num: {0x01}},
+		}
+		data, err := msg.Marshal()
+		if err != nil {
+			t.Fatalf("option %d marshal: %v", num, err)
+		}
+		parsed, err := Parse(data)
+		if err != nil {
+			t.Fatalf("option %d parse: %v", num, err)
+		}
+		got, ok := parsed.Options[num]
+		if !ok {
+			t.Fatalf("option %d missing after round-trip", num)
+		}
+		if !bytes.Equal(got, []byte{0x01}) {
+			t.Fatalf("option %d value = %v, want [1]", num, got)
+		}
+	}
+}
+
+// Round-trip an option whose value length is in the nibble-14 range (>= 269).
+// Regression: encoder wrote len-13 for nibble=14 while the decoder reads len-269.
+func TestOptionRoundTripLargeLength(t *testing.T) {
+	for _, size := range []int{269, 300, 525, 526, 2048} {
+		value := make([]byte, size)
+		for i := range value {
+			value[i] = byte(i)
+		}
+		msg := Message{
+			Type:      TypeCON,
+			Code:      CodeGet,
+			MessageID: 1,
+			Options:   map[uint16][]byte{11: value},
+		}
+		data, err := msg.Marshal()
+		if err != nil {
+			t.Fatalf("size %d marshal: %v", size, err)
+		}
+		parsed, err := Parse(data)
+		if err != nil {
+			t.Fatalf("size %d parse: %v", size, err)
+		}
+		got, ok := parsed.Options[11]
+		if !ok {
+			t.Fatalf("option 11 missing after round-trip (size %d)", size)
+		}
+		if !bytes.Equal(got, value) {
+			t.Fatalf("option 11 size %d: round-trip mismatch", size)
+		}
+	}
+}
+
+// Round-trip boundaries between nibble 13 and 14 for both delta and length.
+func TestOptionRoundTripBoundaries(t *testing.T) {
+	cases := []struct {
+		num    uint16
+		length int
+	}{
+		{12, 1},    // delta 12 inline
+		{13, 1},    // delta 13 -> nibble 13
+		{268, 1},   // delta 268 -> nibble 13 upper bound
+		{1, 12},    // length 12 inline
+		{1, 13},    // length 13 -> nibble 13
+		{1, 268},   // length 268 -> nibble 13 upper bound
+		{268, 268}, // both at nibble-13 upper bound
+	}
+	for _, c := range cases {
+		value := make([]byte, c.length)
+		msg := Message{
+			Type:      TypeCON,
+			Code:      CodeGet,
+			MessageID: 1,
+			Options:   map[uint16][]byte{c.num: value},
+		}
+		data, err := msg.Marshal()
+		if err != nil {
+			t.Fatalf("marshal %d/%d: %v", c.num, c.length, err)
+		}
+		parsed, err := Parse(data)
+		if err != nil {
+			t.Fatalf("parse %d/%d: %v", c.num, c.length, err)
+		}
+		got, ok := parsed.Options[c.num]
+		if !ok {
+			t.Fatalf("option %d missing (len %d)", c.num, c.length)
+		}
+		if len(got) != c.length {
+			t.Fatalf("option %d len %d, want %d", c.num, len(got), c.length)
+		}
+	}
+}
+
+// Reserved nibble 15 must be rejected as malformed, not misparsed or spun.
+func TestParseRejectsReservedNibble15(t *testing.T) {
+	// 0xF0: delta nibble 15 (reserved), length 0.
+	// parseOptions must terminate and must not produce a bogus option 0.
+	opts, _ := parseOptions([]byte{0xF0})
+	if _, ok := opts[0]; ok {
+		t.Fatal("reserved nibble 15 produced an option entry")
+	}
+	// 0x1F: delta 1, length nibble 15 (reserved).
+	opts, _ = parseOptions([]byte{0x1F, 0x00})
+	if _, ok := opts[1]; ok {
+		t.Fatal("reserved length nibble 15 produced an option entry")
+	}
+}
+
 // Benchmark for encodeObserveSeq
 func BenchmarkEncodeObserveSeq(b *testing.B) {
 	for i := 0; i < b.N; i++ {
@@ -467,11 +596,11 @@ func BenchmarkReadOptionExtended(b *testing.B) {
 	}
 }
 
-// Benchmark for writeOptionExtended
-func BenchmarkWriteOptionExtended(b *testing.B) {
+// Benchmark for encodeExtendedField
+func BenchmarkEncodeExtendedField(b *testing.B) {
 	buf := make([]byte, 0, 8)
 	for i := 0; i < b.N; i++ {
-		buf, _ = writeOptionExtended(buf[:0], 1024, 0)
+		buf, _ = encodeExtendedField(buf[:0], 1024, 13)
 	}
 }
 
