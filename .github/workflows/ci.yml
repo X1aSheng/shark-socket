@@ -183,7 +183,10 @@ jobs:
         run: go mod download
 
       - name: Race validation
-        run: go test -race -v -count=1 -timeout=5m ./api ./cmd/... ./internal/... ./tests/benchmark/... ./tests/deploy/...
+        # Use the scripted runner so the race package set stays aligned with
+        # local validation (go test -race ./... includes ./tests and
+        # ./tests/stress, which the previous hard-coded list omitted).
+        run: go run scripts/run_tests.go -mode race -timeout 5m
         shell: bash
         env:
           SHARK_MQTT_BROKER: tcp://localhost:1883

@@ -155,10 +155,11 @@ func TestStressTCPBurst(t *testing.T) {
 	m := &stressMetrics{}
 	m.start()
 
-	client := tcp.NewClient(addr)
-	if err := client.Connect(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	// Linger 0 avoids TIME_WAIT accumulation on the client side; the burst test
+	// runs right after the 10s connection-churn test on the same host. A connect
+	// can transiently fail with WSAEADDRINUSE when the Windows ephemeral port
+	// range is exhausted, so retry instead of hard-failing the whole suite.
+	client := connectStressClient(t, addr)
 	defer client.Close()
 
 	payload := make([]byte, payloadSize)
@@ -207,7 +208,7 @@ func TestStressTCPReconnect(t *testing.T) {
 				if time.Since(m.startTime) > duration {
 					return
 				}
-				client := tcp.NewClient(addr)
+				client := newStressClient(addr)
 				if err := client.Connect(context.Background()); err != nil {
 					continue
 				}
@@ -234,6 +235,33 @@ func TestStressTCPReconnect(t *testing.T) {
 // Helpers
 // ---------------------------------------------------------------------------
 
+// newStressClient returns a TCP client with SO_LINGER=0. The reconnect test
+// opens tens of thousands of short-lived connections; without linger 0 the
+// client side accumulates TIME_WAIT sockets and exhausts the Windows ephemeral
+// port range (WSAEADDRINUSE) partway through the run.
+func newStressClient(addr string) *tcp.Client {
+	return tcp.NewClient(addr, tcp.WithClientLinger(0))
+}
+
+// connectStressClient connects a stress client, retrying transient connect
+// failures (e.g. ephemeral-port exhaustion) up to 10 times before failing.
+func connectStressClient(t testing.TB, addr string) *tcp.Client {
+	t.Helper()
+	var lastErr error
+	for i := 0; i < 10; i++ {
+		client := newStressClient(addr)
+		if err := client.Connect(context.Background()); err == nil {
+			return client
+		} else {
+			lastErr = err
+			client.Close()
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("connect stress client: %v", lastErr)
+	return nil
+}
+
 func startStressTCPServer(t testing.TB) string {
 	t.Helper()
 	server := tcp.NewServer(
@@ -258,7 +286,7 @@ func startStressTCPServer(t testing.TB) string {
 }
 
 func runStressTCP(m *stressMetrics, addr string) {
-	client := tcp.NewClient(addr)
+	client := newStressClient(addr)
 	if err := client.Connect(context.Background()); err != nil {
 		return
 	}

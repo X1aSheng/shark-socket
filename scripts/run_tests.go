@@ -40,9 +40,16 @@ func main() {
 
 	switch *mode {
 	case "unit":
-		must(runGoTest(root, logs, ts, "unit", *timeout, *jsonOut, "./api", "./cmd/...", "./internal/..."))
-	case "integration", "deploy":
-		must(runGoTest(root, logs, ts, "integration", *timeout, *jsonOut, "./tests/..."))
+		must(runGoTest(root, logs, ts, "unit", *timeout, *jsonOut, false, "./api", "./cmd/...", "./internal/..."))
+	case "integration":
+		// -p 1 serializes the ./tests/... packages: the stress tests churn tens of
+		// thousands of TCP connections and, run in parallel, exhaust Windows
+		// ephemeral ports (WSAEADDRINUSE), making integration runs flaky.
+		must(runGoTest(root, logs, ts, "integration", *timeout, *jsonOut, true, "./tests/..."))
+	case "deploy":
+		// Deploy validation only needs the manifest checks; it must not run the
+		// stress/benchmark suites that the integration mode exercises.
+		must(runGoTest(root, logs, ts, "deploy", *timeout, *jsonOut, false, "./tests/deploy"))
 	case "vet":
 		must(runGoVet(root, logs, ts))
 	case "benchmark":
@@ -53,8 +60,8 @@ func main() {
 		must(runCover(root, logs, ts, *timeout))
 	case "all":
 		printBanner("shark-socket test suite")
-		must(runGoTest(root, logs, ts, "unit", *timeout, *jsonOut, "./api", "./cmd/...", "./internal/..."))
-		must(runGoTest(root, logs, ts, "integration", *timeout, *jsonOut, "./tests/..."))
+		must(runGoTest(root, logs, ts, "unit", *timeout, *jsonOut, false, "./api", "./cmd/...", "./internal/..."))
+		must(runGoTest(root, logs, ts, "integration", *timeout, *jsonOut, true, "./tests/..."))
 		must(runBenchmark(root, logs, ts, *timeout, *jsonOut))
 		fmt.Printf("\nlogs: %s\n", logs)
 	default:
@@ -63,11 +70,14 @@ func main() {
 	}
 }
 
-func runGoTest(root, logs, ts, mode string, timeout time.Duration, jsonMode bool, packages ...string) error {
-	args := []string{"test", "-v", "-count=1", "-timeout=" + timeout.String()}
+func runGoTest(root, logs, ts, mode string, timeout time.Duration, jsonMode, serial bool, packages ...string) error {
+	args := []string{"test"}
 	if jsonMode {
-		// Insert -json after "test" to form "go test -json ..."
-		args = append(args[:1], append([]string{"-json"}, args[1:]...)...)
+		args = append(args, "-json")
+	}
+	args = append(args, "-v", "-count=1", "-timeout="+timeout.String())
+	if serial {
+		args = append(args, "-p", "1")
 	}
 	args = append(args, packages...)
 
@@ -165,7 +175,16 @@ func raceEnv() []string {
 func runCover(root, logs, ts string, timeout time.Duration) error {
 	logFile := filepath.Join(logs, ts+"_cover.log")
 	coverFile := filepath.Join(logs, "coverage.out")
-	args := []string{"test", "./...", "-count=1", "-coverprofile=" + coverFile, "-timeout=" + timeout.String()}
+	// Cover production packages only: the ./tests/... packages contain no
+	// coverable statements and their stress tests churn ephemeral ports,
+	// which makes a parallel ./... run flaky on Windows.
+	pkgs, err := productionPackages(root)
+	if err != nil {
+		return err
+	}
+	args := []string{"test"}
+	args = append(args, pkgs...)
+	args = append(args, "-count=1", "-coverprofile="+coverFile, "-timeout="+timeout.String())
 	fmt.Printf("[%s] %s -> %s\n", time.Now().Format("2006-01-02T15:04:05"), strings.Join(append([]string{"go"}, args...), " "), logFile)
 	out, err := output(root, "go", args...)
 	_ = os.WriteFile(logFile, out, 0o644)
@@ -212,6 +231,30 @@ func writeReport(root, jsonFile, logFile string) {
 	_ = os.WriteFile(logFile, out, 0o644)
 	fmt.Print(string(out))
 	fmt.Printf("report: %s\n", logFile)
+}
+
+// productionPackages returns every package under ./... except the tests/
+// tree (benchmark, deploy, stress, and the root integration package), which
+// contain no coverable statements.
+func productionPackages(root string) ([]string, error) {
+	out, err := output(root, "go", "list", "./...")
+	if err != nil {
+		return nil, err
+	}
+	var pkgs []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		if strings.HasSuffix(line, "/tests") || strings.Contains(line, "/tests/") {
+			continue
+		}
+		pkgs = append(pkgs, line)
+	}
+	if len(pkgs) == 0 {
+		return nil, fmt.Errorf("no production packages found")
+	}
+	return pkgs, nil
 }
 
 func projectRoot() string {
