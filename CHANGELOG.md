@@ -7,6 +7,62 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### V6 Audit Fixes (2026-08-06)
+
+#### Protocol Correctness
+- **CoAP option encoding:** Extended option delta/length (nibble 14, value >= 269)
+  is now encoded as `value-269` to match the decoder, fixing corrupted option
+  numbers/values in that range. Reserved nibble 15 is rejected as malformed and
+  option-number overflow is guarded.
+- **CoAP observe:** `SendObserveNotification` encodes the Observe option with the
+  same variable-length `encodeObserveSeq` used by the server notification path.
+
+#### Concurrency / Lifecycle
+- **Plugins (AutoBan/RateLimit/Heartbeat/Cluster):** Replaced the unsafe
+  "reassign `sync.Once{}`" restart pattern with a `lifecycle` that owns a fresh
+  WaitGroup per Start cycle. Concurrent Start/Stop no longer races on the Once
+  struct and the WaitGroup is never reused across cycles (previously panicked
+  "WaitGroup is reused before previous Wait"). Cluster Start/Stop fields are
+  mutually excluded.
+- **OnClose semantics:** Transports no longer call plugin `OnClose` for sessions
+  that were never accepted (Register/OnAccept failure), eliminating double
+  notifications after the plugin chain's rollback.
+- **TCP worker pool:** Blocking submit also selects on the session context, so a
+  peer disconnect unblocks the submitting goroutine instead of leaking it until
+  the pool stops.
+- **SetLogger:** PluginChain and Persistence SetLogger take a lock; Persistence
+  reads go through a `loggerRef()` helper.
+
+#### Functional Fixes
+- **AutoBan:** `Record` is now called from `OnMessage` (it was dead code), so
+  AutoBan can actually ban; `sweep` only removes counters idle for
+  `banDuration` instead of resetting every non-banned IP each cycle.
+- **QUIC:** Short `stream.Write` results are retried instead of silently
+  dropping the remainder of the payload.
+- **MQTT:** The package-global `clientFactory` is now a per-adapter field
+  (reentrancy); `Start` double-checks under the lock so concurrent Starts
+  discard a duplicate connection, and connect-failure paths disconnect.
+- **MessageLog.Replay:** Skips keys shorter than the 8-byte sequence prefix
+  instead of panicking.
+- **HTTP:** `responseRecorder` no longer buffers the response body into memory.
+- **SlowHandler:** Threshold <= 0 passes requests through instead of logging
+  every request as slow.
+- **BoltStore:** Operations run with the closed check under the read lock,
+  closing the TOCTOU window that surfaced `bolt.ErrDatabaseNotOpen`.
+- **Gateway:** Removed a redundant `started` reset in `Stop`; `Health` reports
+  uptime only while started.
+
+#### Test Infrastructure & CI
+- `run_tests.go`: `-mode deploy` now validates only `./tests/deploy`;
+  `-mode cover` covers production packages only; integration serializes with
+  `-p 1`; JSON arg splicing cleaned up.
+- Stress tests use SO_LINGER(0) clients and retry transient connects, fixing
+  Windows ephemeral-port exhaustion that made integration/coverage flaky.
+- CI race job uses the scripted runner so it covers `./tests` and
+  `./tests/stress` like local validation.
+- Deployment artifacts: Helm service declares `protocol: TCP`; `.gitignore`
+  anchors `/shark-socket` so it no longer hides the Helm chart directory.
+
 ### V5 Audit Fixes (2026-08-06)
 
 #### Crash / Concurrency
