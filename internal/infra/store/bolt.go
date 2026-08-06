@@ -29,71 +29,75 @@ func NewBoltStore(path string) (*BoltStore, error) {
 	return &BoltStore{db: db}, nil
 }
 
-func (b *BoltStore) isClosed() bool {
+// withLock runs fn while holding the read lock and after confirming the store
+// is not closed. Holding the lock for the whole operation closes the TOCTOU
+// window where a concurrent Close() could shut the DB between the closed check
+// and the DB access (which would surface bolt.ErrDatabaseNotOpen instead of
+// core.ErrClosed).
+func (b *BoltStore) withLock(fn func(db *bolt.DB) error) error {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.closed
+	if b.closed {
+		return core.ErrClosed
+	}
+	return fn(b.db)
 }
 
 func (b *BoltStore) Save(bucket, key string, value []byte) error {
-	if b.isClosed() {
-		return core.ErrClosed
-	}
-	return b.db.Update(func(tx *bolt.Tx) error {
-		bk, err := tx.CreateBucketIfNotExists([]byte(bucket))
-		if err != nil {
-			return fmt.Errorf("bolt: save bucket %s: %w", bucket, err)
-		}
-		return bk.Put([]byte(key), value)
+	return b.withLock(func(db *bolt.DB) error {
+		return db.Update(func(tx *bolt.Tx) error {
+			bk, err := tx.CreateBucketIfNotExists([]byte(bucket))
+			if err != nil {
+				return fmt.Errorf("bolt: save bucket %s: %w", bucket, err)
+			}
+			return bk.Put([]byte(key), value)
+		})
 	})
 }
 
 func (b *BoltStore) Load(bucket, key string) ([]byte, bool, error) {
-	if b.isClosed() {
-		return nil, false, core.ErrClosed
-	}
 	var val []byte
-	err := b.db.View(func(tx *bolt.Tx) error {
-		bk := tx.Bucket([]byte(bucket))
-		if bk == nil {
+	err := b.withLock(func(db *bolt.DB) error {
+		return db.View(func(tx *bolt.Tx) error {
+			bk := tx.Bucket([]byte(bucket))
+			if bk == nil {
+				return nil
+			}
+			v := bk.Get([]byte(key))
+			if v != nil {
+				val = make([]byte, len(v))
+				copy(val, v)
+			}
 			return nil
-		}
-		v := bk.Get([]byte(key))
-		if v != nil {
-			val = make([]byte, len(v))
-			copy(val, v)
-		}
-		return nil
+		})
 	})
 	return val, val != nil, err
 }
 
 func (b *BoltStore) Delete(bucket, key string) error {
-	if b.isClosed() {
-		return core.ErrClosed
-	}
-	return b.db.Update(func(tx *bolt.Tx) error {
-		bk := tx.Bucket([]byte(bucket))
-		if bk == nil {
-			return nil
-		}
-		return bk.Delete([]byte(key))
+	return b.withLock(func(db *bolt.DB) error {
+		return db.Update(func(tx *bolt.Tx) error {
+			bk := tx.Bucket([]byte(bucket))
+			if bk == nil {
+				return nil
+			}
+			return bk.Delete([]byte(key))
+		})
 	})
 }
 
 func (b *BoltStore) List(bucket string) ([]string, error) {
-	if b.isClosed() {
-		return nil, core.ErrClosed
-	}
 	var keys []string
-	err := b.db.View(func(tx *bolt.Tx) error {
-		bk := tx.Bucket([]byte(bucket))
-		if bk == nil {
-			return nil
-		}
-		return bk.ForEach(func(k, _ []byte) error {
-			keys = append(keys, string(k))
-			return nil
+	err := b.withLock(func(db *bolt.DB) error {
+		return db.View(func(tx *bolt.Tx) error {
+			bk := tx.Bucket([]byte(bucket))
+			if bk == nil {
+				return nil
+			}
+			return bk.ForEach(func(k, _ []byte) error {
+				keys = append(keys, string(k))
+				return nil
+			})
 		})
 	})
 	return keys, err
@@ -101,20 +105,19 @@ func (b *BoltStore) List(bucket string) ([]string, error) {
 
 // DeleteBatch deletes multiple keys within a single transaction.
 func (b *BoltStore) DeleteBatch(bucket string, keys []string) error {
-	if b.isClosed() {
-		return core.ErrClosed
-	}
-	return b.db.Update(func(tx *bolt.Tx) error {
-		bk := tx.Bucket([]byte(bucket))
-		if bk == nil {
-			return nil
-		}
-		for _, key := range keys {
-			if err := bk.Delete([]byte(key)); err != nil {
-				return err
+	return b.withLock(func(db *bolt.DB) error {
+		return db.Update(func(tx *bolt.Tx) error {
+			bk := tx.Bucket([]byte(bucket))
+			if bk == nil {
+				return nil
 			}
-		}
-		return nil
+			for _, key := range keys {
+				if err := bk.Delete([]byte(key)); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
 	})
 }
 

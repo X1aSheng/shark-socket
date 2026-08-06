@@ -20,10 +20,14 @@ func NewPluginChain(plugins ...core.Plugin) *PluginChain {
 }
 
 // SetLogger sets the logger used for panic recovery logging.
+// The write is locked so it is safe to call while the chain is serving.
 func (c *PluginChain) SetLogger(logger core.Logger) {
-	if logger != nil {
-		c.logger = logger
+	if logger == nil {
+		return
 	}
+	c.mu.Lock()
+	c.logger = logger
+	c.mu.Unlock()
 }
 
 func (c *PluginChain) Append(plugins ...core.Plugin) {

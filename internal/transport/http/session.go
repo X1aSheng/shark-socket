@@ -1,7 +1,6 @@
 package http
 
 import (
-	"bytes"
 	"context"
 	"net"
 	stdhttp "net/http"
@@ -76,10 +75,11 @@ type stringAddr string
 func (a stringAddr) Network() string { return "http" }
 func (a stringAddr) String() string  { return string(a) }
 
+// responseRecorder captures the response status code for observability while
+// streaming the body straight through to the client (no buffering).
 type responseRecorder struct {
 	stdhttp.ResponseWriter
 	status int
-	body   bytes.Buffer
 	wrote  bool
 }
 
@@ -96,9 +96,7 @@ func (r *responseRecorder) Write(data []byte) (int, error) {
 	if !r.wrote {
 		r.WriteHeader(stdhttp.StatusOK)
 	}
-	n, err := r.ResponseWriter.Write(data)
-	r.body.Write(data[:n])
-	return n, err
+	return r.ResponseWriter.Write(data)
 }
 
 var _ core.Session = (*session)(nil)

@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
@@ -14,6 +15,7 @@ type Persistence struct {
 	store      store.Store
 	bucket     string
 	messageLog *store.MessageLog
+	loggerMu   sync.RWMutex
 	logger     core.Logger
 }
 
@@ -34,14 +36,26 @@ func NewPersistence(s store.Store, bucket string) *Persistence {
 }
 
 // SetLogger sets the logger used for operational messages.
+// The write is locked so it is safe to call while the plugin is active.
 func (p *Persistence) SetLogger(logger core.Logger) {
-	if logger != nil {
-		p.logger = logger
+	if logger == nil {
+		return
 	}
+	p.loggerMu.Lock()
+	p.logger = logger
+	p.loggerMu.Unlock()
 }
 
 func (p *Persistence) Name() string  { return "persistence" }
 func (p *Persistence) Priority() int { return 90 }
+
+// loggerRef returns the current logger under a read lock.
+func (p *Persistence) loggerRef() core.Logger {
+	p.loggerMu.RLock()
+	l := p.logger
+	p.loggerMu.RUnlock()
+	return l
+}
 
 func (p *Persistence) OnAccept(sess core.Session) error {
 	if p.store == nil {
@@ -49,7 +63,7 @@ func (p *Persistence) OnAccept(sess core.Session) error {
 	}
 	value := []byte(fmt.Sprintf("accepted protocol=%s remote=%s at=%s", sess.Protocol(), sess.RemoteAddr(), time.Now().UTC().Format(time.RFC3339Nano)))
 	if err := p.store.Save(p.bucket, p.key(sess), value); err != nil {
-		p.logger.Error("persistence: save on accept", "error", err)
+		p.loggerRef().Error("persistence: save on accept", "error", err)
 	}
 	return nil
 }
@@ -60,14 +74,14 @@ func (p *Persistence) OnClose(sess core.Session) {
 	}
 	value := []byte(fmt.Sprintf("closed protocol=%s remote=%s at=%s", sess.Protocol(), sess.RemoteAddr(), time.Now().UTC().Format(time.RFC3339Nano)))
 	if err := p.store.Save(p.bucket, p.key(sess), value); err != nil {
-		p.logger.Error("persistence: save on close", "error", err)
+		p.loggerRef().Error("persistence: save on close", "error", err)
 	}
 }
 
 func (p *Persistence) OnMessage(sess core.Session, data []byte) ([]byte, error) {
 	if p.messageLog != nil {
 		if _, err := p.messageLog.Append(data); err != nil {
-			p.logger.Error("persistence: message log append", "error", err)
+			p.loggerRef().Error("persistence: message log append", "error", err)
 		}
 	}
 	return data, nil
