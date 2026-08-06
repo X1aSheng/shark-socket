@@ -99,10 +99,20 @@ func (s *session) writeLoop() {
 			if s.writeTimeout > 0 {
 				stream.SetWriteDeadline(time.Now().Add(s.writeTimeout))
 			}
-			n, err := stream.Write(payload)
-			if err != nil || n < len(payload) {
-				_ = stream.Close()
-				return
+			// io.Writer may return a short write with a nil error; retry the
+			// remainder rather than silently dropping the rest of the payload.
+			written := 0
+			for written < len(payload) {
+				n, err := stream.Write(payload[written:])
+				if err != nil {
+					_ = stream.Close()
+					return
+				}
+				if n <= 0 {
+					_ = stream.Close()
+					return
+				}
+				written += n
 			}
 			_ = stream.Close()
 		case <-s.ctx.Done():

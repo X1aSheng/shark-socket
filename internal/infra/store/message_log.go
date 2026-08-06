@@ -59,6 +59,11 @@ func (m *MessageLog) Replay(fn func(seq uint64, data []byte) error) error {
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
+		// Keys shorter than the 8-byte sequence prefix (written by another
+		// bucket or corrupted data) must be skipped, not sliced out of range.
+		if len(key) < 8 {
+			continue
+		}
 		val, ok, err := m.store.Load(m.bucket, key)
 		if err != nil {
 			return err

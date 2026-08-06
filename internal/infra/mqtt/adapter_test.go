@@ -246,12 +246,11 @@ func TestPahoOptionsWithEmptyCredentials(t *testing.T) {
 
 func TestAdapterStartSuccess(t *testing.T) {
 	mock := &mockClient{connected: false}
-	restore := setClientFactory(func(_ *paho.ClientOptions) mqttClient {
+	clientFactoryFn := func(_ *paho.ClientOptions) mqttClient {
 		return mock
-	})
-	defer restore()
+	}
 
-	a, err := NewAdapter(WithBrokerURL("tcp://broker:1883"))
+	a, err := NewAdapter(WithBrokerURL("tcp://broker:1883"), WithClientFactory(clientFactoryFn))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,12 +266,11 @@ func TestAdapterStartSuccess(t *testing.T) {
 
 func TestAdapterStartConnectError(t *testing.T) {
 	mock := &mockClient{connectErr: errors.New("connection refused")}
-	restore := setClientFactory(func(_ *paho.ClientOptions) mqttClient {
+	clientFactoryFn := func(_ *paho.ClientOptions) mqttClient {
 		return mock
-	})
-	defer restore()
+	}
 
-	a, err := NewAdapter(WithBrokerURL("tcp://broker:1883"))
+	a, err := NewAdapter(WithBrokerURL("tcp://broker:1883"), WithClientFactory(clientFactoryFn))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,12 +283,11 @@ func TestAdapterStartConnectError(t *testing.T) {
 
 func TestAdapterStartIdempotent(t *testing.T) {
 	mock := &mockClient{connected: true}
-	restore := setClientFactory(func(_ *paho.ClientOptions) mqttClient {
+	clientFactoryFn := func(_ *paho.ClientOptions) mqttClient {
 		return mock
-	})
-	defer restore()
+	}
 
-	a, err := NewAdapter(WithBrokerURL("tcp://broker:1883"))
+	a, err := NewAdapter(WithBrokerURL("tcp://broker:1883"), WithClientFactory(clientFactoryFn))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,12 +306,11 @@ func TestAdapterStartIdempotent(t *testing.T) {
 
 func TestAdapterStopDisconnects(t *testing.T) {
 	mock := &mockClient{connected: false}
-	restore := setClientFactory(func(_ *paho.ClientOptions) mqttClient {
+	clientFactoryFn := func(_ *paho.ClientOptions) mqttClient {
 		return mock
-	})
-	defer restore()
+	}
 
-	a, err := NewAdapter(WithBrokerURL("tcp://broker:1883"))
+	a, err := NewAdapter(WithBrokerURL("tcp://broker:1883"), WithClientFactory(clientFactoryFn))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,12 +342,11 @@ func TestAdapterStopIdempotent(t *testing.T) {
 
 func TestAdapterPublishSuccess(t *testing.T) {
 	mock := &mockClient{connected: false}
-	restore := setClientFactory(func(_ *paho.ClientOptions) mqttClient {
+	clientFactoryFn := func(_ *paho.ClientOptions) mqttClient {
 		return mock
-	})
-	defer restore()
+	}
 
-	a, err := NewAdapter(WithBrokerURL("tcp://broker:1883"))
+	a, err := NewAdapter(WithBrokerURL("tcp://broker:1883"), WithClientFactory(clientFactoryFn))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,12 +363,11 @@ func TestAdapterPublishSuccess(t *testing.T) {
 
 func TestAdapterPublishAfterStop(t *testing.T) {
 	mock := &mockClient{connected: false}
-	restore := setClientFactory(func(_ *paho.ClientOptions) mqttClient {
+	clientFactoryFn := func(_ *paho.ClientOptions) mqttClient {
 		return mock
-	})
-	defer restore()
+	}
 
-	a, err := NewAdapter(WithBrokerURL("tcp://broker:1883"))
+	a, err := NewAdapter(WithBrokerURL("tcp://broker:1883"), WithClientFactory(clientFactoryFn))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,12 +387,11 @@ func TestAdapterPublishAfterStop(t *testing.T) {
 
 func TestAdapterSubscribeSuccess(t *testing.T) {
 	mock := &mockClient{connected: false}
-	restore := setClientFactory(func(_ *paho.ClientOptions) mqttClient {
+	clientFactoryFn := func(_ *paho.ClientOptions) mqttClient {
 		return mock
-	})
-	defer restore()
+	}
 
-	a, err := NewAdapter(WithBrokerURL("tcp://broker:1883"))
+	a, err := NewAdapter(WithBrokerURL("tcp://broker:1883"), WithClientFactory(clientFactoryFn))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,12 +418,11 @@ func TestAdapterSubscribeSuccess(t *testing.T) {
 
 func TestAdapterSubscribeAfterStop(t *testing.T) {
 	mock := &mockClient{connected: false}
-	restore := setClientFactory(func(_ *paho.ClientOptions) mqttClient {
+	clientFactoryFn := func(_ *paho.ClientOptions) mqttClient {
 		return mock
-	})
-	defer restore()
+	}
 
-	a, err := NewAdapter(WithBrokerURL("tcp://broker:1883"))
+	a, err := NewAdapter(WithBrokerURL("tcp://broker:1883"), WithClientFactory(clientFactoryFn))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -446,16 +438,4 @@ func TestAdapterSubscribeAfterStop(t *testing.T) {
 	if err := a.Subscribe("test", 0, func(t string, p []byte) {}); err == nil {
 		t.Fatal("expected error for subscribe after stop")
 	}
-}
-
-// ---------------------------------------------------------------------------
-// Helper
-// ---------------------------------------------------------------------------
-
-// setClientFactory overrides the package-level clientFactory for the duration
-// of a test and returns a restore function.
-func setClientFactory(fn func(*paho.ClientOptions) mqttClient) func() {
-	orig := clientFactory
-	clientFactory = fn
-	return func() { clientFactory = orig }
 }

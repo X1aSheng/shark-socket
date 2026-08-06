@@ -17,6 +17,10 @@ type Options struct {
 	QoS            byte
 	Handler        MessageHandler
 	ConnectTimeout time.Duration
+	// clientFactory creates the paho client from options. It is a per-adapter
+	// field (not a package global) so multiple adapters remain independent and
+	// reentrant; tests inject a mock through WithClientFactory.
+	clientFactory func(*paho.ClientOptions) mqttClient
 }
 
 type Option func(*Options)
@@ -28,7 +32,12 @@ func defaultOptions() Options {
 		ClientID:       "shark-socket-mqtt",
 		QoS:            0,
 		ConnectTimeout: 10 * time.Second,
+		clientFactory:  defaultClientFactory,
 	}
+}
+
+func defaultClientFactory(o *paho.ClientOptions) mqttClient {
+	return paho.NewClient(o)
 }
 
 func WithBrokerURL(url string) Option {
@@ -65,6 +74,16 @@ func WithConnectTimeout(timeout time.Duration) Option {
 
 func WithMessageHandler(handler MessageHandler) Option {
 	return func(o *Options) { o.Handler = handler }
+}
+
+// WithClientFactory overrides the client constructor. Intended for tests that
+// inject a mock mqttClient; the factory is scoped to this adapter instance.
+func WithClientFactory(factory func(*paho.ClientOptions) mqttClient) Option {
+	return func(o *Options) {
+		if factory != nil {
+			o.clientFactory = factory
+		}
+	}
 }
 
 // pahoOptions converts shark-socket MQTT options to paho client options.

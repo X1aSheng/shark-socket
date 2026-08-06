@@ -18,11 +18,6 @@ type mqttClient interface {
 	Subscribe(topic string, qos byte, callback paho.MessageHandler) paho.Token
 }
 
-// clientFactory creates a mqttClient from options. Overridable in tests.
-var clientFactory = func(o *paho.ClientOptions) mqttClient {
-	return paho.NewClient(o)
-}
-
 type Adapter struct {
 	opts   Options
 	client mqttClient
@@ -49,12 +44,14 @@ func (a *Adapter) Start(ctx context.Context) error {
 	opts := a.opts // copy under lock
 	a.mu.Unlock()
 
-	client := clientFactory(pahoOptions(opts))
+	client := opts.clientFactory(pahoOptions(opts))
 	token := client.Connect()
 	if !token.WaitTimeout(opts.ConnectTimeout) {
+		client.Disconnect(0)
 		return fmt.Errorf("mqtt connect timeout")
 	}
 	if err := token.Error(); err != nil {
+		client.Disconnect(0)
 		return fmt.Errorf("mqtt connect: %w", err)
 	}
 
@@ -73,7 +70,15 @@ func (a *Adapter) Start(ctx context.Context) error {
 		}
 	}
 
+	// Double-check under the lock: a concurrent Start may have connected a
+	// client while this one was dialing. Discard this duplicate connection
+	// instead of overwriting (which would leak the other client).
 	a.mu.Lock()
+	if a.client != nil && a.client.IsConnected() {
+		a.mu.Unlock()
+		client.Disconnect(250)
+		return nil
+	}
 	a.client = client
 	a.mu.Unlock()
 	return nil

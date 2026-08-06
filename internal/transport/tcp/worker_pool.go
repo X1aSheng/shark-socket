@@ -64,11 +64,16 @@ func (p *workerPool) submit(sess *session, data []byte) error {
 	case PolicyBlock:
 		// Never close p.queue; use done for termination so a blocking
 		// send cannot race with stop() and panic on a closed channel.
+		// Also watch the session context: if the peer disconnects while the
+		// queue is full, the submitting goroutine would otherwise block until
+		// the whole pool stops, leaking a goroutine per wedged connection.
 		select {
 		case p.queue <- t:
 			return nil
 		case <-p.done:
 			return core.ErrClosed
+		case <-sess.ctx.Done():
+			return core.ErrSessionClosed
 		}
 	case PolicyDrop:
 		select {
@@ -91,6 +96,8 @@ func (p *workerPool) submit(sess *session, data []byte) error {
 			return nil
 		case <-p.done:
 			return core.ErrClosed
+		case <-sess.ctx.Done():
+			return core.ErrSessionClosed
 		}
 	}
 }
