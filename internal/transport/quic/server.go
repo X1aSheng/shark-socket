@@ -141,20 +141,28 @@ func (s *Server) handleConn(conn *quicgo.Conn) {
 	id := s.rt.Sessions().NextID()
 	sess := newSession(id, conn, s.opts.WriteQueueSize, s.opts.WriteTimeout)
 	s.sessions.Store(id, sess)
+	// OnClose fires only for accepted sessions; Register/OnAccept failures are
+	// discarded without notifying plugins (the chain rolls back partials).
+	accepted := false
 	if err := s.rt.Sessions().Register(sess); err != nil {
-		s.closeSession(context.Background(), id, sess)
+		s.discardSession(context.Background(), id, sess)
 		return
 	}
 	if err := s.rt.Plugins().OnAccept(sess); err != nil {
-		s.closeSession(context.Background(), id, sess)
+		s.discardSession(context.Background(), id, sess)
 		return
 	}
+	accepted = true
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
 		sess.writeLoop()
 	}()
-	defer s.closeSession(context.Background(), id, sess)
+	defer func() {
+		if accepted {
+			s.closeSession(context.Background(), id, sess)
+		}
+	}()
 	for {
 		stream, err := conn.AcceptStream(sess.Context())
 		if err != nil {
@@ -204,6 +212,17 @@ func (s *Server) closeSession(ctx context.Context, id uint64, sess *session) {
 	s.rt.Sessions().Unregister(id)
 	_ = sess.Close(ctx)
 	s.rt.Plugins().OnClose(sess)
+}
+
+// discardSession removes a session that was never accepted (Register or
+// OnAccept failed) without invoking plugin OnClose: the plugin chain already
+// rolled back partial accepts.
+func (s *Server) discardSession(ctx context.Context, id uint64, sess *session) {
+	if _, loaded := s.sessions.LoadAndDelete(id); !loaded {
+		return // already closed
+	}
+	s.rt.Sessions().Unregister(id)
+	_ = sess.Close(ctx)
 }
 
 func ClientTLSConfig(insecure bool) *tls.Config {

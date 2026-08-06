@@ -183,15 +183,21 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
+	// OnClose fires only for accepted sessions; when OnAccept fails the plugin
+	// chain already rolled back partial accepts.
+	accepted := false
 	defer func() {
 		s.rt.Sessions().Unregister(id)
 		_ = sess.Close(context.Background())
-		s.rt.Plugins().OnClose(sess)
+		if accepted {
+			s.rt.Plugins().OnClose(sess)
+		}
 	}()
 	if err := s.rt.Plugins().OnAccept(sess); err != nil {
 		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 		return
 	}
+	accepted = true
 	body, err = s.rt.Plugins().OnMessage(sess, body)
 	if err != nil {
 		if err == core.ErrPluginDrop {
@@ -235,11 +241,22 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	sess := newWebSocketSession(id, conn)
 	s.sessions.Store(id, sess)
 	if err := s.rt.Sessions().Register(sess); err != nil {
-		s.closeWebSocketSession(context.Background(), id, sess)
+		// Never accepted: discard without OnClose.
+		if _, loaded := s.sessions.LoadAndDelete(id); loaded {
+			s.rt.Sessions().Unregister(id)
+			_ = sess.Close(context.Background())
+		}
+		s.acceptor.Done()
 		return
 	}
 	if err := s.rt.Plugins().OnAccept(sess); err != nil {
-		s.closeWebSocketSession(context.Background(), id, sess)
+		// OnAccept failed: the plugin chain rolled back partial accepts; do not
+		// call OnClose again.
+		if _, loaded := s.sessions.LoadAndDelete(id); loaded {
+			s.rt.Sessions().Unregister(id)
+			_ = sess.Close(context.Background())
+		}
+		s.acceptor.Done()
 		return
 	}
 	s.wg.Add(1)

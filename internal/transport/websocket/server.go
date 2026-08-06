@@ -159,12 +159,21 @@ func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 	s.sessions.Store(id, sess)
 	if err := s.rt.Sessions().Register(sess); err != nil {
 		s.acceptor.Done()
-		s.closeSession(context.Background(), id, sess)
+		// Never accepted: drop without OnClose (the plugin chain never ran).
+		if _, loaded := s.sessions.LoadAndDelete(id); loaded {
+			s.rt.Sessions().Unregister(id)
+			_ = sess.Close(context.Background())
+		}
 		return
 	}
 	if err := s.rt.Plugins().OnAccept(sess); err != nil {
 		s.acceptor.Done()
-		s.closeSession(context.Background(), id, sess)
+		// OnAccept failed: the plugin chain rolled back partial accepts; do not
+		// call OnClose again here.
+		if _, loaded := s.sessions.LoadAndDelete(id); loaded {
+			s.rt.Sessions().Unregister(id)
+			_ = sess.Close(context.Background())
+		}
 		return
 	}
 	s.wg.Add(1)

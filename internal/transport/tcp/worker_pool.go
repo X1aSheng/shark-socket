@@ -60,19 +60,24 @@ func (p *workerPool) submit(sess *session, data []byte) error {
 		return core.ErrClosed
 	}
 	t := task{sess: sess, data: data}
+	// Watch the session context too: if the peer disconnects while the queue is
+	// full, the submitting goroutine would otherwise block until the whole pool
+	// stops, leaking a goroutine per wedged connection. sess may be nil in
+	// tests/regression callers, in which case only pool stop unblocks.
+	var sessDone <-chan struct{}
+	if sess != nil && sess.ctx != nil {
+		sessDone = sess.ctx.Done()
+	}
 	switch p.policy {
 	case PolicyBlock:
 		// Never close p.queue; use done for termination so a blocking
 		// send cannot race with stop() and panic on a closed channel.
-		// Also watch the session context: if the peer disconnects while the
-		// queue is full, the submitting goroutine would otherwise block until
-		// the whole pool stops, leaking a goroutine per wedged connection.
 		select {
 		case p.queue <- t:
 			return nil
 		case <-p.done:
 			return core.ErrClosed
-		case <-sess.ctx.Done():
+		case <-sessDone:
 			return core.ErrSessionClosed
 		}
 	case PolicyDrop:
@@ -87,7 +92,9 @@ func (p *workerPool) submit(sess *session, data []byte) error {
 		case p.queue <- t:
 			return nil
 		default:
-			_ = sess.Close(context.Background())
+			if sess != nil {
+				_ = sess.Close(context.Background())
+			}
 			return core.ErrWriteQueueFull
 		}
 	default:
@@ -96,7 +103,7 @@ func (p *workerPool) submit(sess *session, data []byte) error {
 			return nil
 		case <-p.done:
 			return core.ErrClosed
-		case <-sess.ctx.Done():
+		case <-sessDone:
 			return core.ErrSessionClosed
 		}
 	}

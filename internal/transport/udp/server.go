@@ -178,11 +178,16 @@ func (s *Server) handleDTLSConn(ctx context.Context, conn net.Conn) {
 	sess := newDTLSSession(id, conn)
 	s.sessions.Store(id, sess)
 	s.dtlsConns.Store(id, conn)
+	// OnClose only fires for sessions that were actually accepted; on Register
+	// or OnAccept failure the plugin chain already rolled back partial accepts.
+	accepted := false
 	defer func() {
 		s.dtlsConns.Delete(id)
 		s.sessions.Delete(id)
 		s.rt.Sessions().Unregister(id)
-		s.rt.Plugins().OnClose(sess)
+		if accepted {
+			s.rt.Plugins().OnClose(sess)
+		}
 	}()
 
 	if err := s.rt.Sessions().Register(sess); err != nil {
@@ -193,6 +198,7 @@ func (s *Server) handleDTLSConn(ctx context.Context, conn net.Conn) {
 		_ = sess.Close(context.Background())
 		return
 	}
+	accepted = true
 
 	buf := make([]byte, s.opts.MaxDatagram)
 	for {
@@ -300,7 +306,12 @@ func (s *Server) getOrCreateSession(addr *net.UDPAddr) *session {
 		return nil
 	}
 	if err := s.rt.Plugins().OnAccept(sess); err != nil {
-		s.closeSession(context.Background(), key, sess)
+		// OnAccept failed; the plugin chain already rolled back partial
+		// accepts, so remove the session without calling OnClose again.
+		if _, loaded := s.sessions.LoadAndDelete(key); loaded {
+			s.rt.Sessions().Unregister(sess.ID())
+			_ = sess.Close(context.Background())
+		}
 		return nil
 	}
 	return sess

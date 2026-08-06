@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"math/big"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -459,4 +460,75 @@ func TestGatewayTCPPluginDropSkipsHandlerAndKeepsConnection(t *testing.T) {
 	if string(got) != "keep" {
 		t.Fatalf("echo = %q, want keep", got)
 	}
+}
+
+// countPlugin records accept/close calls so a test can assert the plugin chain
+// and transport do not double-notify OnClose for a session that was never
+// accepted.
+type countPlugin struct {
+	core.BasePlugin
+	acceptCalls atomic.Int32
+	closeCalls  atomic.Int32
+	failAccept  bool
+}
+
+func (p *countPlugin) Name() string { return "count" }
+
+func (p *countPlugin) OnAccept(core.Session) error {
+	p.acceptCalls.Add(1)
+	if p.failAccept {
+		return core.ErrPluginBlock
+	}
+	return nil
+}
+
+func (p *countPlugin) OnClose(core.Session) { p.closeCalls.Add(1) }
+
+// TestTCPOnAcceptFailureNoDoubleClose verifies that when a later plugin fails
+// OnAccept, the already-accepted plugin receives OnClose exactly once (via the
+// plugin chain rollback) and the transport does not call OnClose again for a
+// session that was never fully accepted.
+func TestTCPOnAcceptFailureNoDoubleClose(t *testing.T) {
+	okPlugin := &countPlugin{}
+	badPlugin := &countPlugin{failAccept: true}
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithHandler(func(sess core.Session, msg core.Message) error { return nil }),
+	)
+	gateway := runtime.NewGateway(runtime.WithPlugins(okPlugin, badPlugin))
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	conn, err := dialWithLinger(context.Background(), "tcp", server.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if badPlugin.acceptCalls.Load() > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if badPlugin.acceptCalls.Load() != 1 {
+		t.Fatalf("bad plugin accept calls = %d, want 1", badPlugin.acceptCalls.Load())
+	}
+	// Give any (incorrect) transport-level OnClose time to fire.
+	time.Sleep(200 * time.Millisecond)
+	if got := okPlugin.closeCalls.Load(); got != 1 {
+		t.Fatalf("ok plugin close calls = %d, want exactly 1 (chain rollback only)", got)
+	}
+	if got := badPlugin.closeCalls.Load(); got != 0 {
+		t.Fatalf("bad plugin close calls = %d, want 0 (never accepted)", got)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = gateway.Stop(ctx)
 }

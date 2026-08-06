@@ -168,10 +168,16 @@ func (s *Server) handleConn(conn net.Conn) {
 	sess := newSession(id, conn, s.opts.Framer, s.opts.WriteQueue, s.opts.WriteTimeout, s.opts.WriteQueueHighWater)
 	sess.readTimeout = s.opts.ReadTimeout
 	s.sessions.Store(id, sess)
+	// OnClose must fire only for sessions that were actually accepted; when
+	// Register or OnAccept fails the plugin chain already rolled back partial
+	// accepts, so calling OnClose again would double-notify plugins.
+	accepted := false
 	defer func() {
 		s.sessions.Delete(id)
 		s.rt.Sessions().Unregister(id)
-		s.rt.Plugins().OnClose(sess)
+		if accepted {
+			s.rt.Plugins().OnClose(sess)
+		}
 	}()
 
 	if err := s.rt.Sessions().Register(sess); err != nil {
@@ -182,6 +188,7 @@ func (s *Server) handleConn(conn net.Conn) {
 		_ = sess.Close(context.Background())
 		return
 	}
+	accepted = true
 
 	s.connWG.Add(1)
 	go func() {
