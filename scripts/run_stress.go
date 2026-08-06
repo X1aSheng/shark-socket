@@ -325,12 +325,6 @@ func runClient(m *metrics, addr string) {
 // Local server (when no -host provided)
 // ---------------------------------------------------------------------------
 
-type closable interface {
-	Stop(context.Context) error
-}
-
-var runningServer closable
-
 func startLocalServer() string {
 	server := tcp.NewServer(
 		tcp.WithAddr("127.0.0.1:0"),
@@ -347,22 +341,7 @@ func startLocalServer() string {
 		fmt.Fprintf(os.Stderr, "start: %v\n", err)
 		os.Exit(1)
 	}
-	runningServer = gw
 	return server.Addr().String()
-}
-
-func init() {
-	// Ensure cleanup on exit
-	exit := make(chan struct{})
-	go func() {
-		<-exit
-		if runningServer != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			_ = runningServer.Stop(ctx)
-		}
-	}()
-	_ = exit
 }
 
 // ---------------------------------------------------------------------------
@@ -373,15 +352,25 @@ func goVersion() string {
 	return fmt.Sprintf("%s %s/%s", goruntime.Version(), goruntime.GOOS, goruntime.GOARCH)
 }
 
+// readResourceState returns a compact summary of host memory and load, or a
+// message when /proc is unavailable. The result is used in the summary report.
 func readResourceState() string {
 	if goruntime.GOOS != "linux" {
 		return "not available on " + goruntime.GOOS
 	}
-	data, _ := os.ReadFile("/proc/meminfo")
-	_ = data
-	data2, _ := os.ReadFile("/proc/loadavg")
-	_ = data2
-	return "checked"
+	mem, _ := os.ReadFile("/proc/meminfo")
+	load, _ := os.ReadFile("/proc/loadavg")
+	return "mem=" + strings.TrimSpace(extractMemFree(mem)) + " load=" + strings.TrimSpace(string(load))
+}
+
+// extractMemFree pulls the MemAvailable line out of /proc/meminfo.
+func extractMemFree(data []byte) string {
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "MemAvailable:") {
+			return strings.TrimPrefix(line, "MemAvailable:")
+		}
+	}
+	return "unknown"
 }
 
 func printSummary(results map[string]map[string]any) {

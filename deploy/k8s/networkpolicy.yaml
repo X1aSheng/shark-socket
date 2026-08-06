@@ -20,6 +20,11 @@ spec:
           protocol: TCP
         - port: 18081
           protocol: TCP
+  # Egress is intentionally unrestricted: the gateway dials out to arbitrary
+  # external endpoints (MQTT brokers, CoAP servers, upstream services) on
+  # user-configured addresses/ports, so pinning egress to fixed ports or
+  # namespaces would break those outbound connections. Ingress stays locked
+  # to the three protocol ports above.
   egress:
     - to:
         - namespaceSelector: {}

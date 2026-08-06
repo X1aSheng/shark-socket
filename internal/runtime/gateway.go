@@ -142,19 +142,26 @@ func (g *Gateway) Stop(ctx context.Context) error {
 	if err := g.rt.Sessions().CloseAll(ctx); err != nil && firstErr == nil {
 		firstErr = err
 	}
-	g.started.Store(false)
-	g.startedAt.Store(nil) // clear stale uptime reported by Health()
+	// started was already cleared at the top of Stop so readyz reports
+	// not-ready for the whole shutdown window; only the uptime is stale here.
+	g.startedAt.Store(nil)
 	return firstErr
 }
 
 func (g *Gateway) Health() map[string]any {
+	started := g.started.Load()
 	resp := map[string]any{
-		"started":  g.started.Load(),
+		"started":  started,
 		"sessions": g.rt.Sessions().Count(),
 	}
-	if startedAt := g.startedAt.Load(); startedAt != nil {
-		resp["started_at"] = startedAt.Format(time.RFC3339Nano)
-		resp["uptime"] = time.Since(*startedAt).String()
+	// Only report start time/uptime while the gateway is started, so a Health
+	// call during the shutdown window cannot return started=false together
+	// with a live uptime.
+	if started {
+		if startedAt := g.startedAt.Load(); startedAt != nil {
+			resp["started_at"] = startedAt.Format(time.RFC3339Nano)
+			resp["uptime"] = time.Since(*startedAt).String()
+		}
 	}
 	resp["protocols"] = g.Protocols()
 	return resp

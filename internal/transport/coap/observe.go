@@ -100,14 +100,16 @@ func observerKey(remote string, token []byte) string {
 }
 
 // SendObserveNotification sends an observe notification to the given session.
+// The Observe option uses the same variable-length encoding as the server's
+// notification path (encodeObserveSeq), so both produce RFC 7641-compliant
+// values.
 func SendObserveNotification(sess core.Session, msgID uint16, token []byte, seq uint32, payload []byte) error {
-	seqBuf := []byte{byte(seq >> 24), byte(seq >> 16), byte(seq >> 8), byte(seq)}
 	notify := Message{
 		Type:      TypeCON,
 		Code:      CodeContent,
 		MessageID: msgID,
 		Token:     token,
-		Options:   map[uint16][]byte{ObserveOption: seqBuf},
+		Options:   map[uint16][]byte{ObserveOption: encodeObserveSeq(seq)},
 		Payload:   payload,
 	}
 	data, err := notify.Marshal()

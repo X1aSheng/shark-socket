@@ -2,7 +2,7 @@
 *.exe
 *.test
 *.out
-shark-socket
+/shark-socket
 
 # IDE
 .idea/
