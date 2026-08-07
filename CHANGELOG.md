@@ -7,6 +7,19 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### V6.1 CI Hardening (2026-08-07)
+
+- **Go toolchain 1.26.5**: Bump `go.mod` from 1.26.4 to 1.26.5 to fix
+  GO-2026-5856 / CVE-2026-42505 (crypto/tls ECH privacy leak, fixed in
+  go1.26.5). `govulncheck` now reports 0 called vulnerabilities.
+- **golangci-lint v2.12.2**: The pinned v1.64.2 was built with Go 1.24 and
+  could not analyze a Go 1.26 module; bump to v2.12.2 (0 issues locally).
+- **Observability**: NewGateway installs a metrics decorator over the session
+  manager, so every transport now emits `sessions_active` (gauge) and
+  `sessions_accepted_total` / `sessions_closed_total` counters through the
+  configured metrics backend. The Prometheus `/metrics` endpoint is no longer
+  empty during normal operation.
+
 ### V6 Audit Fixes (2026-08-06)
 
 #### Protocol Correctness

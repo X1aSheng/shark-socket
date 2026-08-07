@@ -36,9 +36,16 @@ func NewGateway(opts ...GatewayOption) *Gateway {
 	if chain, ok := cfg.plugins.(*PluginChain); ok {
 		chain.SetLogger(cfg.logger)
 	}
+	// Install a metrics decorator so every transport's session register/
+	// unregister flows into the configured metrics backend (Prometheus
+	// exporter, in-memory metrics, ...) without per-server metric calls.
+	sessions := cfg.sessions
+	if cfg.metrics != nil {
+		sessions = &metricSessionManager{SessionManager: cfg.sessions, metrics: cfg.metrics}
+	}
 	return &Gateway{
 		servers:  make(map[core.Protocol]core.Server),
-		rt:       NewRuntime(cfg.sessions, cfg.plugins, withRuntimeLogger(cfg.logger), withRuntimeMetrics(cfg.metrics), withRuntimeTracer(cfg.tracer)),
+		rt:       NewRuntime(sessions, cfg.plugins, withRuntimeLogger(cfg.logger), withRuntimeMetrics(cfg.metrics), withRuntimeTracer(cfg.tracer)),
 		timeouts: normalizeTimeouts(cfg.timeouts),
 	}
 }
