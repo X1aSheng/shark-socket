@@ -1,5 +1,7 @@
 # shark-socket
 
+**English** | [简体中文](README.zh-CN.md)
+
 `shark-socket` is a redesigned multi-protocol runtime gateway for
 Shark-Socket. It keeps the useful ideas from the original project while making
 runtime ownership, plugin execution, and graceful shutdown explicit.
