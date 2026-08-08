@@ -3,6 +3,7 @@ package runtime
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
 )
@@ -73,5 +74,46 @@ func TestPluginChainOnAcceptFailureRollsBackClose(t *testing.T) {
 	}
 	if !good.closed {
 		t.Fatal("already-accepted plugin did not receive OnClose after later OnAccept failure")
+	}
+}
+
+// reentrantPlugin calls chain.SetLogger (a write-lock operation) from inside
+// its OnAccept hook. Before the callbacks were moved off the read lock this
+// deadlocked, because RWMutex is not reentrant.
+type reentrantPlugin struct {
+	core.BasePlugin
+	chain *PluginChain
+}
+
+func (p *reentrantPlugin) OnAccept(core.Session) error {
+	p.chain.SetLogger(core.NopLogger())
+	return nil
+}
+
+func (p *reentrantPlugin) OnMessage(core.Session, []byte) ([]byte, error) {
+	p.chain.SetLogger(core.NopLogger())
+	return nil, nil
+}
+
+func (p *reentrantPlugin) OnClose(core.Session) {
+	p.chain.SetLogger(core.NopLogger())
+}
+
+func TestPluginChainReentrantSetLoggerDoesNotDeadlock(t *testing.T) {
+	chain := NewPluginChain()
+	plugin := &reentrantPlugin{chain: chain}
+	chain.Append(plugin)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = chain.OnAccept(nil)
+		_, _ = chain.OnMessage(nil, nil)
+		chain.OnClose(nil)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("plugin chain deadlocked on reentrant SetLogger")
 	}
 }

@@ -158,6 +158,56 @@ func TestCoAPDuplicateCONDoesNotRerunHandler(t *testing.T) {
 	}
 }
 
+// TestCoAPNonDoesNotPolluteDedup verifies that a NON message carrying msgID N
+// is not recorded in the dedup map, so a later CON reusing msgID N still
+// reaches the handler instead of being misclassified as a duplicate
+// (RFC 7252 dedup applies to CON messages only).
+func TestCoAPNonDoesNotPolluteDedup(t *testing.T) {
+	var handled atomic.Int32
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithHandler(func(core.Session, core.Message) error {
+			handled.Add(1)
+			return nil
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer stopGateway(t, gateway)
+
+	conn, err := net.Dial("udp", server.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	// NON POST with msgID 9 reaches the handler but must not be deduped.
+	non := Message{Type: TypeNON, Code: CodePost, MessageID: 9, Token: []byte{3}, Payload: []byte("non")}
+	nonData, err := non.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Write(nonData); err != nil {
+		t.Fatal(err)
+	}
+
+	// A CON reusing msgID 9 must still reach the handler (CodeCreated), not be
+	// re-ACKed as a duplicate (CodeValid).
+	con := Message{Type: TypeCON, Code: CodePost, MessageID: 9, Token: []byte{4}, Payload: []byte("con")}
+	ack := exchangeMessage(t, conn, con)
+	if ack.Code != CodeCreated {
+		t.Fatalf("CON ack code = %d, want %d (NON polluted the dedup map)", ack.Code, CodeCreated)
+	}
+	if got := handled.Load(); got != 2 {
+		t.Fatalf("handler calls = %d, want 2", got)
+	}
+}
+
 func exchangeMessage(t *testing.T, conn net.Conn, req Message) Message {
 	t.Helper()
 	data, err := req.Marshal()

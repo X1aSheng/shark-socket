@@ -23,8 +23,10 @@ spec:
   # Egress is intentionally unrestricted: the gateway dials out to arbitrary
   # external endpoints (MQTT brokers, CoAP servers, upstream services) on
   # user-configured addresses/ports, so pinning egress to fixed ports or
-  # namespaces would break those outbound connections. Ingress stays locked
+  # namespaces would break those outbound connections. An empty peer rule
+  # (no `to` / `ports`) matches all destinations, including external IPs;
+  # a `namespaceSelector` alone would only match in-cluster pods and silently
+  # drop outbound connections to any external endpoint. Ingress stays locked
   # to the three protocol ports above.
   egress:
-    - to:
-        - namespaceSelector: {}
+    - {}

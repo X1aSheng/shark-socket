@@ -222,7 +222,7 @@ func (s *Server) handleDTLSConn(ctx context.Context, conn net.Conn) {
 		}
 		if s.opts.Handler != nil {
 			msg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolUDP, Payload: payload}
-			if err := s.opts.Handler(sess, msg); err != nil {
+			if err := shared.CallHandler(func() error { return s.opts.Handler(sess, msg) }, s.rt.Logger()); err != nil {
 				_ = sess.Close(context.Background())
 			}
 		}
@@ -291,15 +291,15 @@ func (s *Server) getOrCreateSession(addr *net.UDPAddr) *session {
 	if value, ok := s.sessions.Load(key); ok {
 		return value.(*session)
 	}
-	// Create a provisional session; only allocate ID if it's actually new
-	sess := newSession(0, s.conn, addr)
+	// Allocate the ID up front so the published session never carries a
+	// provisional id=0 that a concurrent sweep/close could observe (a data
+	// race on sess.id). Wasting an ID on a duplicate race is harmless.
+	sess := newSession(s.rt.Sessions().NextID(), s.conn, addr)
 	actual, loaded := s.sessions.LoadOrStore(key, sess)
 	if loaded {
 		_ = sess.Close(context.Background())
 		return actual.(*session)
 	}
-	// Session is new; assign a proper ID now
-	sess.id = s.rt.Sessions().NextID()
 	if err := s.rt.Sessions().Register(sess); err != nil {
 		s.sessions.Delete(key)
 		_ = sess.Close(context.Background())

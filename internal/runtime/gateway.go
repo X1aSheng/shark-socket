@@ -142,11 +142,18 @@ func (g *Gateway) Stop(ctx context.Context) error {
 			}
 			continue
 		}
-		if err := srv.Stop(ctx); err != nil && firstErr == nil {
+		// Non-staged servers get the same CloseSessions deadline; otherwise a
+		// Stop that blocks on I/O would hang indefinitely (and hold startMu,
+		// blocking Register) when the caller's ctx has no deadline.
+		if err := runStage(ctx, g.timeouts.CloseSessions, func(stageCtx context.Context) error {
+			return srv.Stop(stageCtx)
+		}); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
-	if err := g.rt.Sessions().CloseAll(ctx); err != nil && firstErr == nil {
+	if err := runStage(ctx, g.timeouts.CloseSessions, func(stageCtx context.Context) error {
+		return g.rt.Sessions().CloseAll(stageCtx)
+	}); err != nil && firstErr == nil {
 		firstErr = err
 	}
 	// started was already cleared at the top of Stop so readyz reports

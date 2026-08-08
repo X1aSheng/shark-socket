@@ -258,12 +258,17 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 	if err != nil {
 		return
 	}
-	sk := seenKey{remote: sess.remote.String(), msgID: msg.MessageID}
-	if _, loaded := s.seen.LoadOrStore(sk, struct{}{}); loaded && msg.Type == TypeCON {
-		if err := s.sendACK(sess, msg, CodeValid, nil); err != nil && s.rt != nil {
-			s.rt.Logger().Warn("coap dedup ack send failed", "error", err)
+	// RFC 7252 deduplication applies to CON messages only. Only CON messages
+	// are recorded, so a NON/ACK/RST carrying the same msgID cannot later
+	// cause a legitimate CON request to be misclassified as a duplicate.
+	if msg.Type == TypeCON {
+		sk := seenKey{remote: sess.remote.String(), msgID: msg.MessageID}
+		if _, loaded := s.seen.LoadOrStore(sk, struct{}{}); loaded {
+			if err := s.sendACK(sess, msg, CodeValid, nil); err != nil && s.rt != nil {
+				s.rt.Logger().Warn("coap dedup ack send failed", "error", err)
+			}
+			return
 		}
-		return
 	}
 	if msg.Type == TypeRST || msg.Type == TypeACK {
 		return
@@ -294,7 +299,10 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 	var responsePayload []byte
 	if s.opts.Responder != nil {
 		handlerMsg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolCoAP, Payload: payload}
-		responsePayload, err = s.opts.Responder(sess, handlerMsg)
+		err = shared.CallHandler(func() (e error) {
+			responsePayload, e = s.opts.Responder(sess, handlerMsg)
+			return e
+		}, s.rt.Logger())
 		if err != nil {
 			if sess.dtlsConn != nil {
 				_ = sess.Close(context.Background())
@@ -305,7 +313,7 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 		}
 	} else if s.opts.Handler != nil {
 		handlerMsg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolCoAP, Payload: payload}
-		if err := s.opts.Handler(sess, handlerMsg); err != nil {
+		if err := shared.CallHandler(func() error { return s.opts.Handler(sess, handlerMsg) }, s.rt.Logger()); err != nil {
 			if sess.dtlsConn != nil {
 				_ = sess.Close(context.Background())
 			} else {
@@ -447,14 +455,15 @@ func (s *Server) getOrCreateUDPSession(addr *net.UDPAddr) *session {
 	if value, ok := s.sessions.Load(key); ok {
 		return value.(*session)
 	}
-	// Create provisional session; only allocate ID if it's actually new
-	sess := newUDPSession(0, s.udpConn, addr)
+	// Allocate the ID up front so the published session never carries a
+	// provisional id=0 that a concurrent sweep/close could observe (a data
+	// race on sess.id). Wasting an ID on a duplicate race is harmless.
+	sess := newUDPSession(s.rt.Sessions().NextID(), s.udpConn, addr)
 	actual, loaded := s.sessions.LoadOrStore(key, sess)
 	if loaded {
 		_ = sess.Close(context.Background())
 		return actual.(*session)
 	}
-	sess.id = s.rt.Sessions().NextID()
 	if err := s.rt.Sessions().Register(sess); err != nil {
 		s.sessions.Delete(key)
 		_ = sess.Close(context.Background())

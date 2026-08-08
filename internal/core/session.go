@@ -28,7 +28,10 @@ type Session interface {
 type SessionManager interface {
 	NextID() uint64
 	Register(Session) error
-	Unregister(uint64)
+	// Unregister removes the session and reports whether it was actually
+	// present, so callers can distinguish a real close from a no-op (e.g. a
+	// transport defer unregistering a session whose Register already failed).
+	Unregister(uint64) bool
 	Get(uint64) (Session, bool)
 	Count() int64
 	Snapshot() []Session

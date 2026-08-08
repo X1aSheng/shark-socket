@@ -100,10 +100,20 @@ func (b *Breaker) Snapshot() Snapshot {
 	}
 }
 
-func (b *Breaker) Execute(fn func() error) error {
+func (b *Breaker) Execute(fn func() error) (err error) {
 	if err := b.Allow(); err != nil {
 		return err
 	}
+	// A panicking fn must still count as a failure and release the half-open
+	// probe; otherwise halfOpenActive stays true forever and the breaker is
+	// permanently wedged in the rejecting state. The panic is re-raised so the
+	// caller observes it as before.
+	defer func() {
+		if r := recover(); r != nil {
+			b.Failure()
+			panic(r)
+		}
+	}()
 	if err := fn(); err != nil {
 		b.Failure()
 		return err

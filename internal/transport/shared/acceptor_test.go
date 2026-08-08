@@ -66,6 +66,23 @@ func TestAcceptorRateLimitRefills(t *testing.T) {
 	}
 }
 
+func TestAcceptorSubOneRate(t *testing.T) {
+	a := NewAcceptor(0, 0.5) // 1 connection every 2 seconds
+	// Right after creation allowance is 0.5 (< 1), so a burst accept is rejected.
+	if a.TryAccept() {
+		t.Fatal("accept with fewer than one token should be rejected")
+	}
+	// Wait for the bucket to refill to a full token.
+	time.Sleep(1100 * time.Millisecond)
+	if !a.TryAccept() {
+		t.Fatal("should accept after the bucket refilled to one token")
+	}
+	// Token consumed; an immediate re-accept must be rejected until it refills.
+	if a.TryAccept() {
+		t.Fatal("second accept before refill should be rejected")
+	}
+}
+
 func TestAcceptorActive(t *testing.T) {
 	a := NewAcceptor(10, 0)
 	for i := 0; i < 5; i++ {

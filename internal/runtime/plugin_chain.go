@@ -45,14 +45,13 @@ func (c *PluginChain) Append(plugins ...core.Plugin) {
 }
 
 func (c *PluginChain) OnAccept(sess core.Session) error {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	for i, p := range c.plugins {
-		if err := c.safeAccept(p, sess); err != nil {
+	plugins, logger := c.snapshot()
+	for i, p := range plugins {
+		if err := c.safeAccept(p, logger, sess); err != nil {
 			// Roll back: already-accepted plugins receive OnClose (in reverse
 			// order) so resources they allocated during OnAccept are released.
 			for j := i - 1; j >= 0; j-- {
-				c.safeClose(c.plugins[j], sess)
+				c.safeClose(plugins[j], logger, sess)
 			}
 			return err
 		}
@@ -61,11 +60,10 @@ func (c *PluginChain) OnAccept(sess core.Session) error {
 }
 
 func (c *PluginChain) OnMessage(sess core.Session, data []byte) ([]byte, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	plugins, logger := c.snapshot()
 	var err error
-	for _, p := range c.plugins {
-		data, err = c.safeMessage(p, sess, data)
+	for _, p := range plugins {
+		data, err = c.safeMessage(p, logger, sess, data)
 		if err != nil {
 			return nil, err
 		}
@@ -74,27 +72,37 @@ func (c *PluginChain) OnMessage(sess core.Session, data []byte) ([]byte, error) 
 }
 
 func (c *PluginChain) OnClose(sess core.Session) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	for i := len(c.plugins) - 1; i >= 0; i-- {
-		c.safeClose(c.plugins[i], sess)
+	plugins, logger := c.snapshot()
+	for i := len(plugins) - 1; i >= 0; i-- {
+		c.safeClose(plugins[i], logger, sess)
 	}
 }
 
-func (c *PluginChain) safeAccept(p core.Plugin, sess core.Session) (err error) {
+// snapshot returns a consistent copy of the plugin slice and the current
+// logger. Plugin callbacks run against this copy, outside the RWMutex, so a
+// plugin that calls SetLogger or Append from inside OnAccept/OnMessage/OnClose
+// no longer deadlocks (RWMutex is not reentrant) and logger reads stay
+// race-free even if SetLogger runs concurrently.
+func (c *PluginChain) snapshot() ([]core.Plugin, core.Logger) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return slices.Clone(c.plugins), c.logger
+}
+
+func (c *PluginChain) safeAccept(p core.Plugin, logger core.Logger, sess core.Session) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			c.logger.Error("plugin accept panic", "plugin", p.Name(), "panic", r)
+			logger.Error("plugin accept panic", "plugin", p.Name(), "panic", r)
 			err = core.ErrPluginPanic
 		}
 	}()
 	return p.OnAccept(sess)
 }
 
-func (c *PluginChain) safeMessage(p core.Plugin, sess core.Session, data []byte) (out []byte, err error) {
+func (c *PluginChain) safeMessage(p core.Plugin, logger core.Logger, sess core.Session, data []byte) (out []byte, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			c.logger.Error("plugin message panic", "plugin", p.Name(), "panic", r)
+			logger.Error("plugin message panic", "plugin", p.Name(), "panic", r)
 			out = data
 			err = core.ErrPluginPanic
 		}
@@ -102,10 +110,10 @@ func (c *PluginChain) safeMessage(p core.Plugin, sess core.Session, data []byte)
 	return p.OnMessage(sess, data)
 }
 
-func (c *PluginChain) safeClose(p core.Plugin, sess core.Session) {
+func (c *PluginChain) safeClose(p core.Plugin, logger core.Logger, sess core.Session) {
 	defer func() {
 		if r := recover(); r != nil {
-			c.logger.Error("plugin close panic", "plugin", p.Name(), "panic", r)
+			logger.Error("plugin close panic", "plugin", p.Name(), "panic", r)
 		}
 	}()
 	p.OnClose(sess)

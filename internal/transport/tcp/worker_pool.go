@@ -28,6 +28,10 @@ type workerPool struct {
 	wg      sync.WaitGroup
 	closed  atomic.Bool
 	done    chan struct{}
+	// submitMu serializes submit() against stop(): submit holds the read lock
+	// for the whole enqueue (including a blocking PolicyBlock send) so stop()
+	// cannot drain the queue and return while a task is still in flight.
+	submitMu sync.RWMutex
 }
 
 func newWorkerPool(handler core.Handler, workers int, queueSize int, policy FullPolicy) *workerPool {
@@ -56,6 +60,11 @@ func (p *workerPool) start(workers int) {
 }
 
 func (p *workerPool) submit(sess *session, data []byte) error {
+	// Hold the read lock through the enqueue so a task cannot land in the
+	// queue after stop() has drained it and returned (a submit that passed the
+	// closed check just before stop() closed done).
+	p.submitMu.RLock()
+	defer p.submitMu.RUnlock()
 	if p.closed.Load() {
 		return core.ErrClosed
 	}
@@ -113,7 +122,20 @@ func (p *workerPool) stop() {
 	if p.closed.CompareAndSwap(false, true) {
 		close(p.done)
 	}
+	// Wait for every in-flight submit to finish enqueueing (blocked PolicyBlock
+	// senders unblock on the closed done channel), then let the workers drain.
+	p.submitMu.Lock()
+	p.submitMu.Unlock()
 	p.wg.Wait()
+	// Safety net: handle anything still queued.
+	for {
+		select {
+		case t := <-p.queue:
+			p.handle(t)
+		default:
+			return
+		}
+	}
 }
 
 func (p *workerPool) handle(t task) {
@@ -121,9 +143,21 @@ func (p *workerPool) handle(t task) {
 		return
 	}
 	msg := core.Message{SessionID: t.sess.ID(), Protocol: core.ProtocolTCP, Payload: t.data}
-	if err := p.handler(t.sess, msg); err != nil {
+	if err := p.callHandler(t.sess, msg); err != nil {
 		_ = t.sess.Close(context.Background())
 	}
+}
+
+// callHandler invokes the user handler with panic recovery so a panicking
+// handler closes the session instead of crashing the worker goroutine (and
+// with it the whole process).
+func (p *workerPool) callHandler(sess *session, msg core.Message) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = core.ErrHandlerPanic
+		}
+	}()
+	return p.handler(sess, msg)
 }
 
 func (p *workerPool) run() {

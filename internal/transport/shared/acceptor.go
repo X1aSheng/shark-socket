@@ -34,9 +34,16 @@ func (a *Acceptor) TryAccept() bool {
 		now := time.Now().UnixNano()
 		last := a.lastCheck.Swap(now)
 		elapsed := float64(now-last) / float64(time.Second)
+		// The bucket must be able to hold at least one token, otherwise a rate
+		// below 1/s (e.g. 0.5 = one connection every two seconds) could never
+		// reach the >= 1 token threshold below and would reject every connection.
+		burst := a.rate
+		if burst < 1 {
+			burst = 1
+		}
 		a.allowance += elapsed * a.rate
-		if a.allowance > a.rate {
-			a.allowance = a.rate
+		if a.allowance > burst {
+			a.allowance = burst
 		}
 		ok := a.allowance >= 1
 		if ok {

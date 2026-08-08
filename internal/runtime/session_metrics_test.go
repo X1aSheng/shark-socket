@@ -69,3 +69,43 @@ func TestGatewaySessionMetrics(t *testing.T) {
 		t.Fatalf("sessions_closed_total after CloseAll = %v, want 2", got)
 	}
 }
+
+// TestGatewaySessionMetricsNoDoubleCount verifies that a no-op Unregister
+// (a transport defer unregistering a session already removed by CloseAll, or
+// a session whose Register failed) does not inflate sessions_closed_total.
+func TestGatewaySessionMetricsNoDoubleCount(t *testing.T) {
+	mem := observability.NewMemoryMetrics()
+	gw := NewGateway(WithMetrics(mem))
+	sm := gw.Runtime().Sessions()
+
+	s1 := &metricTestSession{id: sm.NextID()}
+	s2 := &metricTestSession{id: sm.NextID()}
+	if err := sm.Register(s1); err != nil {
+		t.Fatal(err)
+	}
+	if err := sm.Register(s2); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := sm.CloseAll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := mem.Counter("sessions_closed_total"); got != 2 {
+		t.Fatalf("sessions_closed_total after CloseAll = %v, want 2", got)
+	}
+	if got := mem.Gauge("sessions_active"); got != 0 {
+		t.Fatalf("sessions_active after CloseAll = %v, want 0", got)
+	}
+
+	// Transport defers run after CloseAll; these must be no-ops and must not
+	// be counted as additional closes.
+	if sm.Unregister(s1.ID()) {
+		t.Fatal("expected no-op unregister to report not-removed")
+	}
+	if sm.Unregister(s2.ID()) {
+		t.Fatal("expected no-op unregister to report not-removed")
+	}
+	if got := mem.Counter("sessions_closed_total"); got != 2 {
+		t.Fatalf("sessions_closed_total after no-op unregisters = %v, want 2", got)
+	}
+}

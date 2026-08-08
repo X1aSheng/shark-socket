@@ -15,4 +15,5 @@ var (
 	ErrWriteQueueFull     = errors.New("write queue full")
 	ErrFrameTooLarge      = errors.New("frame too large")
 	ErrUnsupportedFeature = errors.New("unsupported feature")
+	ErrHandlerPanic       = errors.New("user handler panicked")
 )

@@ -107,6 +107,56 @@ func TestGatewayTCPGlobalPluginEchoAndShutdown(t *testing.T) {
 	}
 }
 
+// TestGatewayTCPHandlerPanicClosesSession verifies that a panicking user
+// handler is recovered (the session is closed) instead of crashing the whole
+// process, and that the server keeps serving afterwards.
+func TestGatewayTCPHandlerPanicClosesSession(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			panic("user handler boom")
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer shutdownCancel()
+		_ = gateway.Stop(shutdownCtx)
+	}()
+
+	conn, err := dialWithLinger(ctx, "tcp", server.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	framer := LengthPrefixFramer{MaxFrameBytes: 1024}
+	if err := framer.WriteFrame(conn, []byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	// The panicking handler must be recovered and the session closed, so the
+	// client read sees EOF instead of the test process crashing.
+	if _, err := framer.ReadFrame(conn); err == nil {
+		t.Fatal("expected connection to be closed after handler panic")
+	}
+
+	// The server must still be accepting new connections.
+	conn2, err := dialWithLinger(ctx, "tcp", server.Addr().String())
+	if err != nil {
+		t.Fatalf("server not serving after handler panic: %v", err)
+	}
+	_ = conn2.Close()
+}
+
 func TestTCPClientEcho(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

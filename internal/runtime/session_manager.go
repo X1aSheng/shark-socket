@@ -53,13 +53,15 @@ func (m *SessionManager) Register(sess core.Session) error {
 	return nil
 }
 
-func (m *SessionManager) Unregister(id uint64) {
+func (m *SessionManager) Unregister(id uint64) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.sessions[id]; ok {
 		delete(m.sessions, id)
 		m.count.Add(-1)
+		return true
 	}
+	return false
 }
 
 func (m *SessionManager) Get(id uint64) (core.Session, bool) {

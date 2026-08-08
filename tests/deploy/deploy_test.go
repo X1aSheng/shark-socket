@@ -117,7 +117,7 @@ func TestHelmChartSemantics(t *testing.T) {
 	assertContains(t, deployment, "path: /healthz")
 	assertContains(t, deployment, "allowPrivilegeEscalation: {{ .Values.securityContext.allowPrivilegeEscalation }}")
 	assertContains(t, deployment, "fsGroup: {{ .Values.podSecurityContext.fsGroup }}")
-	assertContains(t, deployment, "serviceAccountName: {{ include \"shark-socket.fullname\" . }}")
+	assertContains(t, deployment, "serviceAccountName: {{ include \"shark-socket.serviceAccountName\" . }}")
 	assertContains(t, service, "{{ .Values.service.type }}")
 	assertContains(t, service, "{{ .Values.service.port }}")
 }

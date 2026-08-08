@@ -56,6 +56,35 @@ func TestCircuitBreakerHalfOpenAllowsSingleProbe(t *testing.T) {
 	}
 }
 
+// TestCircuitBreakerExecutePanicUnwedges verifies that a panicking fn records
+// a failure (and releases the half-open probe) instead of leaving the breaker
+// wedged in the rejecting half-open state forever.
+func TestCircuitBreakerExecutePanicUnwedges(t *testing.T) {
+	b := New(1, 10*time.Millisecond)
+	b.Failure()
+	time.Sleep(20 * time.Millisecond) // enter half-open
+
+	// The first half-open Execute panics; the breaker must record Failure
+	// (open) and re-raise the panic rather than stay half-open-wedged.
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected fn panic to propagate")
+			}
+		}()
+		_ = b.Execute(func() error { panic("boom") })
+	}()
+
+	if b.State() != Open {
+		t.Fatalf("state after panic = %s, want open", b.State())
+	}
+	// After the open timeout a new probe must be allowed (breaker not wedged).
+	time.Sleep(20 * time.Millisecond)
+	if err := b.Allow(); err != nil {
+		t.Fatalf("breaker wedged after panic, Allow: %v", err)
+	}
+}
+
 func TestCircuitBreakerSnapshot(t *testing.T) {
 	b := New(2, time.Second)
 	b.Failure()
