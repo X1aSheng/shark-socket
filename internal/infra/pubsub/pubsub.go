@@ -27,7 +27,13 @@ func (p *PubSub) Subscribe(topic string, buffer int) (<-chan Message, func()) {
 		subs := p.subs[topic]
 		for i, sub := range subs {
 			if sub == ch {
-				p.subs[topic] = append(subs[:i], subs[i+1:]...)
+				// Drop the topic key when the last subscriber leaves; otherwise
+				// transient topics accumulate empty-slice entries forever.
+				if len(subs) == 1 {
+					delete(p.subs, topic)
+				} else {
+					p.subs[topic] = append(subs[:i], subs[i+1:]...)
+				}
 				close(ch)
 				return
 			}

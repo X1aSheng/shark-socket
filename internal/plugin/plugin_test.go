@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -47,6 +48,49 @@ func TestRateLimitDropsOverLimit(t *testing.T) {
 	}
 	if _, err := p.OnMessage(sess, []byte("two")); err != core.ErrPluginDrop {
 		t.Fatalf("OnMessage error = %v, want %v", err, core.ErrPluginDrop)
+	}
+}
+
+// TestRateLimitMemoryBounded verifies that a flooding key does not grow its
+// timestamp slice without bound: only accepted requests are recorded, so the
+// per-key slice stays at or below the configured rate.
+func TestRateLimitMemoryBounded(t *testing.T) {
+	p := NewRateLimit(3, time.Minute)
+	sess := fakeSession{addr: &net.TCPAddr{IP: net.ParseIP("10.0.0.1"), Port: 1}}
+	for i := 0; i < 1000; i++ {
+		_, _ = p.OnMessage(sess, []byte("x"))
+	}
+	p.mu.Lock()
+	stamps := p.counters["10.0.0.1"]
+	p.mu.Unlock()
+	if len(stamps) > 3 {
+		t.Fatalf("counter slice length = %d, want <= 3 (bounded by rate)", len(stamps))
+	}
+}
+
+// closeTrackingSession records Close calls so tests can assert a session was
+// terminated.
+type closeTrackingSession struct {
+	fakeSession
+	closes atomic.Int32
+}
+
+func (s *closeTrackingSession) Close(context.Context) error {
+	s.closes.Add(1)
+	return nil
+}
+
+// TestAutoBanClosesEstablishedSession verifies that a live session which trips
+// the ban threshold is closed, not just dropped (OnAccept only blocks new
+// connections).
+func TestAutoBanClosesEstablishedSession(t *testing.T) {
+	p := NewAutoBan(1)
+	sess := &closeTrackingSession{fakeSession: fakeSession{addr: &net.TCPAddr{IP: net.ParseIP("10.0.0.2"), Port: 2}}}
+	if _, err := p.OnMessage(sess, []byte("x")); err != core.ErrPluginDrop {
+		t.Fatalf("OnMessage error = %v, want %v", err, core.ErrPluginDrop)
+	}
+	if sess.closes.Load() != 1 {
+		t.Fatalf("session Close calls = %d, want 1", sess.closes.Load())
 	}
 }
 

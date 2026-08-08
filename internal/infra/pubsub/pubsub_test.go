@@ -14,3 +14,18 @@ func TestPubSubPublishSubscribe(t *testing.T) {
 		t.Fatalf("message = %#v", msg)
 	}
 }
+
+// TestPubSubTopicKeyRemovedAfterLastCancel verifies that the map key is dropped
+// when the last subscriber leaves, so transient topics do not accumulate
+// empty-slice entries forever.
+func TestPubSubTopicKeyRemovedAfterLastCancel(t *testing.T) {
+	ps := New()
+	_, cancel := ps.Subscribe("topic", 1)
+	cancel()
+	ps.mu.RLock()
+	_, exists := ps.subs["topic"]
+	ps.mu.RUnlock()
+	if exists {
+		t.Fatal("topic key should be removed after last subscriber cancels")
+	}
+}

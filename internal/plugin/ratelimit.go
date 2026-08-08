@@ -97,12 +97,14 @@ func (p *RateLimit) OnMessage(sess core.Session, data []byte) ([]byte, error) {
 		i++
 	}
 	stamps = stamps[i:]
-	// Add current request timestamp (sorted by time, so append is correct)
-	stamps = append(stamps, now)
-	p.counters[key] = stamps
-
-	if len(stamps) > p.rate {
+	// Only accepted requests are recorded, so a per-key slice stays bounded by
+	// rate: a flooding peer cannot grow it without bound (previously every
+	// request, including those over the limit, appended a timestamp).
+	if len(stamps) >= p.rate {
+		p.counters[key] = stamps
 		return nil, core.ErrPluginDrop
 	}
+	stamps = append(stamps, now)
+	p.counters[key] = stamps
 	return data, nil
 }

@@ -85,9 +85,6 @@ func parseOptions(data []byte) (map[uint16][]byte, []byte) {
 			copy(payload, data[offset+1:])
 			return options, payload
 		}
-		if offset+1 > len(data) {
-			break
-		}
 		delta, length, advance := decodeOptionHeader(data[offset:])
 		if advance == 0 {
 			break
@@ -124,12 +121,10 @@ func decodeOptionHeader(b []byte) (delta uint32, length uint32, advance int) {
 	if len(b) == 0 {
 		return 0, 0, 0
 	}
-	d := uint32(b[0] >> 4)
-	l := uint32(b[0] & 0x0f)
-	if d < 13 && l < 13 {
-		return d, l, 1
-	}
-	return d, l, 1
+	// Nibble delta/length are always in the first byte; extended values (>=13)
+	// are read separately by readOptionExtended. The caller guarantees a
+	// non-empty slice via the `offset < len(data)` loop condition.
+	return uint32(b[0] >> 4), uint32(b[0] & 0x0f), 1
 }
 
 func readOptionExtended(data []byte, nibble uint32) (uint32, int) {

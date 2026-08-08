@@ -4,6 +4,6 @@ metadata:
   name: shark-socket-config
   namespace: shark-socket
 data:
-  tcpAddr: "0.0.0.0:18000"
-  metricsAddr: "0.0.0.0:18080"
-  healthAddr: "0.0.0.0:18081"
+  SHARK_TCP_ADDR: "0.0.0.0:18000"
+  SHARK_METRICS_ADDR: "0.0.0.0:18080"
+  SHARK_HEALTH_ADDR: "0.0.0.0:18081"

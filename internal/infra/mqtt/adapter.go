@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	paho "github.com/eclipse/paho.mqtt.golang"
 )
@@ -46,11 +47,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 
 	client := opts.clientFactory(pahoOptions(opts))
 	token := client.Connect()
-	if !token.WaitTimeout(opts.ConnectTimeout) {
-		client.Disconnect(0)
-		return fmt.Errorf("mqtt connect timeout")
-	}
-	if err := token.Error(); err != nil {
+	if err := waitToken(ctx, token, opts.ConnectTimeout); err != nil {
 		client.Disconnect(0)
 		return fmt.Errorf("mqtt connect: %w", err)
 	}
@@ -60,11 +57,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 		token := client.Subscribe(opts.Topic, opts.QoS, func(_ paho.Client, msg paho.Message) {
 			h(msg.Topic(), msg.Payload())
 		})
-		if !token.WaitTimeout(opts.ConnectTimeout) {
-			client.Disconnect(100)
-			return fmt.Errorf("mqtt subscribe timeout")
-		}
-		if err := token.Error(); err != nil {
+		if err := waitToken(ctx, token, opts.ConnectTimeout); err != nil {
 			client.Disconnect(100)
 			return fmt.Errorf("mqtt subscribe: %w", err)
 		}
@@ -93,6 +86,20 @@ func (a *Adapter) Stop(ctx context.Context) error {
 	a.client.Disconnect(250)
 	a.client = nil
 	return nil
+}
+
+// waitToken waits for a paho token while honoring the caller's context and a
+// hard timeout, so an already-cancelled Start aborts the dial instead of
+// blocking until the connect timeout elapses.
+func waitToken(ctx context.Context, token paho.Token, timeout time.Duration) error {
+	select {
+	case <-token.Done():
+		return token.Error()
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(timeout):
+		return fmt.Errorf("operation timed out")
+	}
 }
 
 func (a *Adapter) Publish(topic string, qos byte, payload []byte) error {

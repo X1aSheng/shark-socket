@@ -112,17 +112,23 @@ func (m *SessionManager) Broadcast(data []byte) error {
 }
 
 // CloseAll closes and unregisters every session. Uses a snapshot to avoid
-// holding the write lock during session.Close() which may block on I/O.
+// holding the write lock during session.Close() which may block on I/O, and
+// loops until the manager is empty so a session registered mid-shutdown is
+// not leaked after the final CloseAll.
 func (m *SessionManager) CloseAll(ctx context.Context) error {
-	sessions := m.Snapshot()
 	var firstErr error
-	for _, sess := range sessions {
-		if err := safeSessionCall(func() error { return sess.Close(ctx) }); err != nil && firstErr == nil {
-			firstErr = err
+	for {
+		sessions := m.Snapshot()
+		if len(sessions) == 0 {
+			return firstErr
 		}
-		m.Unregister(sess.ID())
+		for _, sess := range sessions {
+			if err := safeSessionCall(func() error { return sess.Close(ctx) }); err != nil && firstErr == nil {
+				firstErr = err
+			}
+			m.Unregister(sess.ID())
+		}
 	}
-	return firstErr
 }
 
 // safeSessionCall recovers a panic from a user session implementation, so a

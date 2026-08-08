@@ -149,8 +149,14 @@ func (f RawFramer) ReadFrame(r io.Reader) ([]byte, error) {
 }
 
 func (f RawFramer) WriteFrame(w io.Writer, payload []byte) error {
-	if f.MaxFrameBytes > 0 && len(payload) > f.MaxFrameBytes {
-		return fmt.Errorf("%w: %d > %d", core.ErrFrameTooLarge, len(payload), f.MaxFrameBytes)
+	// A zero-value framer defaults the write cap to the same 32 KiB used by
+	// ReadFrame, so it can never emit a frame larger than it can read back.
+	max := f.MaxFrameBytes
+	if max <= 0 {
+		max = 32 * 1024
+	}
+	if len(payload) > max {
+		return fmt.Errorf("%w: %d > %d", core.ErrFrameTooLarge, len(payload), max)
 	}
 	_, err := w.Write(payload)
 	return err

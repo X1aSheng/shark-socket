@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"context"
 	"net"
 	"sync"
 	"time"
@@ -91,6 +92,12 @@ func (p *AutoBan) sweep() {
 // without it AutoBan never accumulated counts and could not ban anyone.
 func (p *AutoBan) OnMessage(sess core.Session, data []byte) ([]byte, error) {
 	if p.Record(sess) {
+		// Terminate the offending session too: a live connection that just
+		// tripped the threshold would otherwise keep its resources until it
+		// disconnects on its own (OnAccept only blocks new connections).
+		if sess != nil {
+			_ = sess.Close(context.Background())
+		}
 		return nil, core.ErrPluginDrop
 	}
 	return data, nil

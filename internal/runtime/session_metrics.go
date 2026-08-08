@@ -40,17 +40,22 @@ func (m *metricSessionManager) Unregister(id uint64) bool {
 
 // CloseAll mirrors SessionManager.CloseAll but routes each unregister through
 // the metric-emitting Unregister, so batch shutdown is counted per session
-// (and only for sessions that were actually still registered).
+// (and only for sessions that were actually still registered). Loops until the
+// manager is empty so a session registered mid-shutdown is not leaked.
 func (m *metricSessionManager) CloseAll(ctx context.Context) error {
-	sessions := m.Snapshot()
 	var firstErr error
-	for _, sess := range sessions {
-		if err := sess.Close(ctx); err != nil && firstErr == nil {
-			firstErr = err
+	for {
+		sessions := m.Snapshot()
+		if len(sessions) == 0 {
+			return firstErr
 		}
-		m.Unregister(sess.ID())
+		for _, sess := range sessions {
+			if err := sess.Close(ctx); err != nil && firstErr == nil {
+				firstErr = err
+			}
+			m.Unregister(sess.ID())
+		}
 	}
-	return firstErr
 }
 
 var _ core.SessionManager = (*metricSessionManager)(nil)

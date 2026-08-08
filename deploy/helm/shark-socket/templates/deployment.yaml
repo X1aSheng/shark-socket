@@ -40,13 +40,9 @@ spec:
               containerPort: {{ .Values.service.metricsPort }}
             - name: health
               containerPort: {{ .Values.service.healthPort }}
-          env:
-            - name: SHARK_TCP_ADDR
-              value: {{ .Values.config.tcpAddr | quote }}
-            - name: SHARK_METRICS_ADDR
-              value: {{ .Values.config.metricsAddr | quote }}
-            - name: SHARK_HEALTH_ADDR
-              value: {{ .Values.config.healthAddr | quote }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "shark-socket.fullname" . }}
           resources:
             requests:
               cpu: {{ .Values.resources.requests.cpu }}

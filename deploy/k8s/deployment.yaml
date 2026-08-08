@@ -39,13 +39,9 @@ spec:
               containerPort: 18080
             - name: health
               containerPort: 18081
-          env:
-            - name: SHARK_TCP_ADDR
-              value: "0.0.0.0:18000"
-            - name: SHARK_METRICS_ADDR
-              value: "0.0.0.0:18080"
-            - name: SHARK_HEALTH_ADDR
-              value: "0.0.0.0:18081"
+          envFrom:
+            - configMapRef:
+                name: shark-socket-config
           resources:
             requests:
               cpu: 50m
