@@ -103,7 +103,8 @@ func (c *PluginChain) safeMessage(p core.Plugin, logger core.Logger, sess core.S
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Error("plugin message panic", "plugin", p.Name(), "panic", r)
-			out = data
+			// Report the panic as an error so the transport drops/closes the
+			// message path instead of treating it as a silent success.
 			err = core.ErrPluginPanic
 		}
 	}()

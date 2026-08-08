@@ -26,9 +26,6 @@ func NewAcceptor(maxConns int64, acceptRate float64) *Acceptor {
 // TryAccept returns true if a new connection is allowed under both the
 // concurrent connection cap and the accept rate limit.
 func (a *Acceptor) TryAccept() bool {
-	if a.maxConns > 0 && a.active.Load() >= a.maxConns {
-		return false
-	}
 	if a.rate > 0 {
 		a.mu.Lock()
 		now := time.Now().UnixNano()
@@ -54,8 +51,18 @@ func (a *Acceptor) TryAccept() bool {
 			return false
 		}
 	}
-	a.active.Add(1)
-	return true
+	// Atomic capacity check + increment: a plain Load-then-Add lets concurrent
+	// callers (e.g. simultaneous WebSocket upgrades) exceed maxConns by the
+	// number of in-flight callers.
+	for {
+		cur := a.active.Load()
+		if a.maxConns > 0 && cur >= a.maxConns {
+			return false
+		}
+		if a.active.CompareAndSwap(cur, cur+1) {
+			return true
+		}
+	}
 }
 
 // Done decrements the active connection count.

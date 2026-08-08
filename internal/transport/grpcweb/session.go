@@ -61,6 +61,10 @@ func (s *session) SendTrailers(status int, message string) error {
 	if !s.framed {
 		return nil
 	}
+	// Set the content-type here too: a response that only ever writes a
+	// trailer frame (no data via Send) would otherwise be labelled text/plain
+	// by net/http and rejected by the gRPC-Web client.
+	s.response.Header().Set("content-type", "application/grpc-web+proto")
 	_, err := s.response.Write(appendTrailerFrame(nil, status, message))
 	return err
 }

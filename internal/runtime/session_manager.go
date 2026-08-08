@@ -104,7 +104,7 @@ func (m *SessionManager) Broadcast(data []byte) error {
 	// the read lock were held here. Snapshot copies the set under RLock.
 	var firstErr error
 	for _, sess := range m.Snapshot() {
-		if err := sess.Send(data); err != nil && firstErr == nil {
+		if err := safeSessionCall(func() error { return sess.Send(data) }); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
@@ -117,12 +117,23 @@ func (m *SessionManager) CloseAll(ctx context.Context) error {
 	sessions := m.Snapshot()
 	var firstErr error
 	for _, sess := range sessions {
-		if err := sess.Close(ctx); err != nil && firstErr == nil {
+		if err := safeSessionCall(func() error { return sess.Close(ctx) }); err != nil && firstErr == nil {
 			firstErr = err
 		}
 		m.Unregister(sess.ID())
 	}
 	return firstErr
+}
+
+// safeSessionCall recovers a panic from a user session implementation, so a
+// panicking Send/Close in Broadcast/CloseAll cannot crash the whole process.
+func safeSessionCall(fn func() error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = core.ErrHandlerPanic
+		}
+	}()
+	return fn()
 }
 
 var _ core.SessionManager = (*SessionManager)(nil)

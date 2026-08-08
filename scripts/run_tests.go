@@ -154,7 +154,16 @@ func runRace(root, logs, ts string, timeout time.Duration, jsonMode bool) error 
 }
 
 func raceEnv() []string {
-	env := append([]string{}, os.Environ()...)
+	env := []string{}
+	for _, kv := range os.Environ() {
+		// Strip any pre-existing CGO_ENABLED (e.g. a developer's exported
+		// CGO_ENABLED=0); otherwise the appended CGO_ENABLED=1 below is
+		// shadowed by the first entry and race detection silently no-ops.
+		if strings.HasPrefix(kv, "CGO_ENABLED=") {
+			continue
+		}
+		env = append(env, kv)
+	}
 	env = append(env, "CGO_ENABLED=1")
 	if runtime.GOOS != "windows" {
 		return env
