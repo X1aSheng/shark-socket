@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
-	"time"
 )
 
 // ============================================================================
@@ -251,30 +250,6 @@ type decodeErrorCodec struct{}
 func (c *decodeErrorCodec) Encode(s string) ([]byte, error) { return []byte(s), nil }
 func (c *decodeErrorCodec) Decode(_ []byte) (string, error) {
 	return "", errors.New("decode failed")
-}
-
-// ============================================================================
-// ConfigSnapshot tests
-// ============================================================================
-func TestConfigSnapshot(t *testing.T) {
-	cs := ConfigSnapshot{
-		Shutdown: StageTimeouts{
-			StopAccept:    time.Second,
-			Drain:         2 * time.Second,
-			CloseSessions: 3 * time.Second,
-			Finalize:      4 * time.Second,
-		},
-		Started: time.Now(),
-	}
-	if cs.Shutdown.StopAccept != time.Second {
-		t.Fatal("wrong StopAccept")
-	}
-	if cs.Shutdown.Drain != 2*time.Second {
-		t.Fatal("wrong Drain")
-	}
-	if cs.Started.IsZero() {
-		t.Fatal("Started should not be zero")
-	}
 }
 
 // ============================================================================

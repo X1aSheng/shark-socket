@@ -9,16 +9,23 @@ import (
 
 type Heartbeat struct {
 	core.BasePlugin
-	manager core.SessionManager
-	timeout time.Duration
-	lc      lifecycle
+	manager  core.SessionManager
+	timeout  time.Duration
+	interval time.Duration
+	lc       lifecycle
 }
 
-func NewHeartbeat(manager core.SessionManager, timeout time.Duration) *Heartbeat {
+func NewHeartbeat(manager core.SessionManager, timeout time.Duration, interval time.Duration) *Heartbeat {
 	if timeout <= 0 {
 		timeout = time.Minute
 	}
-	return &Heartbeat{manager: manager, timeout: timeout}
+	if interval <= 0 {
+		interval = timeout / 2
+	}
+	if interval <= 0 {
+		interval = time.Second
+	}
+	return &Heartbeat{manager: manager, timeout: timeout, interval: interval}
 }
 
 func (p *Heartbeat) Name() string  { return "heartbeat" }
@@ -26,18 +33,12 @@ func (p *Heartbeat) Priority() int { return 50 }
 
 // Start begins the sweep loop. Repeated calls are no-ops; the plugin can be
 // restarted after Stop.
-func (p *Heartbeat) Start(interval time.Duration) {
+func (p *Heartbeat) Start() error {
 	stop, ok := p.lc.begin()
 	if !ok {
-		return
+		return nil
 	}
-	if interval <= 0 {
-		interval = p.timeout / 2
-	}
-	if interval <= 0 {
-		interval = time.Second
-	}
-	ticker := time.NewTicker(interval)
+	ticker := time.NewTicker(p.interval)
 	go func() {
 		defer p.lc.done()
 		defer ticker.Stop()
@@ -50,11 +51,13 @@ func (p *Heartbeat) Start(interval time.Duration) {
 			}
 		}
 	}()
+	return nil
 }
 
 // Stop terminates the sweep loop. Repeated calls are no-ops.
-func (p *Heartbeat) Stop() {
+func (p *Heartbeat) Stop() error {
 	p.lc.shutdown()
+	return nil
 }
 
 func (p *Heartbeat) Sweep(now time.Time) int {

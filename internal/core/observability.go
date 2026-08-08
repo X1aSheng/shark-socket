@@ -73,12 +73,6 @@ func (nopTracer) Start(ctx context.Context, _ string, _ ...any) (context.Context
 func (nopSpan) End()              {}
 func (nopSpan) RecordError(error) {}
 
-// ConfigSnapshot is the immutable runtime configuration view owned by Gateway.
-type ConfigSnapshot struct {
-	Shutdown StageTimeouts
-	Started  time.Time
-}
-
 type StageTimeouts struct {
 	StopAccept    time.Duration
 	Drain         time.Duration

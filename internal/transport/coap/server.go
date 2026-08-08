@@ -21,20 +21,35 @@ type seenKey struct {
 	msgID  uint16
 }
 
+// pendingNotify tracks an unacknowledged CON observe notification for
+// retransmission (RFC 7641 / RFC 7252 reliability).
+type pendingNotify struct {
+	remote   string
+	data     []byte
+	attempts int
+}
+
+const (
+	maxRetransmit      = 4
+	retransmitInterval = 2 * time.Second
+)
+
 type Server struct {
-	opts      Options
-	rt        core.Runtime
-	udpConn   *net.UDPConn
-	dtlsLn    net.Listener
-	dtlsConns sync.Map // active DTLS connections, closed on shutdown
-	lastMsgID atomic.Uint32
-	closed    atomic.Bool
-	started   atomic.Bool
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
-	sessions  sync.Map
-	seen      sync.Map
-	observers *ObserverRegistry
+	opts            Options
+	rt              core.Runtime
+	udpConn         *net.UDPConn
+	dtlsLn          net.Listener
+	dtlsConns       sync.Map // active DTLS connections, closed on shutdown
+	lastMsgID       atomic.Uint32
+	closed          atomic.Bool
+	started         atomic.Bool
+	cancel          context.CancelFunc
+	wg              sync.WaitGroup
+	sessions        sync.Map
+	seen            sync.Map
+	observers       *ObserverRegistry
+	retransmitMu    sync.Mutex
+	pendingNotifies map[uint16]pendingNotify
 }
 
 func NewServer(opts ...Option) *Server {
@@ -42,7 +57,7 @@ func NewServer(opts ...Option) *Server {
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	return &Server{opts: cfg, observers: NewObserverRegistry()}
+	return &Server{opts: cfg, observers: NewObserverRegistry(), pendingNotifies: make(map[uint16]pendingNotify)}
 }
 
 func (s *Server) Protocol() core.Protocol { return core.ProtocolCoAP }
@@ -75,9 +90,10 @@ func (s *Server) Start(ctx context.Context) error {
 			return fmt.Errorf("coap dtls listen %s: %w", s.opts.Addr, err)
 		}
 		s.dtlsLn = ln
-		s.wg.Add(2)
+		s.wg.Add(3)
 		go s.dtlsAcceptLoop(runCtx)
 		go s.seenCleanupLoop(runCtx)
+		go s.retransmitLoop(runCtx)
 	} else {
 		conn, err := net.ListenUDP("udp", addr)
 		if err != nil {
@@ -86,10 +102,11 @@ func (s *Server) Start(ctx context.Context) error {
 			return fmt.Errorf("coap listen %s: %w", s.opts.Addr, err)
 		}
 		s.udpConn = conn
-		s.wg.Add(3)
+		s.wg.Add(4)
 		go s.readLoop(runCtx)
 		go s.sweepLoop(runCtx)
 		go s.seenCleanupLoop(runCtx)
+		go s.retransmitLoop(runCtx)
 	}
 	return nil
 }
@@ -280,11 +297,19 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 			return
 		}
 	}
-	if msg.Type == TypeRST || msg.Type == TypeACK {
+	if msg.Type == TypeACK {
+		// An ACK acknowledges a CON notification (or a piggybacked response);
+		// clear the pending retransmission for this msgID.
+		s.clearPendingNotify(msg.MessageID)
+		return
+	}
+	if msg.Type == TypeRST {
+		// RST rejects a CON notification; stop retransmitting it.
+		s.clearPendingNotify(msg.MessageID)
 		return
 	}
 
-	s.handleObserve(sess, msg)
+	registeredObserve := s.handleObserve(sess, msg)
 
 	payload, err := s.rt.Plugins().OnMessage(sess, msg.Payload)
 	if err != nil {
@@ -337,12 +362,35 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 		if err := s.sendACKMsg(sess, resp); err != nil && s.rt != nil {
 			s.rt.Logger().Warn("coap ack send failed", "error", err)
 		}
+	} else if msg.Type == TypeNON && registeredObserve {
+		// RFC 7641: a NON observe registration receives the current value as
+		// the initial notification (there is no ACK for NON messages).
+		seq, ok := s.observerSeq(sess, msg)
+		if !ok {
+			seq = 0
+		}
+		notify := Message{
+			Type:      TypeNON,
+			Code:      CodeContent,
+			MessageID: msg.MessageID,
+			Token:     msg.Token,
+			Options:   map[uint16][]byte{ObserveOption: encodeObserveSeq(seq)},
+			Payload:   responsePayload,
+		}
+		if data, err := notify.Marshal(); err == nil {
+			if err := sess.Send(data); err != nil && s.rt != nil {
+				s.rt.Logger().Warn("coap observe initial notify send failed", "error", err)
+			}
+		}
 	}
 }
 
-func (s *Server) handleObserve(sess *session, msg Message) {
+// handleObserve registers or removes an observer per the Observe option, and
+// reports whether a new observer was registered (so callers can send the
+// initial notification for NON messages, which have no ACK to carry it).
+func (s *Server) handleObserve(sess *session, msg Message) bool {
 	if msg.Code != CodeGet {
-		return
+		return false
 	}
 	obsVal, hasObserve := msg.Options[ObserveOption]
 	resource := string(msg.Payload)
@@ -351,15 +399,19 @@ func (s *Server) handleObserve(sess *session, msg Message) {
 		reg := obsVal[0]
 		if reg == 0 {
 			s.observers.Register(resource, remote, msg.Token)
+			return true
 		} else if reg == 1 {
 			s.observers.Remove(resource, remote, msg.Token)
 		}
 	}
+	return false
 }
 
-func (s *Server) addObserveSeq(sess *session, req Message, resp *Message) {
+// observerSeq returns the observer's next sequence number for a GET request,
+// or false if the request has no registered observer.
+func (s *Server) observerSeq(sess *session, req Message) (uint32, bool) {
 	if req.Code != CodeGet {
-		return
+		return 0, false
 	}
 	resource := string(req.Payload)
 	remote := sess.remote.String()
@@ -371,13 +423,21 @@ func (s *Server) addObserveSeq(sess *session, req Message, resp *Message) {
 		obs = subs[key]
 	}
 	s.observers.mu.RUnlock()
-	if obs != nil {
-		seq := obs.NextSeq()
-		if resp.Options == nil {
-			resp.Options = make(map[uint16][]byte)
-		}
-		resp.Options[ObserveOption] = encodeObserveSeq(seq)
+	if obs == nil {
+		return 0, false
 	}
+	return obs.NextSeq(), true
+}
+
+func (s *Server) addObserveSeq(sess *session, req Message, resp *Message) {
+	seq, ok := s.observerSeq(sess, req)
+	if !ok {
+		return
+	}
+	if resp.Options == nil {
+		resp.Options = make(map[uint16][]byte)
+	}
+	resp.Options[ObserveOption] = encodeObserveSeq(seq)
 }
 
 // NotifyObservers sends notifications to all observers of a resource.
@@ -389,18 +449,78 @@ func (s *Server) NotifyObservers(resource string, payload []byte) {
 			continue
 		}
 		seq := obs.NextSeq()
-		seqBuf := encodeObserveSeq(seq)
 		notify := Message{
 			Type:      TypeCON,
 			Code:      CodeContent,
 			MessageID: s.nextMessageID(),
 			Token:     obs.Token,
-			Options:   map[uint16][]byte{ObserveOption: seqBuf},
+			Options:   map[uint16][]byte{ObserveOption: encodeObserveSeq(seq)},
 			Payload:   payload,
 		}
+		data, err := notify.Marshal()
+		if err != nil {
+			continue
+		}
+		// Track the CON notification for retransmission until it is ACKed
+		// (RFC 7641 §4.2): a lost CON notification is resent, not silently
+		// dropped.
+		s.trackNotify(notify.MessageID, obs.Remote, data)
 		if err := s.sendACKMsg(sess, notify); err != nil {
+			s.untrackNotify(notify.MessageID)
 			s.observers.Remove(resource, obs.Remote, obs.Token)
 		}
+	}
+}
+
+func (s *Server) trackNotify(msgID uint16, remote string, data []byte) {
+	s.retransmitMu.Lock()
+	s.pendingNotifies[msgID] = pendingNotify{remote: remote, data: data}
+	s.retransmitMu.Unlock()
+}
+
+func (s *Server) untrackNotify(msgID uint16) {
+	s.retransmitMu.Lock()
+	delete(s.pendingNotifies, msgID)
+	s.retransmitMu.Unlock()
+}
+
+func (s *Server) clearPendingNotify(msgID uint16) {
+	s.untrackNotify(msgID)
+}
+
+func (s *Server) retransmitLoop(ctx context.Context) {
+	defer s.wg.Done()
+	ticker := time.NewTicker(retransmitInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			s.retransmitDue()
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (s *Server) retransmitDue() {
+	s.retransmitMu.Lock()
+	defer s.retransmitMu.Unlock()
+	for msgID, pn := range s.pendingNotifies {
+		if pn.attempts >= maxRetransmit {
+			delete(s.pendingNotifies, msgID)
+			continue
+		}
+		sess := s.findSessionByRemote(pn.remote)
+		if sess == nil {
+			delete(s.pendingNotifies, msgID)
+			continue
+		}
+		if err := sess.Send(pn.data); err != nil {
+			delete(s.pendingNotifies, msgID)
+			continue
+		}
+		pn.attempts++
+		s.pendingNotifies[msgID] = pn
 	}
 }
 

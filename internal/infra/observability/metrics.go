@@ -36,10 +36,18 @@ func (m *MemoryMetrics) SetGauge(name string, value float64, labels ...string) {
 	m.mu.Unlock()
 }
 
+// maxMemoryObservations bounds each histogram/log buffer so a long-running
+// debug process that observes a hot metric does not grow without bound.
+const maxMemoryObservations = 65536
+
 func (m *MemoryMetrics) ObserveHistogram(name string, value float64, labels ...string) {
 	key := metricKey(name, labels...)
 	m.mu.Lock()
-	m.histograms[key] = append(m.histograms[key], value)
+	hist := append(m.histograms[key], value)
+	if len(hist) > maxMemoryObservations {
+		hist = hist[len(hist)-maxMemoryObservations:]
+	}
+	m.histograms[key] = hist
 	m.mu.Unlock()
 }
 

@@ -22,6 +22,8 @@ import (
 	"os"
 	goruntime "runtime"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -54,7 +56,12 @@ func main() {
 	fmt.Printf("go=%s os=%s arch=%s\n\n", goVersion(), goruntime.GOOS, goruntime.GOARCH)
 
 	if *flagProfile == "cloud" {
-		fmt.Printf("resource gate: %s\n", readResourceState())
+		ok, msg := stressResourceGate()
+		fmt.Printf("resource gate: %s\n", msg)
+		if !ok {
+			fmt.Println("resource gate failed; skipping stress run to avoid skewed results")
+			return
+		}
 	}
 
 	var addr string
@@ -218,33 +225,36 @@ func runBurst(addr string) map[string]any {
 	m := &metrics{}
 	m.start()
 
-	client := tcp.NewClient(addr)
-	if err := client.Connect(context.Background()); err != nil {
-		fmt.Fprintf(os.Stderr, "burst: connect failed: %v\n", err)
-		return m.report("burst")
-	}
-	defer client.Close()
-
-	payload := make([]byte, *flagSize)
-	burstSize := *flagConns * 10
-
-	fmt.Printf("[burst] sending %d requests over single connection...\n", burstSize)
+	perClient := 10
+	fmt.Printf("[burst] %d connections x %d sequential requests...\n", *flagConns, perClient)
 	var wg sync.WaitGroup
-	for i := 0; i < burstSize; i++ {
+	for i := 0; i < *flagConns; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			start := time.Now()
-			if err := client.Send(payload); err != nil {
-				m.sendFail()
+			// One dedicated client per goroutine: a shared connection with
+			// concurrent Send/Receive cannot attribute echoes to their sender,
+			// making throughput/latency numbers meaningless.
+			client := tcp.NewClient(addr, tcp.WithClientReadTimeout(10*time.Second))
+			if err := client.Connect(context.Background()); err != nil {
+				fmt.Fprintf(os.Stderr, "burst: connect failed: %v\n", err)
 				return
 			}
-			m.sendOk()
-			got, err := client.Receive()
-			if err == nil && len(got) == *flagSize {
-				m.recvOk(time.Since(start))
-			} else {
-				m.recvFail()
+			defer client.Close()
+			payload := make([]byte, *flagSize)
+			for j := 0; j < perClient; j++ {
+				start := time.Now()
+				if err := client.Send(payload); err != nil {
+					m.sendFail()
+					return
+				}
+				m.sendOk()
+				got, err := client.Receive()
+				if err == nil && len(got) == *flagSize {
+					m.recvOk(time.Since(start))
+				} else {
+					m.recvFail()
+				}
 			}
 		}()
 	}
@@ -295,7 +305,7 @@ func runReconnect(addr string) map[string]any {
 }
 
 func runClient(m *metrics, addr string) {
-	client := tcp.NewClient(addr)
+	client := tcp.NewClient(addr, tcp.WithClientReadTimeout(10*time.Second))
 	if err := client.Connect(context.Background()); err != nil {
 		return
 	}
@@ -352,25 +362,53 @@ func goVersion() string {
 	return fmt.Sprintf("%s %s/%s", goruntime.Version(), goruntime.GOOS, goruntime.GOARCH)
 }
 
-// readResourceState returns a compact summary of host memory and load, or a
-// message when /proc is unavailable. The result is used in the summary report.
-func readResourceState() string {
+// stressResourceGate reports whether the cloud profile has enough resources to
+// produce meaningful results (mirrors run_benchmarks.go's gate). On non-Linux
+// or when /proc is unavailable the gate is disabled.
+func stressResourceGate() (bool, string) {
 	if goruntime.GOOS != "linux" {
-		return "not available on " + goruntime.GOOS
+		return true, "disabled on " + goruntime.GOOS
 	}
-	mem, _ := os.ReadFile("/proc/meminfo")
-	load, _ := os.ReadFile("/proc/loadavg")
-	return "mem=" + strings.TrimSpace(extractMemFree(mem)) + " load=" + strings.TrimSpace(string(load))
+	mem, memOK := readMemAvailableMB()
+	load, loadOK := readLoad1()
+	if !memOK || !loadOK {
+		return true, "unable to read /proc; gate disabled"
+	}
+	if mem < 768 || load > 2.5 {
+		return false, fmt.Sprintf("resources low: MemAvailable=%dMB Load1=%.2f", mem, load)
+	}
+	return true, fmt.Sprintf("MemAvailable=%dMB Load1=%.2f", mem, load)
 }
 
-// extractMemFree pulls the MemAvailable line out of /proc/meminfo.
-func extractMemFree(data []byte) string {
+func readMemAvailableMB() (int, bool) {
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return 0, false
+	}
 	for _, line := range strings.Split(string(data), "\n") {
-		if strings.HasPrefix(line, "MemAvailable:") {
-			return strings.TrimPrefix(line, "MemAvailable:")
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "MemAvailable:" {
+			kb, err := strconv.Atoi(fields[1])
+			if err != nil {
+				return 0, false
+			}
+			return kb / 1024, true
 		}
 	}
-	return "unknown"
+	return 0, false
+}
+
+func readLoad1() (float64, bool) {
+	data, err := os.ReadFile("/proc/loadavg")
+	if err != nil {
+		return 0, false
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) == 0 {
+		return 0, false
+	}
+	load, err := strconv.ParseFloat(fields[0], 64)
+	return load, err == nil
 }
 
 func printSummary(results map[string]map[string]any) {

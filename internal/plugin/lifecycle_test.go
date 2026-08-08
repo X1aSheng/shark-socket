@@ -18,8 +18,8 @@ import (
 func TestLifecycleConcurrentStartStop(t *testing.T) {
 	ab := NewAutoBan(3)
 	rl := NewRateLimit(10, time.Second)
-	hb := NewHeartbeat(runtime.NewSessionManager(), time.Minute)
-	cl := NewCluster("n1", pubsub.New(), runtime.NewSessionManager())
+	hb := NewHeartbeat(runtime.NewSessionManager(), time.Minute, time.Millisecond)
+	cl := NewCluster("n1", pubsub.New(), runtime.NewSessionManager(), 4)
 
 	cases := []struct {
 		name  string
@@ -28,8 +28,8 @@ func TestLifecycleConcurrentStartStop(t *testing.T) {
 	}{
 		{"autoban", func() { _ = ab.Start() }, func() { _ = ab.Stop() }},
 		{"ratelimit", func() { _ = rl.Start() }, func() { _ = rl.Stop() }},
-		{"heartbeat", func() { hb.Start(time.Millisecond) }, func() { hb.Stop() }},
-		{"cluster", func() { cl.Start(4) }, func() { cl.Stop() }},
+		{"heartbeat", func() { _ = hb.Start() }, func() { _ = hb.Stop() }},
+		{"cluster", func() { _ = cl.Start() }, func() { _ = cl.Stop() }},
 	}
 
 	for _, tc := range cases {

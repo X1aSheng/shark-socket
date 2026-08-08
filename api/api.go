@@ -276,16 +276,16 @@ func NewAutoBanPlugin(threshold int) *AutoBanPlugin {
 	return plugin.NewAutoBan(threshold)
 }
 
-func NewClusterPlugin(nodeID string, bus *PubSub, manager SessionManager) *ClusterPlugin {
-	return plugin.NewCluster(nodeID, bus, manager)
+func NewClusterPlugin(nodeID string, bus *PubSub, manager SessionManager, buffer int) *ClusterPlugin {
+	return plugin.NewCluster(nodeID, bus, manager, buffer)
 }
 
 func NewPubSub() *PubSub {
 	return pubsub.New()
 }
 
-func NewHeartbeatPlugin(manager SessionManager, timeout time.Duration) *HeartbeatPlugin {
-	return plugin.NewHeartbeat(manager, timeout)
+func NewHeartbeatPlugin(manager SessionManager, timeout time.Duration, interval time.Duration) *HeartbeatPlugin {
+	return plugin.NewHeartbeat(manager, timeout, interval)
 }
 
 func NewPersistencePlugin(s Store, bucket string) *PersistencePlugin {

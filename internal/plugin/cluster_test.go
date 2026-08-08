@@ -32,10 +32,10 @@ func TestClusterPublishesToRemoteNodeSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	local := NewCluster("node-a", bus, nil)
-	remote := NewCluster("node-b", bus, remoteManager)
-	remote.Start(1)
-	defer remote.Stop()
+	local := NewCluster("node-a", bus, nil, 1)
+	remote := NewCluster("node-b", bus, remoteManager, 1)
+	_ = remote.Start()
+	defer func() { _ = remote.Stop() }()
 
 	if _, err := local.OnMessage(fakeSession{addr: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1111}}, []byte("hello")); err != nil {
 		t.Fatal(err)
@@ -62,9 +62,9 @@ func TestClusterIgnoresOwnNodeMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cluster := NewCluster("node-a", bus, manager)
-	cluster.Start(1)
-	defer cluster.Stop()
+	cluster := NewCluster("node-a", bus, manager, 1)
+	_ = cluster.Start()
+	defer func() { _ = cluster.Stop() }()
 
 	if _, err := cluster.OnMessage(sess, []byte("loopback")); err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ func TestClusterIgnoresOwnNodeMessages(t *testing.T) {
 }
 
 func TestClusterNoopsWithoutBus(t *testing.T) {
-	cluster := NewCluster("node-a", nil, nil)
+	cluster := NewCluster("node-a", nil, nil, 0)
 	payload, err := cluster.OnMessage(fakeSession{}, []byte("hello"))
 	if err != nil {
 		t.Fatal(err)
@@ -89,8 +89,8 @@ func TestClusterNoopsWithoutBus(t *testing.T) {
 }
 
 func TestClusterImplementsPlugin(t *testing.T) {
-	var _ core.Plugin = NewCluster("node-a", pubsub.New(), runtime.NewSessionManager())
-	if err := NewCluster("node-a", pubsub.New(), runtime.NewSessionManager()).Close(context.Background()); err != nil {
+	var _ core.Plugin = NewCluster("node-a", pubsub.New(), runtime.NewSessionManager(), 0)
+	if err := NewCluster("node-a", pubsub.New(), runtime.NewSessionManager(), 0).Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 }

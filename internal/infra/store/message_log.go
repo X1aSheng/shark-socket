@@ -49,15 +49,21 @@ func (m *MessageLog) Append(data []byte) (uint64, error) {
 }
 
 // Replay calls fn for every message in the log, in sequence order.
-// Safe for concurrent use with Append; sees a point-in-time snapshot.
+// Safe for concurrent use with Append; sees a point-in-time snapshot. fn runs
+// outside the internal lock, so it may safely re-enter the log (e.g. call
+// Append) without deadlocking.
 func (m *MessageLog) Replay(fn func(seq uint64, data []byte) error) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	keys, err := m.store.List(m.bucket)
 	if err != nil {
+		m.mu.Unlock()
 		return err
 	}
 	sort.Strings(keys)
+	messages := make([]struct {
+		seq  uint64
+		data []byte
+	}, 0, len(keys))
 	for _, key := range keys {
 		// Keys shorter than the 8-byte sequence prefix (written by another
 		// bucket or corrupted data) must be skipped, not sliced out of range.
@@ -66,13 +72,21 @@ func (m *MessageLog) Replay(fn func(seq uint64, data []byte) error) error {
 		}
 		val, ok, err := m.store.Load(m.bucket, key)
 		if err != nil {
+			m.mu.Unlock()
 			return err
 		}
 		if !ok {
 			continue
 		}
-		seq := binary.BigEndian.Uint64([]byte(key)[:8])
-		if err := fn(seq, val); err != nil {
+		messages = append(messages, struct {
+			seq  uint64
+			data []byte
+		}{binary.BigEndian.Uint64([]byte(key)[:8]), val})
+	}
+	m.mu.Unlock()
+
+	for _, msg := range messages {
+		if err := fn(msg.seq, msg.data); err != nil {
 			return err
 		}
 	}
@@ -113,13 +127,20 @@ func (m *MessageLog) Prune(beforeSeq uint64) error {
 	return nil
 }
 
-// Len returns the total number of messages in the log.
+// Len returns the total number of messages in the log, skipping keys that are
+// not valid sequence entries (consistent with Replay/Prune/NewMessageLog).
 func (m *MessageLog) Len() (int, error) {
 	keys, err := m.store.List(m.bucket)
 	if err != nil {
 		return 0, err
 	}
-	return len(keys), nil
+	count := 0
+	for _, key := range keys {
+		if len(key) >= 8 {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func seqKey(seq uint64) string {

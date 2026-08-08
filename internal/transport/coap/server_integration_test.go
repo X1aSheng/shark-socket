@@ -208,6 +208,84 @@ func TestCoAPNonDoesNotPolluteDedup(t *testing.T) {
 	}
 }
 
+// TestCoAPNONObserveInitialValue verifies that a NON GET registering an
+// observer receives the current value as an initial NON notification (RFC 7641);
+// previously only CON registrations got an initial response.
+func TestCoAPNONObserveInitialValue(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return nil
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer stopGateway(t, gateway)
+
+	conn, err := net.Dial("udp", server.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	// NON GET with Observe register (option value 0) on /sensor/temp.
+	req := Message{Type: TypeNON, Code: CodeGet, MessageID: 5, Token: []byte{9},
+		Options: map[uint16][]byte{ObserveOption: {0}}, Payload: []byte("/sensor/temp")}
+	data, err := req.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 1024)
+	n, err := conn.Read(buf)
+	if err != nil {
+		t.Fatalf("no initial NON notification: %v", err)
+	}
+	notify, err := Parse(buf[:n])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if notify.Type != TypeNON || notify.Code != CodeContent {
+		t.Fatalf("initial notify = %#v, want NON Content", notify)
+	}
+	seqBytes, ok := notify.Options[ObserveOption]
+	if !ok || len(seqBytes) == 0 {
+		t.Fatal("initial notification missing observe option")
+	}
+	// Observe seq uses variable-length big-endian encoding (encodeObserveSeq).
+	var got uint32
+	for _, b := range seqBytes {
+		got = got<<8 | uint32(b)
+	}
+	if got != 0 {
+		t.Fatalf("initial seq = %d, want 0", got)
+	}
+}
+
+// TestCoAPNotificationAckClearsPending verifies that an ACK clears the pending
+// CON notification so it is not retransmitted.
+func TestCoAPNotificationAckClearsPending(t *testing.T) {
+	s := NewServer(WithAddr("127.0.0.1:0"))
+	s.trackNotify(42, "127.0.0.1:1", []byte("data"))
+	if got := len(s.pendingNotifies); got != 1 {
+		t.Fatalf("pending = %d, want 1", got)
+	}
+	s.clearPendingNotify(42)
+	if got := len(s.pendingNotifies); got != 0 {
+		t.Fatalf("pending after ack = %d, want 0", got)
+	}
+}
+
 func exchangeMessage(t *testing.T, conn net.Conn, req Message) Message {
 	t.Helper()
 	data, err := req.Marshal()

@@ -227,7 +227,7 @@ func TestPluginCreation(t *testing.T) {
 
 func TestHeartbeatPlugin(t *testing.T) {
 	sm := NewGateway().Runtime().Sessions()
-	p := NewHeartbeatPlugin(sm, 30*time.Second)
+	p := NewHeartbeatPlugin(sm, 30*time.Second, 0)
 	if p == nil {
 		t.Fatal("heartbeat plugin should not be nil")
 	}
@@ -244,7 +244,7 @@ func TestPersistencePlugin(t *testing.T) {
 func TestClusterPlugin(t *testing.T) {
 	bus := NewPubSub()
 	sm := NewGateway().Runtime().Sessions()
-	p := NewClusterPlugin("node-1", bus, sm)
+	p := NewClusterPlugin("node-1", bus, sm, 0)
 	if p == nil {
 		t.Fatal("cluster plugin should not be nil")
 	}

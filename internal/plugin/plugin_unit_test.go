@@ -35,7 +35,7 @@ func TestAutoBanNamePriority(t *testing.T) {
 }
 
 func TestHeartbeatNamePriority(t *testing.T) {
-	h := NewHeartbeat(nil, 30)
+	h := NewHeartbeat(nil, 30, 0)
 	if h.Name() != "heartbeat" {
 		t.Fatalf("Name = %s, want heartbeat", h.Name())
 	}
@@ -55,7 +55,7 @@ func TestPersistenceNamePriority(t *testing.T) {
 }
 
 func TestClusterNamePriority(t *testing.T) {
-	c := NewCluster("node-1", nil, nil)
+	c := NewCluster("node-1", nil, nil, 0)
 	if c.Name() != "cluster" {
 		t.Fatalf("Name = %s, want cluster", c.Name())
 	}
@@ -65,7 +65,7 @@ func TestClusterNamePriority(t *testing.T) {
 }
 
 func TestClusterWithTopic(t *testing.T) {
-	c := NewCluster("node-2", nil, nil)
+	c := NewCluster("node-2", nil, nil, 0)
 	c.WithTopic("custom/topic")
 }
 
@@ -99,14 +99,14 @@ func TestNewPersistenceEmptyBucket(t *testing.T) {
 }
 
 func TestNewHeartbeatCustomTimeout(t *testing.T) {
-	h := NewHeartbeat(nil, 60)
+	h := NewHeartbeat(nil, 60, 0)
 	if h.Name() != "heartbeat" {
 		t.Fatalf("Name = %s", h.Name())
 	}
 }
 
 func TestNewClusterWithPubSub(t *testing.T) {
-	c := NewCluster("node-3", nil, nil)
+	c := NewCluster("node-3", nil, nil, 0)
 	if c.Name() != "cluster" {
 		t.Fatalf("Name = %s", c.Name())
 	}

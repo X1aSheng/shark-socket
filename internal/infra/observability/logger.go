@@ -34,7 +34,13 @@ func (l *MemoryLogger) Entries() []LogEntry {
 
 func (l *MemoryLogger) append(level, msg string, attrs ...any) {
 	l.mu.Lock()
-	l.entries = append(l.entries, LogEntry{Level: level, Msg: msg, Attrs: append([]any(nil), attrs...)})
+	entries := append(l.entries, LogEntry{Level: level, Msg: msg, Attrs: append([]any(nil), attrs...)})
+	// Bound the retained window so a long-running debug process logging
+	// per-message does not grow without bound.
+	if len(entries) > maxMemoryObservations {
+		entries = entries[len(entries)-maxMemoryObservations:]
+	}
+	l.entries = entries
 	l.mu.Unlock()
 }
 

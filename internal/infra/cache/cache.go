@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -29,14 +30,37 @@ func NewMemory() *Memory {
 func (m *Memory) Get(key string) ([]byte, bool) {
 	m.mu.RLock()
 	item, ok := m.items[key]
+	// Check expiry under the lock so a concurrent Set with a fresh value is
+	// never shadowed by a stale-expiry decision made after the lock released.
+	if ok && !item.expiresAt.IsZero() && time.Now().After(item.expiresAt) {
+		ok = false // expired; Sweep handles cleanup
+	}
 	m.mu.RUnlock()
 	if !ok {
 		return nil, false
 	}
-	if !item.expiresAt.IsZero() && time.Now().After(item.expiresAt) {
-		return nil, false // expired; Sweep handles cleanup
-	}
 	return append([]byte(nil), item.value...), true
+}
+
+// StartSweeper periodically removes expired entries until ctx is done, so a
+// long-lived cache populated with short-TTL keys stays bounded. Additive:
+// callers relying on Len/Sweep alone do not need to call it.
+func (m *Memory) StartSweeper(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = time.Minute
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				m.Sweep(time.Now())
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 }
 
 func (m *Memory) Set(key string, value []byte, ttl time.Duration) {

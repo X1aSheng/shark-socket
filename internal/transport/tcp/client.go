@@ -11,12 +11,13 @@ import (
 )
 
 type Client struct {
-	addr      string
-	framer    Framer
-	tlsConfig *tls.Config
-	dialer    net.Dialer
-	linger    *int // SO_LINGER timeout; nil means OS default
-	conn      net.Conn
+	addr        string
+	framer      Framer
+	tlsConfig   *tls.Config
+	dialer      net.Dialer
+	linger      *int // SO_LINGER timeout; nil means OS default
+	readTimeout time.Duration
+	conn        net.Conn
 }
 
 type ClientOption func(*Client)
@@ -90,7 +91,21 @@ func (c *Client) Receive() ([]byte, error) {
 	if c.conn == nil {
 		return nil, core.ErrClosed
 	}
+	// Apply the configured read timeout so a half-dead peer does not block
+	// Receive forever (WithClientReadTimeout).
+	if c.readTimeout > 0 {
+		if err := c.conn.SetReadDeadline(time.Now().Add(c.readTimeout)); err != nil {
+			return nil, err
+		}
+	}
 	return c.framer.ReadFrame(c.conn)
+}
+
+// WithClientReadTimeout sets a per-Receive read deadline (0 disables).
+func WithClientReadTimeout(timeout time.Duration) ClientOption {
+	return func(c *Client) {
+		c.readTimeout = timeout
+	}
 }
 
 func (c *Client) Close() error {

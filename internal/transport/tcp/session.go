@@ -71,12 +71,15 @@ func (s *session) Send(payload []byte) error {
 	if s.State() != core.StateActive {
 		return ErrSessionClosed
 	}
+	// High-water backpressure: reject before the queue is saturated so a slow
+	// consumer sheds load earlier (WriteQueueHighWater, default 0.8 of the
+	// queue capacity; 0 disables).
+	if s.writeQueueHighWater > 0 && len(s.writeCh) >= int(float64(cap(s.writeCh))*s.writeQueueHighWater) {
+		return core.ErrWriteQueueFull
+	}
 	copied := append([]byte(nil), payload...)
 	select {
 	case s.writeCh <- copied:
-		if s.writeQueueHighWater > 0 && len(s.writeCh) >= int(float64(cap(s.writeCh))*s.writeQueueHighWater) {
-			// high-water mark reached; caller can observe via write errors
-		}
 		return nil
 	case <-s.ctx.Done():
 		return ErrSessionClosed

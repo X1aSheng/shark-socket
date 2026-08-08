@@ -131,7 +131,7 @@ func TestHeartbeatSweepsIdleSessions(t *testing.T) {
 	if err := manager.Register(sess); err != nil {
 		t.Fatal(err)
 	}
-	p := NewHeartbeat(manager, time.Second)
+	p := NewHeartbeat(manager, time.Second, 0)
 	if closed := p.Sweep(time.Now()); closed != 1 {
 		t.Fatalf("closed = %d, want 1", closed)
 	}
@@ -149,19 +149,19 @@ func TestHeartbeatStartStopIsIdempotent(t *testing.T) {
 	if err := manager.Register(sess); err != nil {
 		t.Fatal(err)
 	}
-	p := NewHeartbeat(manager, time.Millisecond)
-	p.Start(time.Millisecond)
-	p.Start(time.Millisecond)
+	p := NewHeartbeat(manager, time.Millisecond, time.Millisecond)
+	_ = p.Start()
+	_ = p.Start()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		if manager.Count() == 0 {
-			p.Stop()
-			p.Stop()
+			_ = p.Stop()
+			_ = p.Stop()
 			return
 		}
 		time.Sleep(time.Millisecond)
 	}
-	p.Stop()
+	_ = p.Stop()
 	t.Fatal("heartbeat loop did not sweep idle session")
 }
 

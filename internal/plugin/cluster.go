@@ -20,6 +20,7 @@ type Cluster struct {
 	topic   string
 	bus     *pubsub.PubSub
 	manager core.SessionManager
+	buffer  int
 	lc      lifecycle
 	mu      sync.RWMutex // guards logger
 	logger  core.Logger
@@ -32,11 +33,14 @@ type clusterEnvelope struct {
 	Payload  []byte `json:"payload"`
 }
 
-func NewCluster(nodeID string, bus *pubsub.PubSub, manager core.SessionManager) *Cluster {
+func NewCluster(nodeID string, bus *pubsub.PubSub, manager core.SessionManager, buffer int) *Cluster {
 	if nodeID == "" {
 		nodeID = "local"
 	}
-	return &Cluster{nodeID: nodeID, topic: "shark.cluster.messages", bus: bus, manager: manager, logger: core.NopLogger()}
+	if buffer <= 0 {
+		buffer = 16
+	}
+	return &Cluster{nodeID: nodeID, topic: "shark.cluster.messages", bus: bus, manager: manager, buffer: buffer, logger: core.NopLogger()}
 }
 
 func (p *Cluster) Name() string  { return "cluster" }
@@ -49,28 +53,27 @@ func (p *Cluster) WithTopic(topic string) *Cluster {
 	return p
 }
 
-func (p *Cluster) Start(buffer int) {
+func (p *Cluster) Start() error {
 	stop, ok := p.lc.begin()
 	if !ok {
-		return
+		return nil
 	}
 	if p.bus == nil || p.manager == nil {
 		p.lc.done()
-		return
+		return nil
 	}
-	if buffer <= 0 {
-		buffer = 16
-	}
-	ch, cancel := p.bus.Subscribe(p.topic, buffer)
+	ch, cancel := p.bus.Subscribe(p.topic, p.buffer)
 	go func() {
 		defer p.lc.done()
 		defer cancel() // unsubscribe the consumer when it exits
 		p.consume(ch, stop)
 	}()
+	return nil
 }
 
-func (p *Cluster) Stop() {
+func (p *Cluster) Stop() error {
 	p.lc.shutdown()
+	return nil
 }
 
 func (p *Cluster) OnMessage(sess core.Session, data []byte) ([]byte, error) {

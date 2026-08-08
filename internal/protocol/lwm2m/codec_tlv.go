@@ -7,6 +7,17 @@ import (
 	"time"
 )
 
+// NOTE: this codec is an INTERNAL, NON-STANDARD typed-value encoding, NOT OMA
+// LwM2M TLV. OMA TLV packs the structural type (object instance / resource
+// instance / multiple resource / resource with value), the identifier width and
+// the length width into a single flags byte, and the value's data type is
+// resolved from the object model (not carried on the wire). This codec instead
+// prefixes every record with an explicit data-type byte ([type][id][len][value])
+// so it round-trips typed values without an object model. It is therefore NOT
+// interoperable with real LwM2M devices and has no production call sites; a
+// wire-compatible OMA TLV codec must resolve types from the object model and is
+// a separate implementation task driven by actual device-interop requirements.
+//
 // tlvEntry is a single resource value to encode.
 type tlvEntry struct {
 	ResourceID int

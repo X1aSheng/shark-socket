@@ -8,12 +8,13 @@ type Message struct {
 }
 
 type PubSub struct {
-	mu   sync.RWMutex
-	subs map[string][]chan Message
+	mu      sync.RWMutex
+	subs    map[string][]chan Message
+	dropped map[string]uint64
 }
 
 func New() *PubSub {
-	return &PubSub{subs: make(map[string][]chan Message)}
+	return &PubSub{subs: make(map[string][]chan Message), dropped: make(map[string]uint64)}
 }
 
 func (p *PubSub) Subscribe(topic string, buffer int) (<-chan Message, func()) {
@@ -49,12 +50,26 @@ func (p *PubSub) Publish(topic string, data []byte) int {
 	// from closing a channel while we're sending to it.
 	msg := Message{Topic: topic, Data: append([]byte(nil), data...)}
 	delivered := 0
+	dropped := 0
 	for _, sub := range p.subs[topic] {
 		select {
 		case sub <- msg:
 			delivered++
 		default:
+			dropped++
 		}
 	}
+	if dropped > 0 {
+		p.dropped[topic] += uint64(dropped)
+	}
 	return delivered
+}
+
+// Dropped returns the number of messages dropped for a topic because a
+// subscriber's buffer was full (non-blocking Publish). This surfaces the
+// otherwise-silent drops so operators can raise the buffer or back off.
+func (p *PubSub) Dropped(topic string) uint64 {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.dropped[topic]
 }
