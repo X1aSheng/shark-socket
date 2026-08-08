@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
 	"github.com/X1aSheng/shark-socket/internal/runtime"
@@ -237,6 +238,13 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if s.opts.MaxMessageBytes > 0 {
 		conn.SetReadLimit(s.opts.MaxMessageBytes)
 	}
+	// Dead-peer detection for WebSocket mode: a pong extends the read deadline;
+	// a peer that stops answering pings is closed after PongTimeout.
+	if s.opts.PongTimeout > 0 {
+		conn.SetPongHandler(func(string) error {
+			return conn.SetReadDeadline(time.Now().Add(s.opts.PongTimeout))
+		})
+	}
 	id := s.rt.Sessions().NextID()
 	sess := newWebSocketSession(id, conn)
 	s.sessions.Store(id, sess)
@@ -264,11 +272,23 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		defer s.wg.Done()
 		s.readWebSocketLoop(sess)
 	}()
+	if s.opts.PingInterval > 0 {
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.pingLoop(sess)
+		}()
+	}
 }
 
 func (s *Server) readWebSocketLoop(sess *webSocketSession) {
 	defer s.closeWebSocketSession(context.Background(), sess.ID(), sess)
 	for {
+		if s.opts.PongTimeout > 0 {
+			if err := sess.conn.SetReadDeadline(time.Now().Add(s.opts.PongTimeout)); err != nil {
+				return
+			}
+		}
 		_, payload, err := sess.conn.ReadMessage()
 		if err != nil {
 			return
@@ -286,6 +306,22 @@ func (s *Server) readWebSocketLoop(sess *webSocketSession) {
 			if err := shared.CallHandler(func() error { return s.opts.Handler(sess, msg) }, s.rt.Logger()); err != nil {
 				return
 			}
+		}
+	}
+}
+
+func (s *Server) pingLoop(sess *webSocketSession) {
+	ticker := time.NewTicker(s.opts.PingInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if err := sess.ping(); err != nil {
+				s.closeWebSocketSession(context.Background(), sess.ID(), sess)
+				return
+			}
+		case <-sess.Context().Done():
+			return
 		}
 	}
 }

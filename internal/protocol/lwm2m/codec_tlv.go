@@ -128,6 +128,12 @@ func (r tlvResource) ResourceValue() interface{} {
 		for _, b := range r.Value {
 			v = (v << 8) | int64(b)
 		}
+		// LwM2M integers are two's-complement signed; sign-extend values whose
+		// most-significant byte has the high bit set (the 8-byte branch above
+		// already sign-corrects via int64 conversion).
+		if len(r.Value) > 0 && len(r.Value) < 8 && r.Value[0]&0x80 != 0 {
+			v |= -1 << (8 * len(r.Value))
+		}
 		return v
 	case ResourceFloat:
 		if len(r.Value) >= 8 {

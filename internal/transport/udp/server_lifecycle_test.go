@@ -15,6 +15,7 @@ import (
 
 	"github.com/X1aSheng/shark-socket/internal/runtime"
 	"github.com/X1aSheng/shark-socket/internal/transport/shared"
+	"github.com/pion/dtls/v3"
 )
 
 func TestUDPServerStopStartCycle(t *testing.T) {
@@ -241,6 +242,49 @@ func TestUDPServerDTLSIntegration(t *testing.T) {
 	// The addr should be a valid UDP address
 	if _, ok := addr.(*net.UDPAddr); !ok {
 		t.Fatalf("DTLS server addr should be *net.UDPAddr, got %T", addr)
+	}
+}
+
+// TestUDPServerDTLSIdleTimeout verifies that a DTLS peer that completes the
+// handshake and then goes silent is reclaimed after SessionTTL, instead of
+// holding a goroutine/session forever (anti-slowloris for DTLS).
+func TestUDPServerDTLSIdleTimeout(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithDTLS(testTLSCfg(t)),
+		WithSessionTTL(50*time.Millisecond),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := gateway.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer gateway.Stop(ctx)
+
+	dtlsCfg := &dtls.Config{InsecureSkipVerify: true}
+	addr, err := net.ResolveUDPAddr("udp", server.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := dtls.Dial("udp", addr, dtlsCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if server.SessionCount() == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("DTLS session not reclaimed after idle timeout: count=%d", server.SessionCount())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

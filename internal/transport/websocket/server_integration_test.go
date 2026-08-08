@@ -84,6 +84,52 @@ func TestWebSocketGatewayEchoAndShutdown(t *testing.T) {
 	}
 }
 
+// TestWebSocketDeadPeerReclaimed verifies that a peer which never answers the
+// server's pings (a vanished client) is reclaimed after PongTimeout instead of
+// holding a goroutine/session forever.
+func TestWebSocketDeadPeerReclaimed(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithPath("/ws"),
+		WithCheckOrigin(func(*http.Request) bool { return true }),
+		WithPingInterval(50*time.Millisecond),
+		WithPongTimeout(150*time.Millisecond),
+		WithHandler(func(sess core.Session, msg core.Message) error { return nil }),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = gateway.Stop(shutdownCtx)
+	}()
+
+	u := url.URL{Scheme: "ws", Host: server.Addr().String(), Path: "/ws"}
+	conn, _, err := gws.DefaultDialer.Dial(u.String(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	// Never read from the connection, so the peer never answers the server's
+	// pings; the server must reclaim the session after PongTimeout.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if gateway.Runtime().Sessions().Count() == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("dead WebSocket peer not reclaimed after PongTimeout")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestWebSocketOnCloseRunsOnceDuringShutdown(t *testing.T) {
 	plugin := &closeCountingPlugin{}
 	server := NewServer(

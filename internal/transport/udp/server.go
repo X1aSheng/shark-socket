@@ -183,10 +183,13 @@ func (s *Server) handleDTLSConn(ctx context.Context, conn net.Conn) {
 	accepted := false
 	defer func() {
 		s.dtlsConns.Delete(id)
-		s.sessions.Delete(id)
-		s.rt.Sessions().Unregister(id)
-		if accepted {
-			s.rt.Plugins().OnClose(sess)
+		// Guarded by LoadAndDelete so OnClose fires exactly once even when
+		// CloseSessions already removed this session via closeSession.
+		if _, loaded := s.sessions.LoadAndDelete(id); loaded {
+			s.rt.Sessions().Unregister(id)
+			if accepted {
+				s.rt.Plugins().OnClose(sess)
+			}
 		}
 	}()
 
@@ -206,6 +209,13 @@ func (s *Server) handleDTLSConn(ctx context.Context, conn net.Conn) {
 		case <-ctx.Done():
 			return
 		default:
+		}
+		// Anti-slowloris: a DTLS peer that goes silent for SessionTTL is
+		// closed instead of holding a goroutine/session forever.
+		if s.opts.SessionTTL > 0 {
+			if err := conn.SetReadDeadline(time.Now().Add(s.opts.SessionTTL)); err != nil {
+				return
+			}
 		}
 		n, err := conn.Read(buf)
 		if err != nil {

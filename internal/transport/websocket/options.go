@@ -69,3 +69,19 @@ func WithCheckOrigin(fn func(*http.Request) bool) Option {
 		}
 	}
 }
+
+func WithPingInterval(interval time.Duration) Option {
+	return func(o *Options) {
+		if interval > 0 {
+			o.PingInterval = interval
+		}
+	}
+}
+
+func WithPongTimeout(timeout time.Duration) Option {
+	return func(o *Options) {
+		if timeout > 0 {
+			o.PongTimeout = timeout
+		}
+	}
+}

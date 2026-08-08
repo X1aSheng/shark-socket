@@ -154,6 +154,14 @@ func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 	if s.opts.MaxMessageSize > 0 {
 		conn.SetReadLimit(s.opts.MaxMessageSize)
 	}
+	// Dead-peer detection: a pong extends the read deadline; a peer that stops
+	// answering pings is closed after PongTimeout (RFC 6455 requires pong
+	// responses, so a compliant client always answers).
+	if s.opts.PongTimeout > 0 {
+		conn.SetPongHandler(func(string) error {
+			return conn.SetReadDeadline(time.Now().Add(s.opts.PongTimeout))
+		})
+	}
 	id := s.rt.Sessions().NextID()
 	sess := newSession(id, conn, s.opts.WriteTimeout)
 	s.sessions.Store(id, sess)
@@ -194,6 +202,11 @@ func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 func (s *Server) readLoop(sess *session) {
 	defer s.closeSession(context.Background(), sess.ID(), sess)
 	for {
+		if s.opts.PongTimeout > 0 {
+			if err := sess.conn.SetReadDeadline(time.Now().Add(s.opts.PongTimeout)); err != nil {
+				return
+			}
+		}
 		_, payload, err := sess.conn.ReadMessage()
 		if err != nil {
 			return

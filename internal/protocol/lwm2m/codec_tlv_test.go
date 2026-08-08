@@ -53,6 +53,35 @@ func TestTLVRoundTripInteger(t *testing.T) {
 	}
 }
 
+// TestTLVIntegerSignExtension verifies that 1-7 byte integer values are
+// decoded as two's-complement signed (negative values sign-extended), matching
+// LwM2M semantics.
+func TestTLVIntegerSignExtension(t *testing.T) {
+	cases := []struct {
+		value []byte
+		want  int64
+	}{
+		{[]byte{0x01}, 1},
+		{[]byte{0x7F}, 127},
+		{[]byte{0xFF}, -1},
+		{[]byte{0xFF, 0xFE}, -2},
+		{[]byte{0x00, 0xFF}, 255},
+		{[]byte{0xFF, 0xFF, 0xFF, 0xFF}, -1},
+		{[]byte{0x00, 0x00, 0x00, 0x01}, 1},
+		{[]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE}, -2},
+	}
+	for _, tc := range cases {
+		r := tlvResource{ResourceID: 1, Type: ResourceInteger, Value: tc.value}
+		got, ok := r.ResourceValue().(int64)
+		if !ok {
+			t.Fatalf("value %v: got %T, want int64", tc.value, r.ResourceValue())
+		}
+		if got != tc.want {
+			t.Fatalf("value %v = %d, want %d", tc.value, got, tc.want)
+		}
+	}
+}
+
 func TestTLVRoundTripFloat(t *testing.T) {
 	bits := math.Float64bits(3.14)
 	val := make([]byte, 8)

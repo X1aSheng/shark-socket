@@ -21,6 +21,8 @@ type Options struct {
 	IdleTimeout     time.Duration
 	WebSocket       bool
 	WebSocketPath   string
+	PingInterval    time.Duration
+	PongTimeout     time.Duration
 	CheckOrigin     func(*http.Request) bool
 }
 
@@ -35,6 +37,8 @@ func defaultOptions() Options {
 		WriteTimeout:    10 * time.Second,
 		IdleTimeout:     60 * time.Second,
 		WebSocketPath:   "/grpc/ws",
+		PingInterval:    30 * time.Second,
+		PongTimeout:     60 * time.Second,
 		CheckOrigin: func(*http.Request) bool {
 			return false // reject by default; use WithCheckOrigin to allow origins
 		},
@@ -66,6 +70,22 @@ func WithWebSocketMode(path string) Option {
 		o.WebSocket = true
 		if path != "" {
 			o.WebSocketPath = path
+		}
+	}
+}
+
+func WithPingInterval(interval time.Duration) Option {
+	return func(o *Options) {
+		if interval > 0 {
+			o.PingInterval = interval
+		}
+	}
+}
+
+func WithPongTimeout(timeout time.Duration) Option {
+	return func(o *Options) {
+		if timeout > 0 {
+			o.PongTimeout = timeout
 		}
 	}
 }

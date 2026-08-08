@@ -63,6 +63,12 @@ func (s *webSocketSession) Send(payload []byte) error {
 	return s.conn.WriteMessage(websocket.BinaryMessage, payload)
 }
 
+func (s *webSocketSession) ping() error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	return s.conn.WriteMessage(websocket.PingMessage, nil)
+}
+
 func (s *webSocketSession) Close(context.Context) error {
 	var err error
 	s.closeOnce.Do(func() {
