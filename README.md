@@ -2,17 +2,74 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-`shark-socket` is a redesigned multi-protocol runtime gateway for
-Shark-Socket. It keeps the useful ideas from the original project while making
-runtime ownership, plugin execution, and graceful shutdown explicit.
+## Project Overview
 
-## Design Principles
+`shark-socket` is a multi-protocol runtime gateway newly designed in Go for
+**IoT, real-time messaging, and edge computing** scenarios. It keeps the useful
+ideas from the original project while making runtime ownership, plugin
+execution, and graceful shutdown explicit.
 
-- Gateway owns global runtime composition.
-- Transports receive runtime dependencies and do not close shared managers.
-- Global plugins are applied through one plugin runner.
-- Graceful shutdown is staged through optional transport capabilities.
-- Typed messages are layered through codecs while transport sessions stay raw.
+**Core value**
+
+- **Unified runtime**: TCP, UDP, CoAP, LwM2M, WebSocket, QUIC, gRPC-Web, and
+  HTTP coexist in one process, sharing a single SessionManager, PluginRunner,
+  Metrics, and Logger.
+- **Cross-protocol session management**: one Session abstraction supports query,
+  broadcast, and routing across protocols.
+- **Extensible plugin system**: blacklist, rate limit, heartbeat, persistence,
+  cluster, autoban, and slow-handler plugins run through one chain with panic
+  isolation.
+- **Staged graceful shutdown**: StopAccept → Drain → CloseSessions — no
+  connection is dropped.
+- **Complete IoT semantics**: native CoAP (RFC 7252 / RFC 7641) and LwM2M,
+  including the TLV codec, Observe notifications, and the registration
+  lifecycle.
+
+**Target scenarios**
+
+- **IoT platforms** — devices join over CoAP/LwM2M, web clients over WebSocket,
+  admin APIs over HTTP.
+- **Real-time messaging gateways** — WebSocket long connections, custom TCP
+  protocols, and UDP broadcast.
+- **Edge computing nodes** — resource-constrained devices connect over CoAP and
+  route across protocols.
+
+**Boundaries (non-goals)**
+
+- Not an HTTP reverse proxy competing with Nginx/Envoy (HTTP is a lightweight
+  option only).
+- No built-in MQTT broker — external
+  [shark-MQTT](https://github.com/X1aSheng/shark-MQTT) interoperates through a
+  data contract.
+- Not a replacement for `google.golang.org/grpc` (gRPC-Web supports Unary and
+  Server Streaming only).
+
+## Design Features
+
+- **Gateway owns the runtime**: the Gateway explicitly creates and injects
+  Runtime (SessionManager / PluginRunner / Logger / Metrics / Tracer); transports
+  receive runtime dependencies and never create or close shared managers.
+- **One plugin runner**: global plugins execute through a single chain with
+  panic isolation — a plugin failure never leaks into protocol layers.
+- **Staged graceful shutdown**: StagedServer defines StopAccept → Drain →
+  CloseSessions with clear, rollback-safe semantics — no connection is dropped.
+- **Typed messages, raw sessions**: Codec[M] layers typed messages while
+  transport sessions stay raw bytes, keeping business types out of the runtime
+  layer.
+- **Contracts first**: every module talks through interfaces with dependency
+  inversion; `core/` defines contracts only, and layers depend one-directionally.
+- **Zero-value usability**: Functional Options with sensible defaults everywhere.
+- **Failure isolation**: a panic in one connection/goroutine never takes down
+  the process; PluginRunner captures plugin panics and returns control errors.
+- **Observability first**: metrics, traces, and logs on critical paths;
+  Prometheus metrics pre-registered to avoid cardinality explosion; `/healthz`
+  and `/readyz` endpoints plus `sessions_active` session metrics.
+- **Benchmark-driven**: optimizations require benchmark and pprof evidence.
+- **Compile-time verification**: `var _ Interface = (*Impl)(nil)` checks, with
+  key invariants expressed in the type system.
+- **Security built in**: TLS cert hot-reload, mTLS, DTLS, accept rate limiting,
+  write deadlines, non-root containers, read-only root FS, drop-ALL
+  capabilities.
 
 ## Feature Matrix
 
@@ -35,6 +92,53 @@ runtime ownership, plugin execution, and graceful shutdown explicit.
 | Fuzz Testing | 11 tests | TCP framers, CoAP message parse, LwM2M TLV codec — all passing |
 | Benchmark | 6 protocols | TCP, UDP, HTTP, WebSocket, gRPC-Web, QUIC — all benchmarked |
 | Deploy | Hardened | Docker (HEALTHCHECK, non-root), K8s (HPA, PDB, NetworkPolicy, ConfigMap), Helm _helpers.tpl |
+
+## Resource Requirements
+
+`shark-socket` is statically linked with no external runtime dependency, so it
+deploys on resource-constrained edge nodes.
+
+**Artifacts**
+
+| Artifact | Size | Notes |
+| --- | --- | --- |
+| Docker image | ~40 MB | Multi-stage build, `alpine:3.22` runtime, `CGO_ENABLED=0` static binary |
+| Executable | single file | No runtime dependencies, deployable standalone |
+
+**Kubernetes defaults (bundled manifests)**
+
+| Item | Value |
+| --- | --- |
+| requests | 50m CPU / 64Mi memory |
+| limits | 500m CPU / 256Mi memory |
+| replicas | 2 (HPA 2–10, target 50% average CPU utilization) |
+
+**Capacity planning**
+
+| Tier | CPU | Memory | Use case |
+| --- | --- | --- | --- |
+| Minimum | 50m / 256m | 64Mi / 256Mi | Test / development |
+| Recommended | 200m / 1000m | 128Mi / 512Mi | Single-node production |
+| High throughput | 500m / 2000m | 256Mi / 1Gi | Tens of thousands of connections |
+
+**Ports**
+
+| Port | Protocol | Purpose |
+| --- | --- | --- |
+| 18000 | TCP | Business traffic (default) |
+| 18080 | HTTP | Prometheus metrics |
+| 18081 | HTTP | Health / readiness probes |
+| 18443 | UDP | QUIC (TLS required) |
+| 18500 | UDP | CoAP / LwM2M |
+| 18700 | HTTP/WS | WebSocket |
+| 18900 | HTTP | gRPC-Web |
+
+**Benchmark capacity (Linux 8-core Xeon)**
+
+- TCP throughput: ~316k msg/s (50 connections, 256B payload), P50 ~144µs, P99 ~401µs
+- TCP / UDP / HTTP echo latency: ~19µs / 5µs / 31µs
+- Plugin-chain overhead: 4 real plugins add only ~1.7% latency (<5%)
+- Connection churn: 50-way concurrency, 859k connect/disconnect cycles in 10s, 0 errors
 
 ## Run
 
