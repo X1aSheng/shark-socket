@@ -7,6 +7,16 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### CI Hardening (2026-08-09)
+
+- **docker-build**: builds with the default Go module proxy
+  (`--build-arg GOPROXY=https://proxy.golang.org,direct`) instead of the
+  Dockerfile's China-oriented goproxy.cn, and now smoke-tests the image
+  (runs the container and checks `/healthz`), validating the 0.0.0.0 bind.
+- **permissions**: adds `actions: write` (required for `actions/upload-artifact`;
+  with only `contents: read` every other scope, including actions, is denied
+  and the log uploads 403).
+
 ### V8 Audit Fixes (2026-08-09)
 
 Post-V7 verification review (`docs/reports/PROJECT-REVIEW-260809-091049.md`).

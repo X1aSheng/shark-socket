@@ -18,6 +18,10 @@ concurrency:
 
 permissions:
   contents: read
+  # actions:write is required for actions/upload-artifact to store the logs;
+  # with only contents:read, every other scope (including actions) is denied
+  # and the upload steps would 403.
+  actions: write
 
 jobs:
   lint:
@@ -60,15 +64,38 @@ jobs:
           govulncheck ./...
 
   docker-build:
-    name: Docker Build (ubuntu-latest)
+    name: Docker Build & Smoke Test (ubuntu-latest)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Build Docker image
-        run: docker build -f deploy/docker/Dockerfile -t shark-socket:ci .
+        # Use the default Go module proxy on the runner (fast in GH-hosted CI);
+        # the Dockerfile's default GOPROXY is goproxy.cn for China-based builds.
+        run: |
+          docker build \
+            --build-arg GOPROXY=https://proxy.golang.org,direct \
+            -f deploy/docker/Dockerfile \
+            -t shark-socket:ci .
+
+      - name: Smoke test image (healthz on 0.0.0.0 bind)
+        run: |
+          docker run -d --name shark-socket-smoke -p 18081:18081 shark-socket:ci
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:18081/healthz >/dev/null 2>&1; then
+              echo "healthz OK"
+              docker rm -f shark-socket-smoke >/dev/null
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "--- container logs ---"
+          docker logs shark-socket-smoke || true
+          docker rm -f shark-socket-smoke >/dev/null
+          echo "healthz not ready within 20s" >&2
+          exit 1
 
   validate-ubuntu:
     name: Validate (ubuntu-latest)
