@@ -249,5 +249,6 @@ Raw JSON and readable reports are written to `logs/`.
 - [Architecture Methodology](docs/reports/ARCHITECTURE-METHODOLOGY-260626.md)
 - [Latest Project Review (V7)](docs/reports/PROJECT-REVIEW-260808-220224.md)
 - [Project Review (V6)](docs/reports/PROJECT-REVIEW-260806-230955.md)
-- [Latest Deployment Validation (V6)](docs/reports/DEPLOYMENT-VALIDATION-260807-010639.md)
+- [Latest Deployment Validation (V7)](docs/reports/DEPLOYMENT-VALIDATION-260809-085443.md)
+- [Deployment Validation (V6)](docs/reports/DEPLOYMENT-VALIDATION-260807-010639.md)
 - [Changelog](CHANGELOG.md)
