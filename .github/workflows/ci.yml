@@ -142,7 +142,7 @@ jobs:
 
       - name: Upload validation logs
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: validation-logs-ubuntu-latest
           path: logs/
@@ -176,7 +176,7 @@ jobs:
 
       - name: Upload validation logs
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: validation-logs-windows-latest
           path: logs/
@@ -220,7 +220,7 @@ jobs:
 
       - name: Upload race logs
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: race-logs-ubuntu-latest
           path: logs/
@@ -260,7 +260,7 @@ jobs:
 
       - name: Upload coverage logs
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-logs-ubuntu-latest
           path: logs/
