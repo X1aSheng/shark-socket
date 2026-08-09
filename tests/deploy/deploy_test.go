@@ -157,8 +157,8 @@ func TestDeployToolRenderingWhenAvailable(t *testing.T) {
 func TestGitHubActionsWorkflowSemantics(t *testing.T) {
 	workflow := readFile(t, "../../.github/workflows/ci.yml")
 
-	assertContains(t, workflow, "actions/checkout@v4")
-	assertContains(t, workflow, "actions/setup-go@v5")
+	assertContains(t, workflow, "actions/checkout@v5")
+	assertContains(t, workflow, "actions/setup-go@v6")
 	assertContains(t, workflow, "go-version-file: go.mod")
 	assertContains(t, workflow, "windows-latest")
 	assertContains(t, workflow, "ubuntu-latest")
@@ -172,7 +172,7 @@ func TestGitHubActionsWorkflowSemantics(t *testing.T) {
 	assertContains(t, workflow, `go run scripts/run_tests.go -mode cover -timeout 5m`)
 	assertContains(t, workflow, `go run scripts/run_tests.go -mode vet`)
 	assertContains(t, workflow, `go run scripts/run_tests.go -mode deploy`)
-	assertContains(t, workflow, "actions/upload-artifact@v4")
+	assertContains(t, workflow, "actions/upload-artifact@v5")
 	assertContains(t, workflow, "validation-logs-ubuntu-latest")
 	assertContains(t, workflow, "validation-logs-windows-latest")
 	assertContains(t, workflow, "race-logs-ubuntu-latest")
