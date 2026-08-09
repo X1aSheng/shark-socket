@@ -21,10 +21,17 @@ type seenKey struct {
 	msgID  uint16
 }
 
+// notifyKey identifies a pending CON observe notification by remote + msgID,
+// so a msgID reuse across observers (the ID wraps at 65536) cannot overwrite or
+// spuriously clear another observer's entry.
+type notifyKey struct {
+	remote string
+	msgID  uint16
+}
+
 // pendingNotify tracks an unacknowledged CON observe notification for
 // retransmission (RFC 7641 / RFC 7252 reliability).
 type pendingNotify struct {
-	remote   string
 	data     []byte
 	attempts int
 }
@@ -49,7 +56,7 @@ type Server struct {
 	seen            sync.Map
 	observers       *ObserverRegistry
 	retransmitMu    sync.Mutex
-	pendingNotifies map[uint16]pendingNotify
+	pendingNotifies map[notifyKey]pendingNotify
 }
 
 func NewServer(opts ...Option) *Server {
@@ -57,7 +64,7 @@ func NewServer(opts ...Option) *Server {
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	return &Server{opts: cfg, observers: NewObserverRegistry(), pendingNotifies: make(map[uint16]pendingNotify)}
+	return &Server{opts: cfg, observers: NewObserverRegistry(), pendingNotifies: make(map[notifyKey]pendingNotify)}
 }
 
 func (s *Server) Protocol() core.Protocol { return core.ProtocolCoAP }
@@ -299,13 +306,13 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 	}
 	if msg.Type == TypeACK {
 		// An ACK acknowledges a CON notification (or a piggybacked response);
-		// clear the pending retransmission for this msgID.
-		s.clearPendingNotify(msg.MessageID)
+		// clear the pending retransmission for this remote + msgID.
+		s.clearPendingNotify(sess.remote.String(), msg.MessageID)
 		return
 	}
 	if msg.Type == TypeRST {
 		// RST rejects a CON notification; stop retransmitting it.
-		s.clearPendingNotify(msg.MessageID)
+		s.clearPendingNotify(sess.remote.String(), msg.MessageID)
 		return
 	}
 
@@ -461,31 +468,33 @@ func (s *Server) NotifyObservers(resource string, payload []byte) {
 		if err != nil {
 			continue
 		}
-		// Track the CON notification for retransmission until it is ACKed
-		// (RFC 7641 §4.2): a lost CON notification is resent, not silently
-		// dropped.
-		s.trackNotify(notify.MessageID, obs.Remote, data)
+		// Send first, then track: the retransmit loop must never precede the
+		// initial send (which would deliver a duplicate before the peer ever
+		// received the notification). The notification is tracked until it is
+		// ACKed (RFC 7641 §4.2): a lost CON notification is resent, not
+		// silently dropped.
 		if err := s.sendACKMsg(sess, notify); err != nil {
-			s.untrackNotify(notify.MessageID)
 			s.observers.Remove(resource, obs.Remote, obs.Token)
+			continue
 		}
+		s.trackNotify(obs.Remote, notify.MessageID, data)
 	}
 }
 
-func (s *Server) trackNotify(msgID uint16, remote string, data []byte) {
+func (s *Server) trackNotify(remote string, msgID uint16, data []byte) {
 	s.retransmitMu.Lock()
-	s.pendingNotifies[msgID] = pendingNotify{remote: remote, data: data}
+	s.pendingNotifies[notifyKey{remote: remote, msgID: msgID}] = pendingNotify{data: data}
 	s.retransmitMu.Unlock()
 }
 
-func (s *Server) untrackNotify(msgID uint16) {
+func (s *Server) untrackNotify(remote string, msgID uint16) {
 	s.retransmitMu.Lock()
-	delete(s.pendingNotifies, msgID)
+	delete(s.pendingNotifies, notifyKey{remote: remote, msgID: msgID})
 	s.retransmitMu.Unlock()
 }
 
-func (s *Server) clearPendingNotify(msgID uint16) {
-	s.untrackNotify(msgID)
+func (s *Server) clearPendingNotify(remote string, msgID uint16) {
+	s.untrackNotify(remote, msgID)
 }
 
 func (s *Server) retransmitLoop(ctx context.Context) {
@@ -503,24 +512,41 @@ func (s *Server) retransmitLoop(ctx context.Context) {
 }
 
 func (s *Server) retransmitDue() {
+	// Snapshot the due entries under the lock, then send outside it so a
+	// stalled observer's blocking Write cannot stall ACK/RST clearing or every
+	// other observer's retransmission.
 	s.retransmitMu.Lock()
-	defer s.retransmitMu.Unlock()
-	for msgID, pn := range s.pendingNotifies {
+	due := make([]notifyKey, 0, len(s.pendingNotifies))
+	for key, pn := range s.pendingNotifies {
 		if pn.attempts >= maxRetransmit {
-			delete(s.pendingNotifies, msgID)
+			delete(s.pendingNotifies, key)
 			continue
 		}
-		sess := s.findSessionByRemote(pn.remote)
-		if sess == nil {
-			delete(s.pendingNotifies, msgID)
-			continue
-		}
-		if err := sess.Send(pn.data); err != nil {
-			delete(s.pendingNotifies, msgID)
+		due = append(due, key)
+	}
+	s.retransmitMu.Unlock()
+
+	for _, key := range due {
+		s.retransmitMu.Lock()
+		pn, ok := s.pendingNotifies[key]
+		if !ok {
+			s.retransmitMu.Unlock()
 			continue
 		}
 		pn.attempts++
-		s.pendingNotifies[msgID] = pn
+		s.pendingNotifies[key] = pn
+		data := pn.data
+		remote := key.remote
+		s.retransmitMu.Unlock()
+
+		sess := s.findSessionByRemote(remote)
+		if sess == nil {
+			s.untrackNotify(remote, key.msgID)
+			continue
+		}
+		if err := sess.Send(data); err != nil {
+			s.untrackNotify(remote, key.msgID)
+		}
 	}
 }
 

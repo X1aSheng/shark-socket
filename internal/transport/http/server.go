@@ -179,15 +179,21 @@ func (s *Server) handleWithSession(w stdhttp.ResponseWriter, r *stdhttp.Request)
 		stdhttp.Error(w, err.Error(), stdhttp.StatusServiceUnavailable)
 		return
 	}
+	// OnClose fires only for sessions that were actually accepted; on OnAccept
+	// failure the plugin chain already rolled back partial accepts.
+	accepted := false
 	defer func() {
 		s.rt.Sessions().Unregister(sess.ID())
 		_ = sess.Close(context.Background())
-		s.rt.Plugins().OnClose(sess)
+		if accepted {
+			s.rt.Plugins().OnClose(sess)
+		}
 	}()
 	if err := s.rt.Plugins().OnAccept(sess); err != nil {
 		stdhttp.Error(w, stdhttp.StatusText(stdhttp.StatusForbidden), stdhttp.StatusForbidden)
 		return
 	}
+	accepted = true
 	body, err = s.rt.Plugins().OnMessage(sess, body)
 	if err != nil {
 		if err == core.ErrPluginDrop {

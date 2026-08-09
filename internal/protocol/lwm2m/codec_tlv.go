@@ -22,6 +22,12 @@ import (
 // caller-supplied resolver. DecodeTLV returns raw values (Type=ResourceOpaque)
 // for callers that only need the bytes.
 //
+// Decoding currently supports "Resource with Value" records (TT=11) only;
+// Object Instance / Resource Instance / Multiple Resource records (TT=00/01/10)
+// and fixed-length records (LLL=000, where the length is implied by the resource
+// type) are rejected because they require a full object model to interpret.
+// Add those once a real device-interop requirement exists.
+//
 // tlvEntry is a single resource value to encode. Type is used only to interpret
 // the value for callers; it is not encoded on the wire.
 type tlvEntry struct {
@@ -168,6 +174,12 @@ func decodeTLV(data []byte, resolver func(int) ResourceType) ([]tlvResource, err
 				return nil, fmt.Errorf("tlv: truncated 32-bit length at offset %d", offset)
 			}
 			length = int(binary.BigEndian.Uint32(data[offset : offset+4]))
+			// On 32-bit platforms int is 32 bits, so a value >= 0x80000000
+			// becomes negative; reject it before the bounds check below can be
+			// bypassed into an out-of-range make([]byte, length) panic.
+			if length < 0 {
+				return nil, fmt.Errorf("tlv: 32-bit length overflows int at offset %d", offset)
+			}
 			offset += 4
 		case 0:
 			// LLL=000 means the length is fixed by the resource's data type and

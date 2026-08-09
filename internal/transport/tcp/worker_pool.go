@@ -139,7 +139,7 @@ func (p *workerPool) stop() {
 }
 
 func (p *workerPool) handle(t task) {
-	if p.handler == nil {
+	if p.handler == nil || t.sess == nil {
 		return
 	}
 	msg := core.Message{SessionID: t.sess.ID(), Protocol: core.ProtocolTCP, Payload: t.data}

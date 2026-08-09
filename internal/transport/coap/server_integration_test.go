@@ -276,11 +276,17 @@ func TestCoAPNONObserveInitialValue(t *testing.T) {
 // CON notification so it is not retransmitted.
 func TestCoAPNotificationAckClearsPending(t *testing.T) {
 	s := NewServer(WithAddr("127.0.0.1:0"))
-	s.trackNotify(42, "127.0.0.1:1", []byte("data"))
+	s.trackNotify("127.0.0.1:1", 42, []byte("data"))
 	if got := len(s.pendingNotifies); got != 1 {
 		t.Fatalf("pending = %d, want 1", got)
 	}
-	s.clearPendingNotify(42)
+	// An ACK from a different remote must not clear this entry (key includes
+	// the remote, so a msgID reuse across observers cannot collide).
+	s.clearPendingNotify("10.0.0.9", 42)
+	if got := len(s.pendingNotifies); got != 1 {
+		t.Fatalf("pending after foreign ack = %d, want 1", got)
+	}
+	s.clearPendingNotify("127.0.0.1:1", 42)
 	if got := len(s.pendingNotifies); got != 0 {
 		t.Fatalf("pending after ack = %d, want 0", got)
 	}

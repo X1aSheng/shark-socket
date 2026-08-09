@@ -155,13 +155,11 @@ func TestStressTCPBurst(t *testing.T) {
 	m := &stressMetrics{}
 	m.start()
 
-	// Linger 0 avoids TIME_WAIT accumulation on the client side; the burst test
-	// runs right after the 10s connection-churn test on the same host. A connect
-	// can transiently fail with WSAEADDRINUSE when the Windows ephemeral port
-	// range is exhausted, so retry instead of hard-failing the whole suite.
-	client := connectStressClient(t, addr)
-	defer client.Close()
-
+	// One dedicated client per goroutine: a shared connection with concurrent
+	// Send/Receive cannot attribute echoes to their sender, making the
+	// throughput/latency numbers meaningless (the same fix applied to
+	// run_stress.go runBurst). Linger(0) avoids TIME_WAIT accumulation; a
+	// transient connect failure retries inside connectStressClient.
 	payload := make([]byte, payloadSize)
 	burstCount := conns * 10
 
@@ -170,6 +168,8 @@ func TestStressTCPBurst(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			client := connectStressClient(t, addr)
+			defer client.Close()
 			start := time.Now()
 			if err := client.Send(payload); err != nil {
 				m.incSendFail()

@@ -67,10 +67,23 @@ func (p *Heartbeat) Sweep(now time.Time) int {
 	closed := 0
 	for _, sess := range p.manager.Snapshot() {
 		if now.Sub(sess.LastActiveAt()) > p.timeout {
-			_ = sess.Close(context.Background())
+			// Panic-isolate session Close so a broken session implementation
+			// cannot crash the sweep goroutine (and the whole process).
+			if safeSessionClose(sess) == nil {
+				closed++
+			}
 			p.manager.Unregister(sess.ID())
-			closed++
 		}
 	}
 	return closed
+}
+
+// safeSessionClose recovers a panic from a user session's Close method.
+func safeSessionClose(sess core.Session) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = core.ErrHandlerPanic
+		}
+	}()
+	return sess.Close(context.Background())
 }

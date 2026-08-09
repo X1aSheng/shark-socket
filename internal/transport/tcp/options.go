@@ -78,12 +78,11 @@ func WithFramer(framer Framer) Option {
 
 // WithReadTimeout sets the per-frame read deadline. Connections that send
 // nothing within this window are closed, preventing slowloris-style resource
-// exhaustion. 0 disables the timeout.
+// exhaustion. 0 disables the timeout (assigned unconditionally so it can be
+// turned off after a non-zero default).
 func WithReadTimeout(timeout time.Duration) Option {
 	return func(o *Options) {
-		if timeout > 0 {
-			o.ReadTimeout = timeout
-		}
+		o.ReadTimeout = timeout
 	}
 }
 

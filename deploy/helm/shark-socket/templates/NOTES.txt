@@ -11,7 +11,7 @@ The shark-socket gateway has been deployed to namespace {{ .Release.Namespace }}
   kubectl get pods -l app={{ .Chart.Name }} -n {{ .Release.Namespace }}
 
 ## Port Forward (local testing)
-  kubectl port-forward svc/{{ include "shark-socket.fullname" . }} 18000:18000 -n {{ .Release.Namespace }}
+  kubectl port-forward svc/{{ .Chart.Name }} 18000:18000 -n {{ .Release.Namespace }}
 
 ## Check Health
   curl http://localhost:18081/healthz

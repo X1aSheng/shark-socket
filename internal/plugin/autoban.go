@@ -90,6 +90,13 @@ func (p *AutoBan) sweep() {
 // OnMessage counts every accepted message per remote IP and bans the address
 // once the threshold is reached. This is the production call site for Record;
 // without it AutoBan never accumulated counts and could not ban anyone.
+//
+// NOTE: AutoBan is a strict per-IP message-count limiter, not a violation
+// detector — the runtime has no per-message "bad" signal, so Record counts all
+// traffic and the threshold is the maximum number of messages an IP may send
+// before being banned (and its session force-closed). Operators must size the
+// threshold for their legitimate per-session volume; the default of 3 is
+// intentionally conservative.
 func (p *AutoBan) OnMessage(sess core.Session, data []byte) ([]byte, error) {
 	if p.Record(sess) {
 		// Terminate the offending session too: a live connection that just

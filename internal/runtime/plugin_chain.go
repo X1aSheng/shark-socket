@@ -33,15 +33,20 @@ func (c *PluginChain) SetLogger(logger core.Logger) {
 func (c *PluginChain) Append(plugins ...core.Plugin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// Copy-on-write: build a new sorted slice and swap it in. c.plugins is
+	// never mutated in place, so snapshot() can hand out the current slice
+	// reference with no per-message copy.
+	next := append([]core.Plugin(nil), c.plugins...)
 	for _, p := range plugins {
 		if p == nil {
 			continue
 		}
-		c.plugins = append(c.plugins, p)
+		next = append(next, p)
 	}
-	slices.SortFunc(c.plugins, func(a, b core.Plugin) int {
+	slices.SortFunc(next, func(a, b core.Plugin) int {
 		return a.Priority() - b.Priority()
 	})
+	c.plugins = next
 }
 
 func (c *PluginChain) OnAccept(sess core.Session) error {
@@ -78,15 +83,17 @@ func (c *PluginChain) OnClose(sess core.Session) {
 	}
 }
 
-// snapshot returns a consistent copy of the plugin slice and the current
-// logger. Plugin callbacks run against this copy, outside the RWMutex, so a
-// plugin that calls SetLogger or Append from inside OnAccept/OnMessage/OnClose
-// no longer deadlocks (RWMutex is not reentrant) and logger reads stay
-// race-free even if SetLogger runs concurrently.
+// snapshot returns the current plugin slice (a stable, immutable copy-on-write
+// view) and the current logger. Plugin callbacks run against this view, outside
+// the RWMutex, so a plugin that calls SetLogger or Append from inside
+// OnAccept/OnMessage/OnClose no longer deadlocks (RWMutex is not reentrant) and
+// logger reads stay race-free even if SetLogger runs concurrently. Append only
+// swaps in a new slice, so the returned slice needs no clone — zero allocation
+// on the per-message OnMessage hot path.
 func (c *PluginChain) snapshot() ([]core.Plugin, core.Logger) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return slices.Clone(c.plugins), c.logger
+	return c.plugins, c.logger
 }
 
 func (c *PluginChain) safeAccept(p core.Plugin, logger core.Logger, sess core.Session) (err error) {

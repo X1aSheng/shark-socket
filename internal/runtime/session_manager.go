@@ -113,11 +113,14 @@ func (m *SessionManager) Broadcast(data []byte) error {
 
 // CloseAll closes and unregisters every session. Uses a snapshot to avoid
 // holding the write lock during session.Close() which may block on I/O, and
-// loops until the manager is empty so a session registered mid-shutdown is
-// not leaked after the final CloseAll.
+// loops until the manager is empty (or the context is cancelled) so a session
+// registered mid-shutdown is not leaked and a stuck drain cannot spin forever.
 func (m *SessionManager) CloseAll(ctx context.Context) error {
 	var firstErr error
 	for {
+		if ctx.Err() != nil {
+			return firstErr
+		}
 		sessions := m.Snapshot()
 		if len(sessions) == 0 {
 			return firstErr

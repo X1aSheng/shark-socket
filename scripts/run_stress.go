@@ -278,19 +278,23 @@ func runReconnect(addr string) map[string]any {
 		go func() {
 			defer wg.Done()
 			for time.Since(m.startTime) < *flagDuration {
-				client := tcp.NewClient(addr)
+				client := tcp.NewClient(addr, tcp.WithClientLinger(0), tcp.WithClientReadTimeout(10*time.Second))
 				if err := client.Connect(context.Background()); err != nil {
 					time.Sleep(10 * time.Millisecond)
 					continue
 				}
 				start := time.Now()
 				if err := client.Send([]byte("ping")); err != nil {
+					m.sendFail()
 					client.Close()
 					continue
 				}
+				m.sendOk()
 				_, err := client.Receive()
 				if err == nil {
 					m.recvOk(time.Since(start))
+				} else {
+					m.recvFail()
 				}
 				client.Close()
 			}

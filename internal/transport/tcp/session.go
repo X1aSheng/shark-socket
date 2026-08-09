@@ -73,9 +73,17 @@ func (s *session) Send(payload []byte) error {
 	}
 	// High-water backpressure: reject before the queue is saturated so a slow
 	// consumer sheds load earlier (WriteQueueHighWater, default 0.8 of the
-	// queue capacity; 0 disables).
-	if s.writeQueueHighWater > 0 && len(s.writeCh) >= int(float64(cap(s.writeCh))*s.writeQueueHighWater) {
-		return core.ErrWriteQueueFull
+	// queue capacity; 0 disables). The threshold is clamped to at least 1 so a
+	// small queue (e.g. WithWriteQueue(1)) still accepts its first write
+	// instead of truncating 0.8*cap to 0 and rejecting everything.
+	if s.writeQueueHighWater > 0 {
+		threshold := int(float64(cap(s.writeCh)) * s.writeQueueHighWater)
+		if threshold < 1 {
+			threshold = 1
+		}
+		if len(s.writeCh) >= threshold {
+			return core.ErrWriteQueueFull
+		}
 	}
 	copied := append([]byte(nil), payload...)
 	select {

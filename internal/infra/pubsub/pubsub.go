@@ -45,7 +45,6 @@ func (p *PubSub) Subscribe(topic string, buffer int) (<-chan Message, func()) {
 
 func (p *PubSub) Publish(topic string, data []byte) int {
 	p.mu.RLock()
-	defer p.mu.RUnlock()
 	// Hold the read lock during iteration + send to prevent cancel()
 	// from closing a channel while we're sending to it.
 	msg := Message{Topic: topic, Data: append([]byte(nil), data...)}
@@ -59,8 +58,14 @@ func (p *PubSub) Publish(topic string, data []byte) int {
 			dropped++
 		}
 	}
+	p.mu.RUnlock()
+	// The dropped counter is written under the exclusive lock: concurrent
+	// Publish calls both hold RLock during iteration and would otherwise race
+	// on the map (concurrent map writes crash the process).
 	if dropped > 0 {
+		p.mu.Lock()
 		p.dropped[topic] += uint64(dropped)
+		p.mu.Unlock()
 	}
 	return delivered
 }

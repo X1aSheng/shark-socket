@@ -46,9 +46,14 @@ func NewCluster(nodeID string, bus *pubsub.PubSub, manager core.SessionManager, 
 func (p *Cluster) Name() string  { return "cluster" }
 func (p *Cluster) Priority() int { return 95 }
 
+// WithTopic overrides the default pub/sub topic. Intended for construction-time
+// configuration (before Start); the write is locked so a late call cannot race
+// the consumer goroutine.
 func (p *Cluster) WithTopic(topic string) *Cluster {
 	if topic != "" {
+		p.mu.Lock()
 		p.topic = topic
+		p.mu.Unlock()
 	}
 	return p
 }

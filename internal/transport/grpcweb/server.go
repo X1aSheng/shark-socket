@@ -114,9 +114,19 @@ func (s *Server) StopAccept(ctx context.Context) error {
 }
 
 func (s *Server) Drain(ctx context.Context) error {
-	// Wait for WebSocket read loops to finish. The drain goroutine is
-	// fire-and-forget: StopAccept already called http.Server.Shutdown,
-	// so all tracked goroutines exit promptly.
+	// Drain is a no-op for gRPC-Web: http.Server.Shutdown in StopAccept already
+	// waits for the Serve loop, and CloseSessions closes the WebSocket
+	// connections then waits for the read/ping goroutines. Draining before
+	// CloseSessions would block forever on an open session (its read/ping loops
+	// only exit once the connection is closed).
+	return nil
+}
+
+func (s *Server) CloseSessions(ctx context.Context) error {
+	s.sessions.Range(func(key, value any) bool {
+		s.closeWebSocketSession(ctx, key.(uint64), value.(*webSocketSession))
+		return true
+	})
 	done := make(chan struct{})
 	go func() {
 		s.wg.Wait()
@@ -128,14 +138,6 @@ func (s *Server) Drain(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-func (s *Server) CloseSessions(ctx context.Context) error {
-	s.sessions.Range(func(key, value any) bool {
-		s.closeWebSocketSession(ctx, key.(uint64), value.(*webSocketSession))
-		return true
-	})
-	return nil
 }
 
 func (s *Server) Addr() net.Addr {
@@ -214,8 +216,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			if s.rt != nil {
 				s.rt.Logger().Error("grpc-web handler error", "session", id, "error", err)
 			}
+			// The trailer frame already commits the response; issuing http.Error
+			// afterwards would append a superfluous 500 status + text body after
+			// the frame (a protocol violation for gRPC-Web clients).
 			_ = sess.SendTrailers(13, err.Error())
-			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}

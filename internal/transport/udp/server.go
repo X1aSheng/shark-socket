@@ -268,7 +268,7 @@ func (s *Server) readLoop(ctx context.Context) {
 		}
 		if s.opts.Handler != nil {
 			msg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolUDP, Payload: payload}
-			if err := s.opts.Handler(sess, msg); err != nil {
+			if err := shared.CallHandler(func() error { return s.opts.Handler(sess, msg) }, s.rt.Logger()); err != nil {
 				s.closeSession(context.Background(), sess.remote.String(), sess)
 			}
 		}

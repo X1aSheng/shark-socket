@@ -305,8 +305,10 @@ func runGroup(root, logs, ts string, group benchmarkGroup) error {
 }
 
 func resourceGate(state resourceState, medium bool) bool {
+	// When /proc is unavailable we cannot assess the host, so fail open
+	// (mirrors run_stress.go's gate) rather than silently skipping every group.
 	if !state.ok {
-		return runtime.GOOS != "linux"
+		return true
 	}
 	if medium {
 		return state.memAvailableMB >= 1024 && state.load1 <= 2.0
