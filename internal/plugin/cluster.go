@@ -148,6 +148,5 @@ func (p *Cluster) handleClusterMessage(data []byte) {
 }
 
 func (p *Cluster) Close(context.Context) error {
-	p.Stop()
-	return nil
+	return p.Stop()
 }

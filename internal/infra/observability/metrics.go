@@ -43,7 +43,8 @@ const maxMemoryObservations = 65536
 func (m *MemoryMetrics) ObserveHistogram(name string, value float64, labels ...string) {
 	key := metricKey(name, labels...)
 	m.mu.Lock()
-	hist := append(m.histograms[key], value)
+	hist := m.histograms[key]
+	hist = append(hist, value)
 	if len(hist) > maxMemoryObservations {
 		hist = hist[len(hist)-maxMemoryObservations:]
 	}

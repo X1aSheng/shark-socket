@@ -122,10 +122,13 @@ func (p *workerPool) stop() {
 	if p.closed.CompareAndSwap(false, true) {
 		close(p.done)
 	}
-	// Wait for every in-flight submit to finish enqueueing (blocked PolicyBlock
-	// senders unblock on the closed done channel), then let the workers drain.
+	// Acquire the write lock: it cannot be granted until every in-flight submit
+	// (which holds the read lock across its enqueue) has finished enqueueing
+	// (blocked PolicyBlock senders unblock on the closed done channel), so no
+	// task can be enqueued after this point. It is held while the workers drain
+	// and through the final sweep, so the sweep cannot race a new enqueue.
 	p.submitMu.Lock()
-	p.submitMu.Unlock()
+	defer p.submitMu.Unlock()
 	p.wg.Wait()
 	// Safety net: handle anything still queued.
 	for {
