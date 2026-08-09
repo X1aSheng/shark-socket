@@ -16,6 +16,14 @@ This project uses semantic versioning. Pre-release tags use the form
 - **permissions**: adds `actions: write` (required for `actions/upload-artifact`;
   with only `contents: read` every other scope, including actions, is denied
   and the log uploads 403).
+- **lint fixes**: `worker_pool.stop` holds the submit lock across the drain
+  (no empty critical section, SA2001); `MemoryMetrics.ObserveHistogram` /
+  `MemoryLogger.append` append to the same slice (appendAssign);
+  `Cluster.Close` returns `p.Stop()` (errcheck).
+- **action upgrades**: `actions/checkout@v5`, `actions/setup-go@v6`,
+  `actions/upload-artifact@v6`, `golangci/golangci-lint-action@v9` — all
+  Node 24 runtimes (clears the Node 20 deprecation warnings).
+- CI is green end-to-end: 7/7 jobs pass with no Node 20 annotations.
 
 ### V8 Audit Fixes (2026-08-09)
 
