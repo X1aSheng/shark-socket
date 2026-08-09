@@ -74,6 +74,14 @@ Full audit (V7, `docs/reports/PROJECT-REVIEW-260808-220224.md`) — all
   construction; `Start() error` / `Stop() error` are now uniform across all
   lifecycle plugins (Heartbeat, Cluster, AutoBan, RateLimit).
 
+#### Protocol codecs
+- **LwM2M TLV is now OMA-compliant**: `EncodeTLV` emits proper "Resource with
+  Value" records (type byte packs TT/identifier-width/length-width flags,
+  variable-width 8/16/32-bit identifiers and 8/16/24/32-bit lengths), so the
+  output is parseable by real LwM2M devices. `DecodeTLV` returns raw values;
+  `DecodeTLVTyped(data, resolver)` resolves data types from the object model,
+  matching how devices interpret TLV (types are not carried on the wire).
+
 #### Scripts / deploy
 - **run_stress**: cloud profile gets a real resource gate (skips under memory /
   load pressure); TCP clients get a per-receive read timeout so a half-dead peer
