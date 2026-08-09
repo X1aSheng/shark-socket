@@ -140,7 +140,7 @@ docker compose -f deploy/docker/docker-compose.yml --profile test run mqtt-test
 |-------|---------|--------|
 | 单元测试（26 套件） | `go test ./...` | ✅ |
 | 竞态检测 | `go test -race ./...` | ✅ |
-| 覆盖率（70% 门槛） | `go run scripts/run_tests.go -mode cover` | ✅ 75.9% |
+| 覆盖率（70% 门槛） | `go run scripts/run_tests.go -mode cover` | ✅ 75.2% |
 | 静态检查（golangci-lint） | `golangci-lint run` | ✅ |
 | 安全扫描（govulncheck） | `govulncheck ./...` | ✅ |
 | 部署清单 | `go run scripts/run_tests.go -mode deploy` | ✅ |
@@ -215,6 +215,7 @@ docker compose -f deploy/docker/docker-compose.yml up -d --build
 - [示例](docs/guides/EXAMPLES.md)
 - [架构分析](docs/reports/ARCHITECTURE-ANALYSIS-260626.md)
 - [架构方法论](docs/reports/ARCHITECTURE-METHODOLOGY-260626.md)
-- [最新项目审查 (V6)](docs/reports/PROJECT-REVIEW-260806-230955.md)
+- [最新项目审查 (V7)](docs/reports/PROJECT-REVIEW-260808-220224.md)
+- [项目审查 (V6)](docs/reports/PROJECT-REVIEW-260806-230955.md)
 - [最新部署验证 (V6)](docs/reports/DEPLOYMENT-VALIDATION-260807-010639.md)
 - [更新日志](CHANGELOG.md)

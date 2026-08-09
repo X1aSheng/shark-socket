@@ -7,6 +7,86 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### V7 Audit Fixes (2026-08-09)
+
+Full audit (V7, `docs/reports/PROJECT-REVIEW-260808-220224.md`) — all
+43 findings fixed (2 P1 / 16 P2 / 25 P3).
+
+#### P1
+- **Acceptor sub-1 rate**: `AcceptRate < 1` (e.g. 0.5) previously rejected every
+  connection because the token bucket was capped below one token; it now caps at
+  `max(rate, 1)`.
+- **NetworkPolicy egress**: `egress` now allows all destinations (empty peer
+  rule); the previous `namespaceSelector: {}` only matched in-cluster pods and
+  silently blocked outbound connections to external endpoints.
+
+#### Reliability & metrics
+- **Session metrics**: `SessionManager.Unregister` now reports whether a session
+  was actually removed, so `sessions_closed_total` is no longer double-counted
+  on graceful shutdown or inflated by no-op unregisters.
+- **PluginChain**: callbacks run off the read lock against a snapshot, so a
+  plugin calling `SetLogger`/`Append` from inside a hook no longer deadlocks.
+- **Worker pool**: `submit` is serialized against `stop()` so no task is lost at
+  shutdown.
+- **Gateway.Stop**: non-staged servers and the final `CloseAll` get the
+  configured `CloseSessions` deadline instead of hanging on a context without a
+  deadline.
+- **Handler panic isolation**: a new `shared.CallHandler` recovers user
+  handler/responder panics across TCP/UDP/CoAP/QUIC/WebSocket/gRPC-Web, and
+  `SessionManager.Broadcast`/`CloseAll` recover session panics — a panicking
+  handler can no longer crash the process.
+- **TCP write queue**: `WriteQueueHighWater` now enforces early backpressure
+  (default 0.8) instead of being a no-op.
+
+#### Transports
+- **DTLS (UDP/CoAP)**: sessions get a `SessionTTL` read deadline so silent peers
+  are reclaimed, and `OnClose` fires exactly once via a guarded cleanup even
+  when `CloseSessions` races the connection handler.
+- **CoAP**: dedup map records CON messages only (NON/ACK/RST no longer
+  misclassify later CON requests); a NON observe registration receives the
+  current value as an initial notification; CON observe notifications are
+  retransmitted until ACKed/RSTed (RFC 7641/7252).
+- **WebSocket / gRPC-Web**: pong-handler + per-read deadline implement the
+  previously dead `PongTimeout` (dead-peer detection); gRPC-Web WebSocket mode
+  gains `PingInterval`/`PongTimeout` options and a ping loop.
+- **UDP/CoAP session IDs**: allocated before publication, removing a data race.
+- **RawFramer**: zero-value writes default to the same 32 KiB cap as reads.
+- **gRPC-Web trailers**: `SendTrailers` sets `content-type` so a trailer-only
+  response is not labelled `text/plain`.
+
+#### Plugins / infra
+- **AutoBan**: a session that trips the ban threshold is closed immediately.
+- **RateLimit**: only accepted requests are recorded, bounding per-key memory
+  under flood.
+- **PubSub**: drops are counted per topic (`Dropped`) instead of silent, and the
+  topic key is removed when the last subscriber cancels.
+- **MessageLog**: `Len` skips short keys; `Replay` runs callbacks outside the
+  lock so a re-entrant `Append` cannot deadlock.
+- **MemoryCache**: expiry is checked under the lock; new `StartSweeper` bounds a
+  long-lived cache.
+- **MemoryMetrics/MemoryLogger**: retained window is capped.
+- **MQTT**: `Start`/`Subscribe` honor the caller context (abort on cancellation)
+  with a hard timeout.
+
+#### Plugin lifecycle API
+- `NewHeartbeat(manager, timeout, interval)` and
+  `NewCluster(nodeID, bus, manager, buffer)` take their parameters at
+  construction; `Start() error` / `Stop() error` are now uniform across all
+  lifecycle plugins (Heartbeat, Cluster, AutoBan, RateLimit).
+
+#### Scripts / deploy
+- **run_stress**: cloud profile gets a real resource gate (skips under memory /
+  load pressure); TCP clients get a per-receive read timeout so a half-dead peer
+  cannot hang a run; burst mode uses one dedicated client per goroutine.
+- **run_tests**: race mode strips a pre-existing `CGO_ENABLED` so race detection
+  cannot silently no-op.
+- **K8s/Helm**: deployments wire `SHARK_*` env via `envFrom` the ConfigMaps
+  (previously dead config); the K8s ConfigMap keys are now valid env var names.
+- **Docker**: the runtime image binds `0.0.0.0` so EXPOSE'd ports are reachable.
+- **Helm**: the Deployment references the ServiceAccount via the
+  `serviceAccountName` helper, fixing `helm install <release>` with a custom
+  release name.
+
 ### V6.1 CI Hardening (2026-08-07)
 
 - **Go toolchain 1.26.5**: Bump `go.mod` from 1.26.4 to 1.26.5 to fix
