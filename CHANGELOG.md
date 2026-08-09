@@ -7,6 +7,31 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### V8 Audit Fixes (2026-08-09)
+
+Post-V7 verification review (`docs/reports/PROJECT-REVIEW-260809-091049.md`).
+All V7 fixes confirmed correct; 21 new findings fixed (1 P0 / 2 P1 / 7 P2 / 11 P3).
+
+- **P0** — PubSub dropped counter is written under the exclusive lock (it was
+  under `RLock`, causing `concurrent map read and map write` / process crash
+  under drops).
+- **P1** — `metricSessionManager.CloseAll` (the default gateway shutdown path)
+  and the UDP plain readLoop now isolate session/handler panics like every
+  other path.
+- **P2** — `CloseAll` aborts on context cancellation; gRPC-Web `Stop` no longer
+  hangs (Drain is a no-op, sessions are closed before waiting on goroutines);
+  TCP high-water threshold clamped to ≥1 for small queues; HTTP gates plugin
+  `OnClose` on an `accepted` flag; `run_stress` reconnect mode and
+  `TestStressTCPBurst` get the per-connection fixes; AutoBan semantics
+  documented as a strict message-count limiter.
+- **P3** — TLV 32-bit length overflow guard; worker-pool nil-session guard;
+  `WithReadTimeout(0)` disables the timeout; CoAP retransmission keyed by
+  `(remote, msgID)` with sends outside the lock and track-after-send;
+  gRPC-Web error path stops writing after the trailer; `Cluster.WithTopic`
+  locked; heartbeat sweep panic-isolated; PluginChain copy-on-write snapshot
+  (zero per-message allocation); Helm NOTES port-forward fixed; benchmark
+  resource gate fails open.
+
 ### V7 Audit Fixes (2026-08-09)
 
 Full audit (V7, `docs/reports/PROJECT-REVIEW-260808-220224.md`) — all
