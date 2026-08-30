@@ -7,6 +7,15 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### Test Completeness (2026-08-31)
+
+针对协议连接管理与插件路径的测试缺口专项补齐（详见 `docs/reports/PROJECT-REVIEW-260809-091049.md` 后的逐项审计）：
+
+- **UDP DTLS 应用数据路径首次被测试驱动**：`handleDTLSConn` 覆盖率 0% → 75.6%。旧 idle-timeout 测试空转通过（pion/dtls v3 惰性握手——客户端不写数据就永远不会有会话），已修复为"先写后断言"；新增完整 DTLS echo + 断开回收测试；测试证书从 RSA 换为 ECDSA P-256（DTLS 1.3 拒绝 RSA 证书）
+- **handler panic 回归测试**（V8 P1-2 修复此前无测试）：UDP/CoAP/WebSocket 各新增 panic 隔离集成测试（对齐 TCP 已有测试）——首次调用 panic、后续请求正常服务证明进程存活
+- **LwM2M update/discover 命令**：`handleUpdate` 0% → 88.9%、`handleDiscover` 0% → 100%；E2E 生命周期测试补 update 交换
+- **插件后台清扫**：`RateLimit.sweep` 0% → 84.6%、`AutoBan.sweep` 0% → 100%（过期计数/封禁清理行为测试）
+
 ### Performance & Resource Improvements (2026-08-26)
 
 - **RateLimit 分片锁**: 单一全局 Mutex 改为 32 分片（maphash 进程随机种子选择分片，防攻击者构造同分片碰撞放大锁竞争）；8 核并行微基准 243ns → 75.8ns（3.2x 扩展），单插件 TCP echo 延迟 53.5µs → 51.5µs、每消息分配 10 → 7
