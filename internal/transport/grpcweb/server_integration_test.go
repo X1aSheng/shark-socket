@@ -297,6 +297,50 @@ func TestGRPCWebMaxConnectionsRejectsExcess(t *testing.T) {
 	}
 }
 
+// TestGRPCWebServerDirectStop covers the non-staged Stop path (previously
+// 0%): a server started without a gateway serves traffic and Stop shuts the
+// listener down.
+func TestGRPCWebServerDirectStop(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithCheckOrigin(func(*http.Request) bool { return true }),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := server.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	post := func() error {
+		resp, err := http.Post("http://"+server.Addr().String()+"/grpc", "text/plain", bytes.NewReader([]byte("hello")))
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		if string(body) != "hello" {
+			return fmt.Errorf("body = %q, want hello", body)
+		}
+		return nil
+	}
+	if err := post(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := server.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := post(); err == nil {
+		t.Fatal("server still accepting after Stop")
+	}
+}
+
 func testGRPCWebDataFrame(payload []byte) []byte {
 	frame := []byte{0}
 	frame = binary.BigEndian.AppendUint32(frame, uint32(len(payload)))

@@ -247,6 +247,43 @@ func TestHTTPOnAcceptFailureNoDoubleClose(t *testing.T) {
 	}
 }
 
+// TestHTTPServerDirectStop covers the non-staged Stop path (previously 0%):
+// a server started without a gateway serves traffic and Stop shuts the
+// listener down.
+func TestHTTPServerDirectStop(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := server.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := stdhttp.Post("http://"+server.Addr().String()+"/", "text/plain", bytes.NewReader([]byte("hello")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "hello" {
+		t.Fatalf("body = %q, want hello", body)
+	}
+
+	if err := server.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stdhttp.Get("http://" + server.Addr().String() + "/"); err == nil {
+		t.Fatal("server still accepting after Stop")
+	}
+}
+
 func stopGateway(t *testing.T, gateway *runtime.Gateway) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

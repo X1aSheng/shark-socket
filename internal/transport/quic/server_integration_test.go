@@ -268,6 +268,66 @@ func TestQUICMaxConnectionsRejectsExcess(t *testing.T) {
 	}
 }
 
+// TestQUICServerDirectStop covers the non-staged Stop path (previously 0%):
+// a server started without a gateway serves traffic and Stop shuts the
+// listener down.
+func TestQUICServerDirectStop(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithTLS(testTLSConfig(t)),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := server.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	conn, err := quicgo.DialAddr(ctx, server.Addr().String(), ClientTLSConfig(true), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := conn.OpenStreamSync(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Write([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Close(); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := conn.AcceptStream(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 16)
+	if err := resp.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	n, err := io.ReadFull(resp, buf[:4])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(buf[:n]) != "ping" {
+		t.Fatalf("echo = %q, want ping", buf[:n])
+	}
+	_ = conn.CloseWithError(0, "")
+
+	if err := server.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// quic-go retries the handshake for several seconds against a dead
+	// listener; bound the probe so the test stays fast.
+	probeCtx, probeCancel := context.WithTimeout(context.Background(), time.Second)
+	defer probeCancel()
+	if _, err := quicgo.DialAddr(probeCtx, server.Addr().String(), ClientTLSConfig(true), nil); err == nil {
+		t.Fatal("server still accepting after Stop")
+	}
+}
+
 func stopGateway(tb testing.TB, gateway *runtime.Gateway) {
 	tb.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

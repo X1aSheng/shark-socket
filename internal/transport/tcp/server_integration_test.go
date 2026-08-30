@@ -268,6 +268,46 @@ func TestTCPAcceptRateRejectsBurst(t *testing.T) {
 	}
 }
 
+// TestTCPServerDirectStop covers the non-staged Stop path (previously 0%):
+// a server started without a gateway serves traffic and Stop shuts the
+// listener down.
+func TestTCPServerDirectStop(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := server.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	client := NewClient(server.Addr().String(), WithClientLinger(0))
+	if err := client.Connect(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Send([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := client.Receive()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "ping" {
+		t.Fatalf("echo = %q, want ping", got)
+	}
+	_ = client.Close()
+
+	if err := server.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := net.DialTimeout("tcp", server.Addr().String(), 500*time.Millisecond); err == nil {
+		t.Fatal("server still accepting after Stop")
+	}
+}
+
 func TestTCPClientEcho(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

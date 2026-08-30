@@ -150,6 +150,52 @@ func TestWebSocketMaxConnectionsRejectsExcess(t *testing.T) {
 	}
 }
 
+// TestWebSocketServerDirectStop covers the non-staged Stop path (previously
+// 0%): a server started without a gateway serves traffic and Stop shuts the
+// listener down.
+func TestWebSocketServerDirectStop(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithPath("/ws"),
+		WithCheckOrigin(func(*http.Request) bool { return true }),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := server.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	u := url.URL{Scheme: "ws", Host: server.Addr().String(), Path: "/ws"}
+	conn, _, err := gws.DefaultDialer.Dial(u.String(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.WriteMessage(gws.BinaryMessage, []byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	_, got, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "ping" {
+		t.Fatalf("echo = %q, want ping", got)
+	}
+	_ = conn.Close()
+
+	if err := server.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := gws.DefaultDialer.Dial(u.String(), nil); err == nil {
+		t.Fatal("server still accepting after Stop")
+	}
+}
+
 func TestWebSocketGatewayEchoAndShutdown(t *testing.T) {
 	server := NewServer(
 		WithAddr("127.0.0.1:0"),
