@@ -1,18 +1,20 @@
 package udp
 
 import (
+	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/pem"
 	"math/big"
 	"net"
 	"testing"
 	"time"
 
+	"github.com/X1aSheng/shark-socket/internal/core"
 	"github.com/X1aSheng/shark-socket/internal/runtime"
 	"github.com/X1aSheng/shark-socket/internal/transport/shared"
 	"github.com/pion/dtls/v3"
@@ -167,10 +169,14 @@ func TestUDPServerStopAccept(t *testing.T) {
 	}
 }
 
-// testTLSCfg generates a self-signed TLS config for DTLS testing
+// testTLSCfg generates a self-signed TLS config for DTLS testing. The
+// certificate is ECDSA P-256: pion/dtls v3 negotiates DTLS 1.3 by default,
+// which rejects RSA certificates, so an RSA test cert made the server-side
+// handshake stall silently (client Dial succeeded, server Accept never
+// returned).
 func testTLSCfg(t *testing.T) *tls.Config {
 	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,13 +193,10 @@ func testTLSCfg(t *testing.T) *tls.Config {
 	if err != nil {
 		t.Fatal(err)
 	}
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
-	cert, err := tls.X509KeyPair(certPEM, keyPEM)
-	if err != nil {
-		t.Fatal(err)
+	return &tls.Config{
+		Certificates: []tls.Certificate{{Certificate: [][]byte{certDER}, PrivateKey: key}},
+		MinVersion:   tls.VersionTLS12,
 	}
-	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
 }
 
 func TestUDPServerDTLSOptions(t *testing.T) {
@@ -291,13 +294,106 @@ func TestUDPServerDTLSIdleTimeout(t *testing.T) {
 	}
 	defer conn.Close()
 
+	// The DTLS handshake in pion/dtls v3 is lazy: the client sends its first
+	// flight only on the first write. Write a byte first so the handshake
+	// starts and the server-side session can register; polling SessionCount
+	// before any write would deadlock (nothing is ever sent, so no session
+	// appears and the count stays 0 — the vacuous pass the old test had).
+	if _, err := conn.Write([]byte("x")); err != nil {
+		t.Fatal(err)
+	}
 	deadline := time.Now().Add(3 * time.Second)
+	// First wait for the server-side handler goroutine to register the
+	// session after the handshake completes.
+	for {
+		if server.SessionCount() == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("DTLS session not registered after handshake: count=%d", server.SessionCount())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// Then wait for the idle timeout (SessionTTL=50ms) to reclaim it.
 	for {
 		if server.SessionCount() == 0 {
 			return
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("DTLS session not reclaimed after idle timeout: count=%d", server.SessionCount())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestUDPServerDTLSEcho exercises the DTLS application-data path end to end:
+// a real DTLS client sends a datagram and receives the echo, and the session
+// is reclaimed after the client disconnects. TestUDPServerDTLSIntegration only
+// verifies listening, and the old idle-timeout test passed vacuously, so this
+// is the first test that actually drives handleDTLSConn.
+func TestUDPServerDTLSEcho(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithDTLS(testTLSCfg(t)),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := gateway.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer gateway.Stop(ctx)
+
+	dtlsCfg := &dtls.Config{InsecureSkipVerify: true}
+	addr, err := net.ResolveUDPAddr("udp", server.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := dtls.Dial("udp", addr, dtlsCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// pion/dtls v3 handshakes lazily on the first write: send the payload
+	// first (this starts the handshake), then read the echo. Waiting for the
+	// session to register before writing would deadlock.
+	payload := []byte("dtls-echo")
+	if _, err := conn.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 1024)
+	n, err := conn.Read(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(buf[:n], payload) {
+		t.Fatalf("echo = %q, want %q", buf[:n], payload)
+	}
+	// The session must now exist server-side (the echo proves the handler
+	// ran); assert it so a future regression in registration is caught.
+	if server.SessionCount() != 1 {
+		t.Fatalf("session count = %d, want 1", server.SessionCount())
+	}
+
+	// Closing the client tears down the DTLS connection, unblocking the
+	// server-side read loop; the session must then be reclaimed.
+	_ = conn.Close()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if server.SessionCount() == 0 && gateway.Runtime().Sessions().Count() == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("session not reclaimed after client close: server=%d runtime=%d", server.SessionCount(), gateway.Runtime().Sessions().Count())
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
