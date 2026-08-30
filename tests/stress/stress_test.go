@@ -7,9 +7,14 @@
 package stress
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math"
+	"net"
+	"net/http"
+	"net/url"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -18,7 +23,11 @@ import (
 
 	"github.com/X1aSheng/shark-socket/internal/core"
 	"github.com/X1aSheng/shark-socket/internal/runtime"
+	transporthttp "github.com/X1aSheng/shark-socket/internal/transport/http"
 	"github.com/X1aSheng/shark-socket/internal/transport/tcp"
+	"github.com/X1aSheng/shark-socket/internal/transport/udp"
+	"github.com/X1aSheng/shark-socket/internal/transport/websocket"
+	gws "github.com/gorilla/websocket"
 )
 
 // ---------------------------------------------------------------------------
@@ -311,4 +320,308 @@ func runStressTCP(m *stressMetrics, addr string) {
 		_ = got
 		m.incRecvOK(time.Since(start))
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Test: UDP sustained throughput + pseudo-session leak detection
+// ---------------------------------------------------------------------------
+
+func TestStressUDPConnections(t *testing.T) {
+	addr, server := startStressUDPServer(t, 2*time.Second)
+	m := &stressMetrics{}
+	m.start()
+
+	payload := make([]byte, payloadSize)
+	var wg sync.WaitGroup
+	for i := 0; i < conns; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			conn, err := net.Dial("udp", addr)
+			if err != nil {
+				m.incSendFail()
+				return
+			}
+			defer conn.Close()
+			buf := make([]byte, 2048)
+			for {
+				if time.Since(m.startTime) > duration {
+					return
+				}
+				if err := conn.SetWriteDeadline(time.Now().Add(2 * time.Second)); err != nil {
+					m.incSendFail()
+					return
+				}
+				if _, err := conn.Write(payload); err != nil {
+					m.incSendFail()
+					return
+				}
+				m.incSendOK()
+				if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+					m.incRecvFail()
+					return
+				}
+				start := time.Now()
+				n, err := conn.Read(buf)
+				if err != nil || n != payloadSize {
+					m.incRecvFail()
+					return
+				}
+				m.incRecvOK(time.Since(start))
+			}
+		}()
+	}
+	wg.Wait()
+	m.stop()
+	m.report("UDPConnections")
+
+	if m.sendOK.Load() == 0 || m.recvOK.Load() == 0 {
+		t.Fatal("no traffic flowed")
+	}
+
+	// Leak detection: after every peer stops, the TTL sweep must reclaim all
+	// pseudo-sessions.
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if server.SessionCount() == 0 {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("UDP pseudo-sessions leaked after peers stopped: count=%d", server.SessionCount())
+}
+
+// ---------------------------------------------------------------------------
+// Test: WebSocket connection churn + session leak detection
+// ---------------------------------------------------------------------------
+
+func TestStressWSChurn(t *testing.T) {
+	addr, gw := startStressWSServer(t)
+	m := &stressMetrics{}
+	m.start()
+
+	// Linger(0) dialer: the churn test opens tens of thousands of short-lived
+	// TCP connections, which would otherwise exhaust the Windows ephemeral
+	// port range via TIME_WAIT.
+	dialer := gws.Dialer{
+		HandshakeTimeout: 2 * time.Second,
+		NetDial: func(network, addr string) (net.Conn, error) {
+			conn, err := net.Dial(network, addr)
+			if err != nil {
+				return nil, err
+			}
+			if tcpConn, ok := conn.(*net.TCPConn); ok {
+				_ = tcpConn.SetLinger(0)
+			}
+			return conn, nil
+		},
+	}
+	u := url.URL{Scheme: "ws", Host: addr, Path: "/ws"}
+
+	var wg sync.WaitGroup
+	for i := 0; i < conns; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				if time.Since(m.startTime) > duration {
+					return
+				}
+				conn, _, err := dialer.Dial(u.String(), nil)
+				if err != nil {
+					continue
+				}
+				start := time.Now()
+				if err := conn.WriteMessage(gws.BinaryMessage, []byte("ping")); err != nil {
+					_ = conn.Close()
+					m.incSendFail()
+					continue
+				}
+				m.incSendOK()
+				if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+					_ = conn.Close()
+					m.incRecvFail()
+					continue
+				}
+				_, got, err := conn.ReadMessage()
+				_ = conn.Close()
+				if err == nil && string(got) == "ping" {
+					m.incRecvOK(time.Since(start))
+				} else {
+					m.incRecvFail()
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	m.stop()
+	m.report("WSChurn")
+
+	if m.recvOK.Load() == 0 {
+		t.Fatal("no traffic flowed")
+	}
+
+	// Leak detection: every churned session must be reclaimed after its
+	// connection closes.
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if gw.Runtime().Sessions().Count() == 0 {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("WebSocket sessions leaked after churn: count=%d", gw.Runtime().Sessions().Count())
+}
+
+// ---------------------------------------------------------------------------
+// Test: HTTP concurrent requests + session leak detection
+// ---------------------------------------------------------------------------
+
+func TestStressHTTPRequests(t *testing.T) {
+	addr, gw := startStressHTTPServer(t)
+	m := &stressMetrics{}
+	m.start()
+
+	// Linger(0) transport: per-request HTTP sessions churn short-lived TCP
+	// connections and would exhaust the Windows ephemeral port range.
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConnsPerHost: 100,
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				d := net.Dialer{}
+				conn, err := d.DialContext(ctx, network, addr)
+				if err != nil {
+					return nil, err
+				}
+				if tcpConn, ok := conn.(*net.TCPConn); ok {
+					_ = tcpConn.SetLinger(0)
+				}
+				return conn, nil
+			},
+		},
+	}
+	payload := make([]byte, payloadSize)
+
+	var wg sync.WaitGroup
+	for i := 0; i < conns; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				if time.Since(m.startTime) > duration {
+					return
+				}
+				start := time.Now()
+				resp, err := client.Post("http://"+addr+"/", "application/octet-stream", bytes.NewReader(payload))
+				if err != nil {
+					m.incSendFail()
+					continue
+				}
+				body, err := io.ReadAll(resp.Body)
+				_ = resp.Body.Close()
+				if err != nil || len(body) != payloadSize {
+					m.incRecvFail()
+					continue
+				}
+				m.incSendOK()
+				m.incRecvOK(time.Since(start))
+			}
+		}()
+	}
+	wg.Wait()
+	m.stop()
+	m.report("HTTPRequests")
+
+	if m.recvOK.Load() == 0 {
+		t.Fatal("no traffic flowed")
+	}
+
+	// Leak detection: HTTP Mode B sessions are per-request and must not
+	// accumulate.
+	if count := gw.Runtime().Sessions().Count(); count != 0 {
+		t.Fatalf("HTTP sessions leaked: count=%d", count)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Non-TCP stress server helpers
+// ---------------------------------------------------------------------------
+
+func startStressUDPServer(t testing.TB, ttl time.Duration) (string, *udp.Server) {
+	t.Helper()
+	server := udp.NewServer(
+		udp.WithAddr("127.0.0.1:0"),
+		udp.WithSessionTTL(ttl),
+		udp.WithSweepInterval(500*time.Millisecond),
+		udp.WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gw := runtime.NewGateway()
+	if err := gw.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gw.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = gw.Stop(ctx)
+	})
+	return server.Addr().String(), server
+}
+
+func startStressWSServer(t testing.TB) (string, *runtime.Gateway) {
+	t.Helper()
+	server := websocket.NewServer(
+		websocket.WithAddr("127.0.0.1:0"),
+		websocket.WithPath("/ws"),
+		websocket.WithCheckOrigin(func(*http.Request) bool { return true }),
+		websocket.WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gw := runtime.NewGateway()
+	if err := gw.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gw.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = gw.Stop(ctx)
+	})
+	return server.Addr().String(), gw
+}
+
+func startStressHTTPServer(t testing.TB) (string, *runtime.Gateway) {
+	t.Helper()
+	server := newStressHTTPEchoServer()
+	gw := runtime.NewGateway()
+	if err := gw.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gw.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = gw.Stop(ctx)
+	})
+	return server.Addr().String(), gw
+}
+
+// newStressHTTPEchoServer builds the HTTP echo server for the stress test.
+func newStressHTTPEchoServer() *transporthttp.Server {
+	return transporthttp.NewServer(
+		transporthttp.WithAddr("127.0.0.1:0"),
+		transporthttp.WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
 }
