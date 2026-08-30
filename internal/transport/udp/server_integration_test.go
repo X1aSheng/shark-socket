@@ -201,6 +201,78 @@ func TestGatewayUDPHandlerPanicKeepsServerAlive(t *testing.T) {
 	}
 }
 
+// failAcceptPlugin rejects every OnAccept and counts OnAccept/OnClose calls.
+type failAcceptPlugin struct {
+	core.BasePlugin
+	acceptCalls atomic.Int32
+	closeCalls  atomic.Int32
+}
+
+func (p *failAcceptPlugin) Name() string { return "udp-fail-accept" }
+
+func (p *failAcceptPlugin) OnAccept(core.Session) error {
+	p.acceptCalls.Add(1)
+	return core.ErrPluginBlock
+}
+
+func (p *failAcceptPlugin) OnClose(core.Session) { p.closeCalls.Add(1) }
+
+// TestGatewayUDPOnAcceptFailureNoSession covers the getOrCreateSession
+// OnAccept-failure branch (previously uncovered): a plugin that rejects the
+// peer's OnAccept must leave no session behind, produce no response, and
+// must not fire OnClose for a session that was never accepted.
+func TestGatewayUDPOnAcceptFailureNoSession(t *testing.T) {
+	blocker := &failAcceptPlugin{}
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gateway := runtime.NewGateway(runtime.WithPlugins(blocker))
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer shutdownCancel()
+		_ = gateway.Stop(shutdownCtx)
+	}()
+
+	conn, err := net.Dial("udp", server.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.Write([]byte("hello")); err != nil {
+		t.Fatal(err)
+	}
+	// No response: the plugin rejected the peer before the handler ran.
+	if err := conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 1024)
+	if n, err := conn.Read(buf); err == nil {
+		t.Fatalf("unexpected response from rejected peer: %q", buf[:n])
+	}
+	// The plugin was asked exactly once and never closed (never accepted).
+	if got := blocker.acceptCalls.Load(); got != 1 {
+		t.Fatalf("accept calls = %d, want 1", got)
+	}
+	if got := blocker.closeCalls.Load(); got != 0 {
+		t.Fatalf("close calls = %d, want 0 (session never accepted)", got)
+	}
+	if server.SessionCount() != 0 {
+		t.Fatalf("session count = %d, want 0", server.SessionCount())
+	}
+	if count := gateway.Runtime().Sessions().Count(); count != 0 {
+		t.Fatalf("runtime session count = %d, want 0", count)
+	}
+}
+
 func TestGatewayUDPPluginDropSuppressesResponseAndKeepsSession(t *testing.T) {
 	server := NewServer(
 		WithAddr("127.0.0.1:0"),
