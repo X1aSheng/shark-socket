@@ -7,6 +7,16 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### Test Completeness — Batch 2 (2026-08-31)
+
+历史 V7/V8 修复无回归测试 + Cluster 消息路径的专项补齐：
+
+- **HTTP OnAccept 失败双 OnClose（V8 P2-4）**：拒绝插件 → 403，已接受插件仅获一次 OnClose（链回滚），会话不泄漏
+- **CloseAll 停机中途注册 + ctx 取消（V8 P2-1）**：Close 注册后继会话的 drain 循环测试；取消上下文立即中止且不关闭会话
+- **gRPC-Web 错误路径 trailer 后停写（V8 P3-7）**：handler 错误响应仅含帧序列（grpc-status 13 trailer），严格帧解析器保证 trailer 后无多余字节
+- **UDP getOrCreateSession OnAccept 失败分支**：拒绝插件 → 无响应、无会话、OnClose 零调用
+- **Cluster 消息路由**：`handleClusterMessage` 31.2% → **100%**（畸形消息告警丢弃、wrong-topic/空载荷静默丢弃、Broadcast 错误告警）
+
 ### Test Completeness (2026-08-31)
 
 针对协议连接管理与插件路径的测试缺口专项补齐（详见 `docs/reports/PROJECT-REVIEW-260809-091049.md` 后的逐项审计）：
