@@ -7,6 +7,15 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### Test Completeness — Batch 3 (2026-08-31)
+
+接线与广度补强（C8/C9/B6）：
+
+- **连接上限/接受速率接线（C8）**：`MaxConnections`/`AcceptRate` 此前存在于 TCP/WebSocket/gRPC-Web/QUIC 选项并已接线 Acceptor，但**无任何 setter 与 api 门面**（配置不可达）——补 4 组 `WithMaxConnections`/`WithAcceptRate` + 8 个 api 包装；端到端测试验证 TCP 超限即断、TCP 速率突发拒绝、WS/gRPC-Web 503、QUIC 连接被服务端关闭
+- **跨协议矩阵扩展（C9）**：插件链 OnMessage 矩阵从 3 协议扩到 **7 协议**（新增 CoAP/HTTP/gRPC-Web/QUIC）；新增 OnAccept 拦截矩阵——黑名单插件在 7 协议上行为一致（TCP/QUIC 断连、UDP/CoAP 无响应、HTTP/gRPC-Web 403、WS 升级后关闭）
+- **低覆盖项（B6）**：`cache.StartSweeper`/`Delete`、Blacklist CIDR 分支、`Persistence.SetLogger` 错误日志路径全部补测
+- **非 staged Stop（B6）**：5 个传输绕过网关直接 Start/Stop 的路径（此前 0%）全部补测，Stop 后监听器不再接受连接
+
 ### Test Completeness — Batch 2 (2026-08-31)
 
 历史 V7/V8 修复无回归测试 + Cluster 消息路径的专项补齐：
