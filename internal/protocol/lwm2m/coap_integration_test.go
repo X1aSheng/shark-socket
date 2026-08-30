@@ -44,6 +44,20 @@ func TestCoAPResponderLifecycle(t *testing.T) {
 		t.Fatal("registration missing")
 	}
 
+	// Update extends the lifetime through the same CoAP responder wiring.
+	ack = exchangeCoAP(t, conn, coap.Message{
+		Type:      coap.TypeCON,
+		Code:      coap.CodePost,
+		MessageID: 5,
+		Payload:   []byte("update device-1 120"),
+	})
+	if ack.Code != coap.CodeCreated || string(ack.Payload) != "updated device-1" {
+		t.Fatalf("update ack = %#v", ack)
+	}
+	if reg, ok := lwm.Registration("device-1"); !ok || reg.Lifetime != 120*time.Second {
+		t.Fatalf("lifetime after update = %#v ok=%v", reg, ok)
+	}
+
 	ack = exchangeCoAP(t, conn, coap.Message{
 		Type:      coap.TypeCON,
 		Code:      coap.CodePut,

@@ -1,6 +1,7 @@
 package lwm2m
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -64,5 +65,76 @@ func TestInvalidCoAPPayloadDoesNotMutateRegistrations(t *testing.T) {
 	}
 	if _, err := server.HandleCoAPPayload([]byte("unknown device-1")); err == nil {
 		t.Fatal("unknown command succeeded, want error")
+	}
+}
+
+// TestHandleCoAPPayloadUpdate covers the update command path of the text
+// responder (previously 0% coverage; only Server.Update itself was tested).
+func TestHandleCoAPPayloadUpdate(t *testing.T) {
+	server := NewServer()
+	if _, err := server.HandleCoAPPayload([]byte("register device-1 60 /3/0/1")); err != nil {
+		t.Fatal(err)
+	}
+	out, err := server.HandleCoAPPayload([]byte("update device-1 120"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != "updated device-1" {
+		t.Fatalf("output = %q, want updated device-1", out)
+	}
+	reg, ok := server.Registration("device-1")
+	if !ok {
+		t.Fatal("registration missing after update")
+	}
+	if reg.Lifetime != 120*time.Second {
+		t.Fatalf("lifetime = %v, want 2m", reg.Lifetime)
+	}
+	// Invalid field count must not mutate anything.
+	if _, err := server.HandleCoAPPayload([]byte("update device-1")); err != ErrInvalidCoAPPayload {
+		t.Fatalf("short update error = %v, want %v", err, ErrInvalidCoAPPayload)
+	}
+	// Unknown endpoint reports a registration error.
+	if _, err := server.HandleCoAPPayload([]byte("update missing 60")); err != ErrRegistrationGone {
+		t.Fatalf("unknown update error = %v, want %v", err, ErrRegistrationGone)
+	}
+}
+
+// TestHandleCoAPPayloadDiscover covers the discover command path of the text
+// responder (previously 0% coverage): an empty server reports no objects, and
+// a populated one lists objects and resources with their operation letters.
+func TestHandleCoAPPayloadDiscover(t *testing.T) {
+	server := NewServer()
+	out, err := server.HandleCoAPPayload([]byte("discover"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != "no objects registered" {
+		t.Fatalf("empty discover = %q, want no objects registered", out)
+	}
+
+	server.RegisterObject(ObjectDefinition{
+		ID:      3,
+		Name:    "Device",
+		Version: "1.0",
+		Resources: []ResourceDefinition{
+			{ID: 0, Name: "Manufacturer", Operations: OpRead},
+			{ID: 1, Name: "Mode", Operations: OpRead | OpWrite},
+			{ID: 2, Name: "Reboot", Operations: OpExecute},
+		},
+	})
+	out, err = server.HandleCoAPPayload([]byte("discover"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(out)
+	for _, want := range []string{
+		"3/Device/1.0",
+		"/3/0/0 Manufacturer R",
+		"/3/0/1 Mode RW",
+		"/3/0/2 Reboot E",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("discover output missing %q:\n%s", want, text)
+		}
 	}
 }
