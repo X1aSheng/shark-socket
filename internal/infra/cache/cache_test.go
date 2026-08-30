@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -34,5 +35,40 @@ func TestMemoryCacheMaintenance(t *testing.T) {
 	c.Clear()
 	if got := c.Len(); got != 0 {
 		t.Fatalf("len after clear = %d, want 0", got)
+	}
+}
+
+// TestMemoryCacheStartSweeper covers the background sweeper (previously 0%):
+// a short-TTL entry is removed by the periodic goroutine without any caller
+// touching the cache.
+func TestMemoryCacheStartSweeper(t *testing.T) {
+	c := NewMemory()
+	c.Set("k", []byte("v"), 50*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c.StartSweeper(ctx, 10*time.Millisecond)
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := c.Get("k"); !ok {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("background sweeper did not remove the expired entry")
+}
+
+// TestMemoryCacheDelete covers Delete (previously 0%): existing keys are
+// removed and deleting a missing key is a no-op.
+func TestMemoryCacheDelete(t *testing.T) {
+	c := NewMemory()
+	c.Set("k", []byte("v"), 0)
+	c.Delete("k")
+	if c.Has("k") {
+		t.Fatal("deleted key still present")
+	}
+	c.Delete("missing") // must not panic
+	if got := c.Len(); got != 0 {
+		t.Fatalf("len = %d, want 0", got)
 	}
 }

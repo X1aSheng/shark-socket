@@ -41,6 +41,21 @@ func TestBlacklistBlocksExactIP(t *testing.T) {
 	}
 }
 
+// TestBlacklistBlocksCIDR covers the CIDR path of Blacklist.OnAccept
+// (previously uncovered): an address inside a blocked network is rejected
+// and an address outside is allowed.
+func TestBlacklistBlocksCIDR(t *testing.T) {
+	p := NewBlacklist("10.0.0.0/8")
+	inside := fakeSession{addr: &net.TCPAddr{IP: net.ParseIP("10.1.2.3"), Port: 1}}
+	if err := p.OnAccept(inside); err != core.ErrPluginBlock {
+		t.Fatalf("CIDR-inside error = %v, want %v", err, core.ErrPluginBlock)
+	}
+	outside := fakeSession{addr: &net.TCPAddr{IP: net.ParseIP("192.168.1.1"), Port: 1}}
+	if err := p.OnAccept(outside); err != nil {
+		t.Fatalf("CIDR-outside error = %v, want nil", err)
+	}
+}
+
 func TestRateLimitDropsOverLimit(t *testing.T) {
 	p := NewRateLimit(1, time.Second)
 	sess := fakeSession{addr: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234}}
@@ -371,6 +386,37 @@ func TestPersistenceOnMessageAppendsToLog(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("log len = %d, want 1", n)
+	}
+}
+
+// failingStore fails every Save so error paths surface through the logger.
+type failingStore struct{ store.Store }
+
+func (failingStore) Save(string, string, []byte) error { return errors.New("save failed") }
+func (failingStore) Load(string, string) ([]byte, bool, error) {
+	return nil, false, nil
+}
+func (failingStore) Delete(string, string) error { return nil }
+func (failingStore) List(string) ([]string, error) {
+	return nil, nil
+}
+func (failingStore) Close() error { return nil }
+
+// TestPersistenceSetLoggerSurfacesErrors covers SetLogger and the error
+// logging path (previously 0%): a failing store surfaces an error through
+// the configured logger.
+func TestPersistenceSetLoggerSurfacesErrors(t *testing.T) {
+	logger := observability.NewMemoryLogger()
+	p := NewPersistence(failingStore{}, "sessions")
+	p.SetLogger(logger)
+	sess := fakeSession{addr: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234}}
+	_ = p.OnAccept(sess)
+	entries := logger.Entries()
+	if len(entries) == 0 {
+		t.Fatal("no log entries, want an error entry from the failing store")
+	}
+	if entries[0].Level != "error" {
+		t.Fatalf("entry level = %q, want error", entries[0].Level)
 	}
 }
 
