@@ -152,6 +152,78 @@ func (s *metaTrackingSession) GetMeta(k string) (any, bool) {
 	return v, ok
 }
 
+// TestRateLimitSweepExpiresCounters verifies that sweep() removes stale
+// sliding-window timestamps so a peer gets a fresh window after the old one
+// expires (previously 0% coverage for the background cleanup path).
+func TestRateLimitSweepExpiresCounters(t *testing.T) {
+	p := NewRateLimit(2, 50*time.Millisecond)
+	sess := fakeSession{addr: &net.TCPAddr{IP: net.ParseIP("10.9.9.9"), Port: 1}}
+	// Fill the window: 2 accepted, the 3rd is dropped.
+	if _, err := p.OnMessage(sess, []byte("a")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.OnMessage(sess, []byte("b")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.OnMessage(sess, []byte("c")); err != core.ErrPluginDrop {
+		t.Fatalf("3rd message error = %v, want %v", err, core.ErrPluginDrop)
+	}
+	// Still within the window: dropped.
+	if _, err := p.OnMessage(sess, []byte("d")); err != core.ErrPluginDrop {
+		t.Fatalf("4th message error = %v, want %v", err, core.ErrPluginDrop)
+	}
+	time.Sleep(60 * time.Millisecond)
+	p.sweep()
+	// After the sweep the stale timestamps are gone: accepted again.
+	if _, err := p.OnMessage(sess, []byte("e")); err != nil {
+		t.Fatalf("message after sweep = %v, want nil (fresh window)", err)
+	}
+}
+
+// TestAutoBanSweepExpiresBans verifies that sweep() removes expired bans
+// (previously 0% coverage for the background cleanup path).
+func TestAutoBanSweepExpiresBans(t *testing.T) {
+	p := NewAutoBan(1)
+	p.banDuration = 50 * time.Millisecond
+	sess := fakeSession{addr: &net.TCPAddr{IP: net.ParseIP("10.9.9.9"), Port: 1}}
+	if _, err := p.OnMessage(sess, []byte("x")); err != core.ErrPluginDrop {
+		t.Fatalf("OnMessage error = %v, want %v", err, core.ErrPluginDrop)
+	}
+	if !p.Banned("10.9.9.9") {
+		t.Fatal("peer not banned after threshold")
+	}
+	// A sweep before the ban expires keeps it.
+	p.sweep()
+	if !p.Banned("10.9.9.9") {
+		t.Fatal("ban expired before banDuration elapsed")
+	}
+	time.Sleep(60 * time.Millisecond)
+	p.sweep()
+	if p.Banned("10.9.9.9") {
+		t.Fatal("expired ban not removed by sweep")
+	}
+}
+
+// TestAutoBanSweepExpiresCounts verifies that sweep() removes stale
+// below-threshold counters, so a slow client starts counting from zero again.
+func TestAutoBanSweepExpiresCounts(t *testing.T) {
+	p := NewAutoBan(5)
+	p.banDuration = 50 * time.Millisecond
+	sess := fakeSession{addr: &net.TCPAddr{IP: net.ParseIP("10.9.9.9"), Port: 1}}
+	if p.Record(sess) {
+		t.Fatal("single message banned before threshold")
+	}
+	time.Sleep(60 * time.Millisecond)
+	p.sweep()
+	// If the stale counter survived the sweep, these 4 records would reach
+	// the threshold (1+4=5) and ban; a fresh counter accepts them all.
+	for i := 0; i < 4; i++ {
+		if p.Record(sess) {
+			t.Fatalf("record %d banned: stale counter was not removed by sweep", i)
+		}
+	}
+}
+
 // closeTrackingSession records Close calls so tests can assert a session was
 // terminated.
 type closeTrackingSession struct {
