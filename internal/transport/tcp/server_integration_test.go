@@ -157,6 +157,117 @@ func TestGatewayTCPHandlerPanicClosesSession(t *testing.T) {
 	_ = conn2.Close()
 }
 
+// TestTCPMaxConnectionsRejectsExcess verifies the accept-cap wiring end to
+// end: with a cap of 1, the first connection is served normally and the
+// second is closed immediately on accept.
+func TestTCPMaxConnectionsRejectsExcess(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithMaxConnections(1),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer shutdownCancel()
+		_ = gateway.Stop(shutdownCtx)
+	}()
+
+	framer := LengthPrefixFramer{MaxFrameBytes: 1024}
+
+	// First connection is served normally and must stay open.
+	conn1, err := dialWithLinger(context.Background(), "tcp", server.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn1.Close()
+	if err := framer.WriteFrame(conn1, []byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := framer.ReadFrame(conn1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "ping" {
+		t.Fatalf("echo = %q, want ping", got)
+	}
+
+	// Second connection exceeds the cap: closed immediately, so the client
+	// read sees EOF.
+	conn2, err := dialWithLinger(context.Background(), "tcp", server.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn2.Close()
+	if err := conn2.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := framer.ReadFrame(conn2); err == nil {
+		t.Fatal("excess connection was not closed")
+	}
+}
+
+// TestTCPAcceptRateRejectsBurst verifies the accept-rate wiring end to end:
+// with a rate of 1/s (burst 1), a second connection inside the same window
+// is closed immediately.
+func TestTCPAcceptRateRejectsBurst(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithAcceptRate(1),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer shutdownCancel()
+		_ = gateway.Stop(shutdownCtx)
+	}()
+
+	framer := LengthPrefixFramer{MaxFrameBytes: 1024}
+
+	// First connection consumes the single burst token and is served.
+	conn1, err := dialWithLinger(context.Background(), "tcp", server.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn1.Close()
+	if err := framer.WriteFrame(conn1, []byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := framer.ReadFrame(conn1); err != nil {
+		t.Fatal(err)
+	}
+
+	// Second connection inside the same second has no token: closed.
+	conn2, err := dialWithLinger(context.Background(), "tcp", server.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn2.Close()
+	if err := conn2.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := framer.ReadFrame(conn2); err == nil {
+		t.Fatal("rate-limited connection was not closed")
+	}
+}
+
 func TestTCPClientEcho(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

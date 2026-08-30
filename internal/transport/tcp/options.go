@@ -105,3 +105,16 @@ func WithWorkers(count int, queueSize int, policy FullPolicy) Option {
 		o.FullPolicy = policy
 	}
 }
+
+// WithMaxConnections caps concurrent accepted connections. Values <= 0 mean
+// unlimited; excess connection attempts are closed immediately on accept.
+func WithMaxConnections(max int64) Option {
+	return func(o *Options) { o.MaxConnections = max }
+}
+
+// WithAcceptRate limits the connection acceptance rate in connections per
+// second (token bucket with a burst of one). Values <= 0 mean unlimited;
+// excess connection attempts are closed immediately.
+func WithAcceptRate(rate float64) Option {
+	return func(o *Options) { o.AcceptRate = rate }
+}

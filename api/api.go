@@ -132,6 +132,14 @@ func WithTCPTLS(config *tls.Config) TCPOption {
 	return tcp.WithTLS(config)
 }
 
+func WithTCPMaxConnections(max int64) TCPOption {
+	return tcp.WithMaxConnections(max)
+}
+
+func WithTCPAcceptRate(rate float64) TCPOption {
+	return tcp.WithAcceptRate(rate)
+}
+
 func NewTCPClient(addr string, opts ...TCPClientOption) *TCPClient {
 	return tcp.NewClient(addr, opts...)
 }
@@ -192,6 +200,14 @@ func WithWebSocketCheckOrigin(fn func(*http.Request) bool) WebSocketOption {
 	return websocket.WithCheckOrigin(fn)
 }
 
+func WithWebSocketMaxConnections(max int64) WebSocketOption {
+	return websocket.WithMaxConnections(max)
+}
+
+func WithWebSocketAcceptRate(rate float64) WebSocketOption {
+	return websocket.WithAcceptRate(rate)
+}
+
 func NewCoAPServer(opts ...CoAPOption) *CoAPServer {
 	return coap.NewServer(opts...)
 }
@@ -248,6 +264,14 @@ func WithQUICHandler(handler Handler) QUICOption {
 	return quic.WithHandler(handler)
 }
 
+func WithQUICMaxConnections(max int64) QUICOption {
+	return quic.WithMaxConnections(max)
+}
+
+func WithQUICAcceptRate(rate float64) QUICOption {
+	return quic.WithAcceptRate(rate)
+}
+
 func NewGRPCWebServer(opts ...GRPCWebOption) *GRPCWebServer {
 	return grpcweb.NewServer(opts...)
 }
@@ -270,6 +294,14 @@ func WithGRPCWebWebSocketMode(path string) GRPCWebOption {
 
 func WithGRPCWebCheckOrigin(fn func(*http.Request) bool) GRPCWebOption {
 	return grpcweb.WithCheckOrigin(fn)
+}
+
+func WithGRPCWebMaxConnections(max int64) GRPCWebOption {
+	return grpcweb.WithMaxConnections(max)
+}
+
+func WithGRPCWebAcceptRate(rate float64) GRPCWebOption {
+	return grpcweb.WithAcceptRate(rate)
 }
 
 func NewBlacklistPlugin(entries ...string) *BlacklistPlugin {

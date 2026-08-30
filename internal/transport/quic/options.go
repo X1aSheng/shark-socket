@@ -42,3 +42,16 @@ func WithTLS(config *tls.Config) Option {
 func WithHandler(handler core.Handler) Option {
 	return func(o *Options) { o.Handler = handler }
 }
+
+// WithMaxConnections caps concurrent accepted connections. Values <= 0 mean
+// unlimited; excess connections are closed with an application error.
+func WithMaxConnections(max int64) Option {
+	return func(o *Options) { o.MaxConnections = max }
+}
+
+// WithAcceptRate limits the connection acceptance rate in connections per
+// second (token bucket with a burst of one). Values <= 0 mean unlimited;
+// excess connections are closed with an application error.
+func WithAcceptRate(rate float64) Option {
+	return func(o *Options) { o.AcceptRate = rate }
+}

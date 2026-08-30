@@ -107,6 +107,49 @@ func TestWebSocketHandlerPanicClosesSession(t *testing.T) {
 	}
 }
 
+// TestWebSocketMaxConnectionsRejectsExcess verifies the accept-cap wiring end
+// to end: with a cap of 1, the first upgrade succeeds and a second
+// concurrent upgrade is rejected with 503.
+func TestWebSocketMaxConnectionsRejectsExcess(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithPath("/ws"),
+		WithMaxConnections(1),
+		WithCheckOrigin(func(*http.Request) bool { return true }),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer shutdownCancel()
+		_ = gateway.Stop(shutdownCtx)
+	}()
+
+	u := url.URL{Scheme: "ws", Host: server.Addr().String(), Path: "/ws"}
+	// First connection is served and stays open, exhausting the cap.
+	conn1, _, err := gws.DefaultDialer.Dial(u.String(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn1.Close()
+
+	_, resp, err := gws.DefaultDialer.Dial(u.String(), nil)
+	if err == nil {
+		t.Fatal("excess upgrade succeeded")
+	}
+	if resp == nil || resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %v, want 503", resp)
+	}
+}
+
 func TestWebSocketGatewayEchoAndShutdown(t *testing.T) {
 	server := NewServer(
 		WithAddr("127.0.0.1:0"),

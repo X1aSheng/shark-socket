@@ -228,6 +228,75 @@ func TestGRPCWebHandlerErrorSendsOnlyTrailers(t *testing.T) {
 	}
 }
 
+// TestGRPCWebMaxConnectionsRejectsExcess verifies the accept-cap wiring end
+// to end: with a cap of 1, a second concurrent request is rejected with 503
+// while the first is still in flight.
+func TestGRPCWebMaxConnectionsRejectsExcess(t *testing.T) {
+	release := make(chan struct{})
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithMaxConnections(1),
+		WithCheckOrigin(func(*http.Request) bool { return true }),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			<-release
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer stopGateway(t, gateway)
+
+	newRequest := func() *http.Request {
+		req, err := http.NewRequest(http.MethodPost, "http://"+server.Addr().String()+"/grpc", bytes.NewReader(testGRPCWebDataFrame([]byte("hello"))))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("content-type", "application/grpc-web+proto")
+		req.Header.Set("x-grpc-web", "1")
+		return req
+	}
+
+	// First request blocks in the handler, holding the only slot.
+	done1 := make(chan error, 1)
+	resp1Ch := make(chan *http.Response, 1)
+	go func() {
+		resp, err := http.DefaultClient.Do(newRequest())
+		if err != nil {
+			done1 <- err
+			return
+		}
+		resp1Ch <- resp
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		done1 <- nil
+	}()
+	// Give the first request time to register before the second arrives.
+	time.Sleep(200 * time.Millisecond)
+
+	resp2, err := http.DefaultClient.Do(newRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", resp2.StatusCode)
+	}
+
+	close(release)
+	if err := <-done1; err != nil {
+		t.Fatal(err)
+	}
+	resp1 := <-resp1Ch
+	if resp1.StatusCode != http.StatusOK {
+		t.Fatalf("first request status = %d, want 200", resp1.StatusCode)
+	}
+}
+
 func testGRPCWebDataFrame(payload []byte) []byte {
 	frame := []byte{0}
 	frame = binary.BigEndian.AppendUint32(frame, uint32(len(payload)))

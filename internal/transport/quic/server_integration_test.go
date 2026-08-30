@@ -219,6 +219,55 @@ func (p dropPlugin) OnMessage(_ core.Session, _ []byte) ([]byte, error) {
 	return nil, core.ErrPluginDrop
 }
 
+// TestQUICMaxConnectionsRejectsExcess verifies the accept-cap wiring end to
+// end: with a cap of 1, a second connection is rejected (handshake fails or
+// the connection is closed with an application error before any stream can
+// be used).
+func TestQUICMaxConnectionsRejectsExcess(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithTLS(testTLSConfig(t)),
+		WithMaxConnections(1),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer stopGateway(t, gateway)
+
+	// First connection stays open, exhausting the cap.
+	conn1, err := quicgo.DialAddr(context.Background(), server.Addr().String(), ClientTLSConfig(true), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn1.CloseWithError(0, "")
+
+	// The second connection must be rejected: the server closes it with an
+	// application error right after the handshake, which cancels the client
+	// connection context. (Stream writes are buffered by quic-go and would
+	// report success even on a closed connection, so the context is the
+	// reliable signal.)
+	conn2, err := quicgo.DialAddr(context.Background(), server.Addr().String(), ClientTLSConfig(true), nil)
+	if err != nil {
+		return // handshake rejected: pass
+	}
+	defer conn2.CloseWithError(0, "")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	select {
+	case <-conn2.Context().Done():
+		return // connection closed by the server: pass
+	case <-ctx.Done():
+		t.Fatal("excess QUIC connection stayed usable")
+	}
+}
+
 func stopGateway(tb testing.TB, gateway *runtime.Gateway) {
 	tb.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

@@ -85,3 +85,16 @@ func WithPongTimeout(timeout time.Duration) Option {
 		}
 	}
 }
+
+// WithMaxConnections caps concurrent accepted connections. Values <= 0 mean
+// unlimited; excess upgrade attempts are rejected with 503.
+func WithMaxConnections(max int64) Option {
+	return func(o *Options) { o.MaxConnections = max }
+}
+
+// WithAcceptRate limits the connection acceptance rate in connections per
+// second (token bucket with a burst of one). Values <= 0 mean unlimited;
+// excess upgrade attempts are rejected with 503.
+func WithAcceptRate(rate float64) Option {
+	return func(o *Options) { o.AcceptRate = rate }
+}
