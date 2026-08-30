@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	stdhttp "net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -172,6 +173,74 @@ func TestHTTPModeBHandlerErrorReturns500AndCleansSession(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != stdhttp.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, stdhttp.StatusInternalServerError)
+	}
+	if count := gateway.Runtime().Sessions().Count(); count != 0 {
+		t.Fatalf("session count = %d, want 0", count)
+	}
+}
+
+// countPlugin tracks OnAccept/OnClose calls so tests can assert rollback
+// semantics (a failed OnAccept must not produce a second transport-level
+// OnClose for a session that was never fully accepted).
+type countPlugin struct {
+	core.BasePlugin
+	acceptCalls atomic.Int32
+	closeCalls  atomic.Int32
+	failAccept  bool
+}
+
+func (p *countPlugin) Name() string { return "http-count" }
+
+func (p *countPlugin) OnAccept(core.Session) error {
+	p.acceptCalls.Add(1)
+	if p.failAccept {
+		return errors.New("rejected")
+	}
+	return nil
+}
+
+func (p *countPlugin) OnClose(core.Session) { p.closeCalls.Add(1) }
+
+// TestHTTPOnAcceptFailureNoDoubleClose is the regression test for the V8 P2-4
+// fix: when a plugin rejects OnAccept, the plugin chain rolls back the
+// already-accepted plugin (OnClose exactly once), and the HTTP transport must
+// not fire OnClose again for a session that was never fully accepted.
+func TestHTTPOnAcceptFailureNoDoubleClose(t *testing.T) {
+	okPlugin := &countPlugin{}
+	badPlugin := &countPlugin{failAccept: true}
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gateway := runtime.NewGateway(runtime.WithPlugins(okPlugin, badPlugin))
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer stopGateway(t, gateway)
+
+	resp, err := stdhttp.Post("http://"+server.Addr().String()+"/", "text/plain", bytes.NewReader([]byte("hello")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != stdhttp.StatusForbidden {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, stdhttp.StatusForbidden)
+	}
+	if badPlugin.acceptCalls.Load() != 1 {
+		t.Fatalf("bad plugin accept calls = %d, want 1", badPlugin.acceptCalls.Load())
+	}
+	// Give any (incorrect) transport-level OnClose time to fire.
+	time.Sleep(200 * time.Millisecond)
+	if got := okPlugin.closeCalls.Load(); got != 1 {
+		t.Fatalf("ok plugin close calls = %d, want exactly 1 (chain rollback only)", got)
+	}
+	if got := badPlugin.closeCalls.Load(); got != 0 {
+		t.Fatalf("bad plugin close calls = %d, want 0 (never accepted)", got)
 	}
 	if count := gateway.Runtime().Sessions().Count(); count != 0 {
 		t.Fatalf("session count = %d, want 0", count)
