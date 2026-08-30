@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -139,6 +140,65 @@ func TestUDPSessionTTL(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("session did not expire: server=%d runtime=%d", server.SessionCount(), gateway.Runtime().Sessions().Count())
+}
+
+// TestGatewayUDPHandlerPanicKeepsServerAlive is the regression test for the
+// V8 P1-2 fix that wrapped the plain-UDP read loop in shared.CallHandler: a
+// panicking user handler must be recovered (dropping the pseudo-session)
+// instead of crashing the process, and the server keeps serving.
+func TestGatewayUDPHandlerPanicKeepsServerAlive(t *testing.T) {
+	var calls atomic.Int32
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			if calls.Add(1) == 1 {
+				panic("user handler boom")
+			}
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer shutdownCancel()
+		_ = gateway.Stop(shutdownCtx)
+	}()
+
+	conn, err := net.Dial("udp", server.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	// First datagram panics in the handler. The panic is recovered and the
+	// pseudo-session dropped; the process survives.
+	if _, err := conn.Write([]byte("boom")); err != nil {
+		t.Fatal(err)
+	}
+	// Second datagram proves the server is still alive: it is echoed back.
+	if _, err := conn.Write([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 1024)
+	n, err := conn.Read(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(buf[:n]) != "ping" {
+		t.Fatalf("echo = %q, want ping", buf[:n])
+	}
+	if server.SessionCount() != 1 {
+		t.Fatalf("session count = %d, want 1", server.SessionCount())
+	}
 }
 
 func TestGatewayUDPPluginDropSuppressesResponseAndKeepsSession(t *testing.T) {

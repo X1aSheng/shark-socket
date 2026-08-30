@@ -334,6 +334,81 @@ func TestCoAPDTLSOptions(t *testing.T) {
 	}
 }
 
+// TestGatewayCoAPHandlerPanicKeepsServerAlive verifies that a panicking user
+// handler on the plain-UDP CoAP path is recovered by shared.CallHandler: the
+// panicking request gets no ACK and its session is dropped, and a follow-up
+// CON from the same peer is answered normally (the process survives).
+func TestGatewayCoAPHandlerPanicKeepsServerAlive(t *testing.T) {
+	var calls atomic.Int32
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			if calls.Add(1) == 1 {
+				panic("user handler boom")
+			}
+			return nil
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer stopGateway(t, gateway)
+
+	conn, err := net.Dial("udp", server.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	// First CON panics in the handler: recovered, session dropped, no ACK.
+	req1 := Message{Type: TypeCON, Code: CodeGet, MessageID: 1, Payload: []byte("boom")}
+	data1, err := req1.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Write(data1); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 1024)
+	if n, err := conn.Read(buf); err == nil {
+		t.Fatalf("unexpected response after handler panic: %x", buf[:n])
+	}
+
+	// Second CON proves the server is still alive: it is ACKed normally.
+	req2 := Message{Type: TypeCON, Code: CodeGet, MessageID: 2, Payload: []byte("ping")}
+	data2, err := req2.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Write(data2); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	n, err := conn.Read(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ack, err := Parse(buf[:n])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ack.Type != TypeACK || ack.MessageID != 2 || ack.Code != CodeContent {
+		t.Fatalf("ack = type %d code %d mid %d, want ACK(CodeContent, mid 2)", ack.Type, ack.Code, ack.MessageID)
+	}
+	if server.SessionCount() != 1 {
+		t.Fatalf("session count = %d, want 1", server.SessionCount())
+	}
+}
+
 func TestCoAPDTLSEcho(t *testing.T) {
 	cert, pool := generateTestCert(t)
 	tlsCfg := &tls.Config{

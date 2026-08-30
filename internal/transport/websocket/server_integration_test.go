@@ -37,6 +37,76 @@ func (p *closeCountingPlugin) OnClose(core.Session) {
 	p.closed.Add(1)
 }
 
+// TestWebSocketHandlerPanicClosesSession verifies that a panicking user
+// handler is recovered by shared.CallHandler: the session is closed (the
+// client sees the connection drop) and the server keeps accepting new
+// connections.
+func TestWebSocketHandlerPanicClosesSession(t *testing.T) {
+	var calls atomic.Int32
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithPath("/ws"),
+		WithCheckOrigin(func(*http.Request) bool { return true }),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			if calls.Add(1) == 1 {
+				panic("user handler boom")
+			}
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer shutdownCancel()
+		_ = gateway.Stop(shutdownCtx)
+	}()
+
+	u := url.URL{Scheme: "ws", Host: server.Addr().String(), Path: "/ws"}
+
+	// First connection: the panicking handler must close the session, so the
+	// client read observes the close instead of the process crashing.
+	conn, _, err := gws.DefaultDialer.Dial(u.String(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.WriteMessage(gws.BinaryMessage, []byte("boom")); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := conn.ReadMessage(); err == nil {
+		t.Fatal("expected connection to be closed after handler panic")
+	}
+	_ = conn.Close()
+
+	// Second connection proves the server is still alive and serving.
+	conn2, _, err := gws.DefaultDialer.Dial(u.String(), nil)
+	if err != nil {
+		t.Fatalf("server not serving after handler panic: %v", err)
+	}
+	defer conn2.Close()
+	if err := conn2.WriteMessage(gws.BinaryMessage, []byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn2.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	_, got, err := conn2.ReadMessage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "ping" {
+		t.Fatalf("echo = %q, want ping", got)
+	}
+}
+
 func TestWebSocketGatewayEchoAndShutdown(t *testing.T) {
 	server := NewServer(
 		WithAddr("127.0.0.1:0"),
