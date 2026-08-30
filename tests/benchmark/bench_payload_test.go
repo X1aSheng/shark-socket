@@ -125,6 +125,9 @@ func BenchmarkWSEcho_PayloadSize(b *testing.B) {
 				if err := conn.WriteMessage(gws.BinaryMessage, payload); err != nil {
 					b.Fatal(err)
 				}
+				if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+					b.Fatal(err)
+				}
 				_, got, err := conn.ReadMessage()
 				if err != nil {
 					b.Fatal(err)

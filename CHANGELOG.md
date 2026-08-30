@@ -7,6 +7,14 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### Performance & Resource Improvements (2026-08-26)
+
+- **RateLimit 分片锁**: 单一全局 Mutex 改为 32 分片（maphash 进程随机种子选择分片，防攻击者构造同分片碰撞放大锁竞争）；8 核并行微基准 243ns → 75.8ns（3.2x 扩展），单插件 TCP echo 延迟 53.5µs → 51.5µs、每消息分配 10 → 7
+- **插件 per-message 键分配消除**: RateLimit/AutoBan 的 remote-IP 键首次计算后缓存到 session meta，每消息的 SplitHostPort 字符串分配降为每会话一次
+- **DTLS 读缓冲从 64 KiB 降到 16 KiB（可配置）**: 每个 DTLS 连接持有独立读缓冲，旧默认下 1 万 DTLS 对端仅读缓冲即 ~640MB；新增 `WithUDPDTLSReadBufferBytes` / `WithCoAPDTLSReadBufferBytes`（api 门面同步暴露），明文 UDP 共享缓冲仍为 64 KiB
+- **基准缺陷修复**: FullChain 系列基准的 `NewAutoBan(100)` 在第 100 条消息即断开连接导致 EOF 失败（并因 WS 基准无读超时而挂死整套基准）——阈值改为 `math.MaxInt` 以测量纯计数开销；WS 基准补 `SetReadDeadline`，失败快速报错
+- 新增 `internal/plugin/benchmark_test.go`（RateLimit 单对端/多对端并行微基准）与分片隔离、键缓存单元测试
+
 ### CI Hardening (2026-08-09)
 
 - **docker-build**: builds with the default Go module proxy

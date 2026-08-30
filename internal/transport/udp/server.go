@@ -147,6 +147,15 @@ func (s *Server) Addr() net.Addr {
 	return s.conn.LocalAddr()
 }
 
+// dtlsReadBufferSize returns the per-DTLS-connection read buffer size,
+// falling back to MaxDatagram when the option is unset (zero value).
+func (s *Server) dtlsReadBufferSize() int {
+	if s.opts.DTLSReadBufferBytes > 0 {
+		return s.opts.DTLSReadBufferBytes
+	}
+	return s.opts.MaxDatagram
+}
+
 func (s *Server) SessionCount() int {
 	count := 0
 	s.sessions.Range(func(_, _ any) bool {
@@ -203,7 +212,7 @@ func (s *Server) handleDTLSConn(ctx context.Context, conn net.Conn) {
 	}
 	accepted = true
 
-	buf := make([]byte, s.opts.MaxDatagram)
+	buf := make([]byte, s.dtlsReadBufferSize())
 	for {
 		select {
 		case <-ctx.Done():

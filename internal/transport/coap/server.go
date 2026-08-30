@@ -192,6 +192,15 @@ func (s *Server) SessionCount() int {
 	return count
 }
 
+// dtlsReadBufferSize returns the per-DTLS-connection read buffer size,
+// falling back to MaxDatagram when the option is unset (zero value).
+func (s *Server) dtlsReadBufferSize() int {
+	if s.opts.DTLSReadBufferBytes > 0 {
+		return s.opts.DTLSReadBufferBytes
+	}
+	return s.opts.MaxDatagram
+}
+
 // dtlsAcceptLoop accepts DTLS connections. Each connection is handled
 // in its own goroutine, similar to TCP accept.
 func (s *Server) dtlsAcceptLoop(ctx context.Context) {
@@ -242,7 +251,7 @@ func (s *Server) handleDTLSConn(ctx context.Context, conn net.Conn) {
 	}
 	accepted = true
 
-	buf := make([]byte, s.opts.MaxDatagram)
+	buf := make([]byte, s.dtlsReadBufferSize())
 	for {
 		select {
 		case <-ctx.Done():

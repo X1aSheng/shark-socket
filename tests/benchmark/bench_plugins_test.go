@@ -2,6 +2,7 @@ package benchmark
 
 import (
 	"context"
+	"math"
 	"net"
 	"net/url"
 	"testing"
@@ -107,7 +108,7 @@ func BenchmarkPluginChain_FullChain(b *testing.B) {
 			tcp.WithAddr("127.0.0.1:0"),
 			tcp.WithHandler(echoHandler),
 		)
-	}, plugin.NewBlacklist("192.168.0.1"), plugin.NewAutoBan(100), plugin.NewRateLimit(1000000, time.Second), plugin.NewPersistence(store.NewMemory(), "bench"))
+	}, plugin.NewBlacklist("192.168.0.1"), plugin.NewAutoBan(math.MaxInt), plugin.NewRateLimit(1000000, time.Second), plugin.NewPersistence(store.NewMemory(), "bench"))
 	client := tcp.NewClient(h.Addr, tcp.WithClientLinger(0))
 	if err := client.Connect(context.Background()); err != nil {
 		b.Fatal(err)
@@ -201,7 +202,7 @@ func BenchmarkPluginChain_FullChain_UDP(b *testing.B) {
 			udp.WithAddr("127.0.0.1:0"),
 			udp.WithHandler(echoHandler),
 		)
-	}, plugin.NewBlacklist("192.168.0.1"), plugin.NewAutoBan(100), plugin.NewRateLimit(1000000, time.Second), plugin.NewPersistence(store.NewMemory(), "bench"))
+	}, plugin.NewBlacklist("192.168.0.1"), plugin.NewAutoBan(math.MaxInt), plugin.NewRateLimit(1000000, time.Second), plugin.NewPersistence(store.NewMemory(), "bench"))
 	conn, err := net.Dial("udp", h.Addr)
 	if err != nil {
 		b.Fatal(err)
@@ -251,6 +252,9 @@ func BenchmarkPluginChain_Blacklist_WS(b *testing.B) {
 		if err := conn.WriteMessage(gws.BinaryMessage, payload); err != nil {
 			b.Fatal(err)
 		}
+		if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			b.Fatal(err)
+		}
 		_, got, err := conn.ReadMessage()
 		if err != nil {
 			b.Fatal(err)
@@ -285,6 +289,9 @@ func BenchmarkPluginChain_RateLimit_WS(b *testing.B) {
 		if err := conn.WriteMessage(gws.BinaryMessage, payload); err != nil {
 			b.Fatal(err)
 		}
+		if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			b.Fatal(err)
+		}
 		_, got, err := conn.ReadMessage()
 		if err != nil {
 			b.Fatal(err)
@@ -303,7 +310,7 @@ func BenchmarkPluginChain_FullChain_WS(b *testing.B) {
 			websocket.WithPath("/ws"),
 			websocket.WithHandler(echoHandler), websocket.WithCheckOrigin(allowAllOrigins),
 		)
-	}, plugin.NewBlacklist("192.168.0.1"), plugin.NewAutoBan(100), plugin.NewRateLimit(1000000, time.Second), plugin.NewPersistence(store.NewMemory(), "bench"))
+	}, plugin.NewBlacklist("192.168.0.1"), plugin.NewAutoBan(math.MaxInt), plugin.NewRateLimit(1000000, time.Second), plugin.NewPersistence(store.NewMemory(), "bench"))
 	u := url.URL{Scheme: "ws", Host: h.Addr, Path: "/ws"}
 	conn, _, err := gws.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
@@ -317,6 +324,9 @@ func BenchmarkPluginChain_FullChain_WS(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		if err := conn.WriteMessage(gws.BinaryMessage, payload); err != nil {
+			b.Fatal(err)
+		}
+		if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
 			b.Fatal(err)
 		}
 		_, got, err := conn.ReadMessage()

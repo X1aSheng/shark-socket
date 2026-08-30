@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"sync/atomic"
 	"testing"
@@ -60,12 +61,95 @@ func TestRateLimitMemoryBounded(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		_, _ = p.OnMessage(sess, []byte("x"))
 	}
-	p.mu.Lock()
-	stamps := p.counters["10.0.0.1"]
-	p.mu.Unlock()
+	sh := p.shardFor("10.0.0.1")
+	sh.mu.Lock()
+	stamps := sh.counters["10.0.0.1"]
+	sh.mu.Unlock()
 	if len(stamps) > 3 {
 		t.Fatalf("counter slice length = %d, want <= 3 (bounded by rate)", len(stamps))
 	}
+}
+
+// TestRateLimitShardsIsolatePeers verifies that two peers hashing to
+// different shards never contend on the same lock and are counted
+// independently.
+func TestRateLimitShardsIsolatePeers(t *testing.T) {
+	p := NewRateLimit(2, time.Minute)
+	// Scan for two addresses that land on different shards so the test holds
+	// regardless of the process-random maphash seed.
+	ip := func(n int) string { return fmt.Sprintf("10.%d.%d.%d", n/65536, (n/256)%256, n%256) }
+	var keyA, keyB string
+	for n := 1; n < 4096 && keyB == ""; n++ {
+		candidate := ip(n)
+		if keyA == "" {
+			keyA = candidate
+			continue
+		}
+		if p.shardFor(candidate) != p.shardFor(keyA) {
+			keyB = candidate
+		}
+	}
+	if keyB == "" {
+		t.Fatal("could not find two addresses on different shards")
+	}
+	a := fakeSession{addr: &net.TCPAddr{IP: net.ParseIP(keyA), Port: 1}}
+	b := fakeSession{addr: &net.TCPAddr{IP: net.ParseIP(keyB), Port: 2}}
+	// Each peer sends 2 accepted messages, then the 3rd is dropped.
+	for i := 0; i < 2; i++ {
+		if _, err := p.OnMessage(a, []byte("x")); err != nil {
+			t.Fatalf("peer a message %d: %v", i, err)
+		}
+		if _, err := p.OnMessage(b, []byte("x")); err != nil {
+			t.Fatalf("peer b message %d: %v", i, err)
+		}
+	}
+	if _, err := p.OnMessage(a, []byte("x")); err != core.ErrPluginDrop {
+		t.Fatalf("peer a over-limit error = %v, want %v", err, core.ErrPluginDrop)
+	}
+	if _, err := p.OnMessage(b, []byte("x")); err != core.ErrPluginDrop {
+		t.Fatalf("peer b over-limit error = %v, want %v", err, core.ErrPluginDrop)
+	}
+}
+
+// TestRateLimitSessionKeyCached verifies the remote-IP key is cached in
+// session meta after the first message and stays stable.
+func TestRateLimitSessionKeyCached(t *testing.T) {
+	p := NewRateLimit(10, time.Minute)
+	sess := &metaTrackingSession{fakeSession: fakeSession{addr: &net.TCPAddr{IP: net.ParseIP("10.0.0.1"), Port: 1}}}
+	first := p.sessionKey(sess)
+	if first != "10.0.0.1" {
+		t.Fatalf("session key = %q, want 10.0.0.1", first)
+	}
+	second := p.sessionKey(sess)
+	if second != first {
+		t.Fatalf("cached key = %q, want %q", second, first)
+	}
+	if sess.sets != 1 {
+		t.Fatalf("SetMeta calls = %d, want 1 (key computed once)", sess.sets)
+	}
+}
+
+// metaTrackingSession counts SetMeta calls to verify one-time key caching.
+type metaTrackingSession struct {
+	fakeSession
+	meta map[string]any
+	sets int
+}
+
+func (s *metaTrackingSession) SetMeta(k string, v any) {
+	s.sets++
+	if s.meta == nil {
+		s.meta = make(map[string]any)
+	}
+	s.meta[k] = v
+}
+
+func (s *metaTrackingSession) GetMeta(k string) (any, bool) {
+	if s.meta == nil {
+		return nil, false
+	}
+	v, ok := s.meta[k]
+	return v, ok
 }
 
 // closeTrackingSession records Close calls so tests can assert a session was

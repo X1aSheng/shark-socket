@@ -316,6 +316,24 @@ func exchangeMessage(t *testing.T, conn net.Conn, req Message) Message {
 	return ack
 }
 
+func TestCoAPDTLSOptions(t *testing.T) {
+	opts := defaultOptions()
+	if opts.MaxDatagram != 64*1024 {
+		t.Fatalf("default MaxDatagram = %d, want 64 KiB (shared plain-UDP buffer)", opts.MaxDatagram)
+	}
+	if opts.DTLSReadBufferBytes != 16*1024 {
+		t.Fatalf("default DTLSReadBufferBytes = %d, want 16 KiB (per-connection DTLS buffer)", opts.DTLSReadBufferBytes)
+	}
+	WithDTLSReadBufferBytes(8192)(&opts)
+	if opts.DTLSReadBufferBytes != 8192 {
+		t.Fatalf("DTLSReadBufferBytes = %d, want 8192", opts.DTLSReadBufferBytes)
+	}
+	WithDTLSReadBufferBytes(0)(&opts)
+	if opts.DTLSReadBufferBytes != 8192 {
+		t.Fatalf("DTLSReadBufferBytes = %d, want 8192 (non-positive values ignored)", opts.DTLSReadBufferBytes)
+	}
+}
+
 func TestCoAPDTLSEcho(t *testing.T) {
 	cert, pool := generateTestCert(t)
 	tlsCfg := &tls.Config{

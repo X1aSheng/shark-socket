@@ -152,6 +152,10 @@ func WithUDPDTLS(config *tls.Config) UDPOption {
 	return udp.WithDTLS(config)
 }
 
+func WithUDPDTLSReadBufferBytes(size int) UDPOption {
+	return udp.WithDTLSReadBufferBytes(size)
+}
+
 func NewHTTPServer(opts ...HTTPOption) *HTTPServer {
 	return transporthttp.NewServer(opts...)
 }
@@ -202,6 +206,10 @@ func WithCoAPHandler(handler Handler) CoAPOption {
 
 func WithCoAPDTLS(config *tls.Config) CoAPOption {
 	return coap.WithDTLS(config)
+}
+
+func WithCoAPDTLSReadBufferBytes(size int) CoAPOption {
+	return coap.WithDTLSReadBufferBytes(size)
 }
 
 func WithCoAPResponder(responder func(Session, Message) ([]byte, error)) CoAPOption {

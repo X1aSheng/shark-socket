@@ -204,12 +204,27 @@ func TestUDPServerDTLSOptions(t *testing.T) {
 	if opts.SweepInterval != 30*time.Second {
 		t.Fatalf("default SweepInterval = %v, want 30s", opts.SweepInterval)
 	}
+	if opts.MaxDatagram != 64*1024 {
+		t.Fatalf("default MaxDatagram = %d, want 64 KiB (shared plain-UDP buffer)", opts.MaxDatagram)
+	}
+	if opts.DTLSReadBufferBytes != 16*1024 {
+		t.Fatalf("default DTLSReadBufferBytes = %d, want 16 KiB (per-connection DTLS buffer)", opts.DTLSReadBufferBytes)
+	}
 	// Test WithDTLS
 	cfg := testTLSCfg(t)
 	opt := WithDTLS(cfg)
 	opt(&opts)
 	if opts.TLSConfig == nil {
 		t.Fatal("WithDTLS should set TLSConfig")
+	}
+	// Test WithDTLSReadBufferBytes
+	WithDTLSReadBufferBytes(4096)(&opts)
+	if opts.DTLSReadBufferBytes != 4096 {
+		t.Fatalf("DTLSReadBufferBytes = %d, want 4096", opts.DTLSReadBufferBytes)
+	}
+	WithDTLSReadBufferBytes(0)(&opts)
+	if opts.DTLSReadBufferBytes != 4096 {
+		t.Fatalf("DTLSReadBufferBytes = %d, want 4096 (non-positive values ignored)", opts.DTLSReadBufferBytes)
 	}
 	// Test DTLSConfig helper
 	dtlsCfg := shared.DTLSConfig(cfg)

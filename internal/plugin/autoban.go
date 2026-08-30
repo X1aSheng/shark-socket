@@ -126,8 +126,29 @@ func (p *AutoBan) OnAccept(sess core.Session) error {
 	return nil
 }
 
-func (p *AutoBan) Record(sess core.Session) bool {
+// autoBanKeyMeta caches the per-session remote-IP key in session meta so the
+// per-message SplitHostPort allocation is paid once per session. OnMessage
+// calls for a session are serialized by the transport read loop, so the cache
+// needs no locking; no-op meta implementations simply recompute the key.
+const autoBanKeyMeta = "plugin.autoban.ip"
+
+// sessionKey returns the cached remote-IP key for a session.
+func (p *AutoBan) sessionKey(sess core.Session) string {
+	if sess == nil {
+		return "unknown"
+	}
+	if v, ok := sess.GetMeta(autoBanKeyMeta); ok {
+		if key, ok := v.(string); ok {
+			return key
+		}
+	}
 	key := remoteKey(sess)
+	sess.SetMeta(autoBanKeyMeta, key)
+	return key
+}
+
+func (p *AutoBan) Record(sess core.Session) bool {
+	key := p.sessionKey(sess)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	c := p.counts[key]
