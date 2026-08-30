@@ -170,6 +170,64 @@ func TestGRPCWebStrictMalformedFrameReturnsBadRequest(t *testing.T) {
 	}
 }
 
+// TestGRPCWebHandlerErrorSendsOnlyTrailers is the regression test for the
+// V8 P3-7 fix: a handler error must be reported exclusively through the
+// trailer frame (grpc-status 13). Issuing http.Error afterwards would append
+// a superfluous HTTP status + text body after the committed trailer frame —
+// a gRPC-Web protocol violation. readTestGRPCWebResponse fails on any
+// non-frame content, so this test fails if anything is written after the
+// trailer.
+func TestGRPCWebHandlerErrorSendsOnlyTrailers(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithCheckOrigin(func(*http.Request) bool { return true }),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return fmt.Errorf("handler boom")
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer stopGateway(t, gateway)
+
+	req, err := http.NewRequest(http.MethodPost, "http://"+server.Addr().String()+"/grpc", bytes.NewReader(testGRPCWebDataFrame([]byte("hello"))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("content-type", "application/grpc-web+proto")
+	req.Header.Set("x-grpc-web", "1")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Frame-level errors keep HTTP 200; the failure travels in the trailer.
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, body = %q", resp.StatusCode, body)
+	}
+	payload, trailers := readTestGRPCWebResponse(t, body)
+	if len(payload) != 0 {
+		t.Fatalf("data payload = %q, want none after handler error", payload)
+	}
+	if !bytes.Contains(trailers, []byte("grpc-status: 13")) {
+		t.Fatalf("trailers = %q, want grpc-status 13", trailers)
+	}
+	if !bytes.Contains(trailers, []byte("grpc-message: handler boom")) {
+		t.Fatalf("trailers = %q, want grpc-message handler boom", trailers)
+	}
+	if count := gateway.Runtime().Sessions().Count(); count != 0 {
+		t.Fatalf("session count = %d, want 0", count)
+	}
+}
+
 func testGRPCWebDataFrame(payload []byte) []byte {
 	frame := []byte{0}
 	frame = binary.BigEndian.AppendUint32(frame, uint32(len(payload)))
