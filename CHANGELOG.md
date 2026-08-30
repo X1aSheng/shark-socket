@@ -7,6 +7,13 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### Test Completeness — Batch 4 (2026-08-31)
+
+压力测试收尾（C10）：
+
+- **非 TCP 压力测试**：新增 UDP 持续吞吐（96.8k msg/s、0 失败 + 伪会话 TTL 回收断言）、WebSocket churn（5k 循环/s、0 失败 + 会话零泄漏断言，linger(0) 拨号防 Windows 临时端口耗尽）、HTTP 并发请求（115.7k req/s、0 失败 + 按请求会话不累积断言）
+- 最终总覆盖率 **78.6%**（专项补测前 75.0%）
+
 ### Test Completeness — Batch 3 (2026-08-31)
 
 接线与广度补强（C8/C9/B6）：
