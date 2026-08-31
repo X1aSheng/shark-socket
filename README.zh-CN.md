@@ -4,27 +4,26 @@
 
 ## 项目概述
 
-`shark-socket` 是使用 Go 语言新设计的多协议运行时网关，面向 **IoT、实时通信与边缘计算** 场景。它保留了原项目的有用思想，同时将运行时归属、插件执行和优雅关闭显式化。
+`shark-socket` 是基于 Go 的多协议网关运行时，面向 IoT、实时通信与边缘计算。单进程内承载面向连接的（TCP、WebSocket、QUIC）、数据报的（UDP、CoAP）与应用层的（LwM2M、gRPC-Web、HTTP）传输，统一于一套会话索引、一条插件链与一个可观测平面。
 
-**核心价值**
+**本质属性**
 
-- **统一运行时**：单进程内同时承载 TCP、UDP、CoAP、LwM2M、WebSocket、QUIC、gRPC-Web、HTTP 等协议，共享 SessionManager、PluginRunner、Metrics 与 Logger。
-- **跨协议会话管理**：统一 Session 抽象，支持跨协议查询、广播与路由。
-- **可扩展插件系统**：黑名单、限流、心跳、持久化、集群、自动封禁、慢处理等内置插件，全局链式执行、panic 隔离。
-- **分阶段优雅关闭**：StopAccept → Drain → CloseSessions，连接不丢失。
-- **IoT 语义完整**：CoAP（RFC 7252 / RFC 7641）与 LwM2M 原生支持，含 TLV 编解码、Observe 通知与注册生命周期。
+- **运行时单一归属**：Gateway 创建并注入共享 Runtime（SessionManager / PluginRunner / Logger / Metrics / Tracer），传输层只消费、不持有共享状态。
+- **跨协议统一会话模型**：单一 `Session` 抽象支撑跨协议查询、广播与路由。
+- **生命周期确定**：分阶段关闭（StopAccept → Drain → CloseSessions）不丢连接；每个连接携带显式空闲/写超时，死对端有界回收且可观测。
+- **解耦扩展**：插件以优先级有序的单一链执行并做 panic 隔离；`Codec[M]` 将类型化业务消息分层于原始传输会话之上。
 
 **目标场景**
 
-- **IoT 平台**：设备经 CoAP/LwM2M 接入，Web 端经 WebSocket，管理 API 使用 HTTP。
-- **实时通信网关**：WebSocket 长连接 + TCP 自定义协议 + UDP 广播。
-- **边缘计算节点**：资源受限设备经 CoAP 接入，跨协议统一路由。
+- IoT 平台汇聚：设备经 CoAP/LwM2M 接入、Web 端经 WebSocket、管理经 HTTP。
+- 实时通信网关：WebSocket 长连接、自定义 TCP 协议、UDP 广播。
+- 边缘计算节点：受限设备经 CoAP 接入，单进程内跨协议路由。
 
-**边界（非目标）**
+**边界**
 
-- 不参与 Nginx/Envoy 的 HTTP 反向代理竞争（HTTP 仅作轻量支持）。
-- 不内置完整 MQTT Broker，由外部 [shark-MQTT](https://gitee.com/X1aSheng/shark-mqtt) 通过数据契约互通；网关以 MQTT 客户端身份接入（paho 适配器）。
-- 不替代 `google.golang.org/grpc`（gRPC-Web 仅支持 Unary 与 Server Streaming）。
+- HTTP 仅作轻量选项，不竞争 Nginx/Envoy 的反向代理。
+- 不内置 MQTT Broker：外部 [shark-MQTT](https://gitee.com/X1aSheng/shark-mqtt) 经数据契约互通，网关以 MQTT 客户端身份接入（paho 适配器）。
+- gRPC-Web 仅支持 Unary 与 Server Streaming，不替代 `google.golang.org/grpc`。
 
 ## 设计特点
 

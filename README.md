@@ -4,45 +4,45 @@
 
 ## Project Overview
 
-`shark-socket` is a multi-protocol runtime gateway newly designed in Go for
-**IoT, real-time messaging, and edge computing** scenarios. It keeps the useful
-ideas from the original project while making runtime ownership, plugin
-execution, and graceful shutdown explicit.
+`shark-socket` is a Go multi-protocol gateway runtime for IoT, real-time
+messaging, and edge computing. In a single process it hosts connection-
+oriented (TCP, WebSocket, QUIC), datagram (UDP, CoAP), and application-layer
+(LwM2M, gRPC-Web, HTTP) transports, unified by one session index, one plugin
+chain, and one observability plane.
 
-**Core value**
+**Essential properties**
 
-- **Unified runtime**: TCP, UDP, CoAP, LwM2M, WebSocket, QUIC, gRPC-Web, and
-  HTTP coexist in one process, sharing a single SessionManager, PluginRunner,
-  Metrics, and Logger.
-- **Cross-protocol session management**: one Session abstraction supports query,
-  broadcast, and routing across protocols.
-- **Extensible plugin system**: blacklist, rate limit, heartbeat, persistence,
-  cluster, autoban, and slow-handler plugins run through one chain with panic
-  isolation.
-- **Staged graceful shutdown**: StopAccept → Drain → CloseSessions — no
-  connection is dropped.
-- **Complete IoT semantics**: native CoAP (RFC 7252 / RFC 7641) and LwM2M,
-  including the TLV codec, Observe notifications, and the registration
-  lifecycle.
+- **Single runtime ownership** — the Gateway creates and injects the shared
+  Runtime (SessionManager / PluginRunner / Logger / Metrics / Tracer);
+  transports consume it and hold no shared state.
+- **One session model across protocols** — a single `Session` abstraction
+  enables cross-protocol query, broadcast, and routing.
+- **Deterministic lifecycle** — staged shutdown (StopAccept → Drain →
+  CloseSessions) drops no connection; every connection carries explicit idle
+  and write timeouts, so dead peers are reclaimed in bounded time and the
+  reclamation is observable.
+- **Decoupled extension** — plugins execute as one priority-ordered chain
+  with panic isolation; `Codec[M]` layers typed business messages above raw
+  transport sessions.
 
 **Target scenarios**
 
-- **IoT platforms** — devices join over CoAP/LwM2M, web clients over WebSocket,
-  admin APIs over HTTP.
-- **Real-time messaging gateways** — WebSocket long connections, custom TCP
-  protocols, and UDP broadcast.
-- **Edge computing nodes** — resource-constrained devices connect over CoAP and
-  route across protocols.
+- IoT platform aggregation — devices over CoAP/LwM2M, web clients over
+  WebSocket, administration over HTTP.
+- Real-time messaging gateways — WebSocket long connections, custom TCP
+  protocols, UDP broadcast.
+- Edge computing nodes — constrained devices over CoAP, cross-protocol
+  routing within one process.
 
-**Boundaries (non-goals)**
+**Boundaries**
 
-- Not an HTTP reverse proxy competing with Nginx/Envoy (HTTP is a lightweight
-  option only).
-- No built-in MQTT broker — external
-  [shark-MQTT](https://gitee.com/X1aSheng/shark-mqtt) interoperates through a
-  data contract; the gateway connects as an MQTT client (paho adapter).
-- Not a replacement for `google.golang.org/grpc` (gRPC-Web supports Unary and
-  Server Streaming only).
+- HTTP is a lightweight option only, not a reverse proxy (no Nginx/Envoy
+  competition).
+- No embedded MQTT broker: external
+  [shark-MQTT](https://gitee.com/X1aSheng/shark-mqtt) interoperates through
+  a data contract; the gateway connects as an MQTT client (paho adapter).
+- gRPC-Web supports Unary and Server Streaming only; not a replacement for
+  `google.golang.org/grpc`.
 
 ## Design Features
 
