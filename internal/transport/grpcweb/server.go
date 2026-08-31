@@ -321,6 +321,9 @@ func (s *Server) pingLoop(sess *webSocketSession) {
 		select {
 		case <-ticker.C:
 			if err := sess.ping(); err != nil {
+				// The peer stopped answering pings (a vanished client): count
+				// the reclaim.
+				s.rt.Metrics().IncCounter("sessions_reclaimed_total")
 				s.closeWebSocketSession(context.Background(), sess.ID(), sess)
 				return
 			}

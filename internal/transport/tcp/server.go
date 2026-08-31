@@ -167,6 +167,9 @@ func (s *Server) handleConn(conn net.Conn) {
 	id := s.rt.Sessions().NextID()
 	sess := newSession(id, conn, s.opts.Framer, s.opts.WriteQueue, s.opts.WriteTimeout, s.opts.WriteQueueHighWater)
 	sess.readTimeout = s.opts.ReadTimeout
+	sess.onIdleClose = func() {
+		s.rt.Metrics().IncCounter("sessions_reclaimed_total")
+	}
 	s.sessions.Store(id, sess)
 	// OnClose must fire only for sessions that were actually accepted; when
 	// Register or OnAccept fails the plugin chain already rolled back partial

@@ -267,6 +267,11 @@ func (s *Server) handleDTLSConn(ctx context.Context, conn net.Conn) {
 		}
 		n, err := conn.Read(buf)
 		if err != nil {
+			// A read-deadline expiry means the peer went silent (half-open
+			// DTLS); count the reclaim.
+			if shared.IsTimeout(err) {
+				s.rt.Metrics().IncCounter("sessions_reclaimed_total")
+			}
 			return
 		}
 		sess.touch()
@@ -587,6 +592,8 @@ func (s *Server) sweepLoop(ctx context.Context) {
 			s.sessions.Range(func(key, value any) bool {
 				sess := value.(*session)
 				if now.Sub(sess.LastActiveAt()) > s.opts.SessionTTL {
+					// The pseudo-session outlived its peer: count the reclaim.
+					s.rt.Metrics().IncCounter("sessions_reclaimed_total")
 					s.closeSession(context.Background(), key, sess)
 				}
 				return true

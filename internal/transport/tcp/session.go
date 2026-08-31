@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/transport/shared"
 )
 
 var ErrSessionClosed = errors.New("session closed")
@@ -27,6 +28,7 @@ type session struct {
 	writeTimeout        time.Duration
 	readTimeout         time.Duration
 	writeQueueHighWater float64
+	onIdleClose         func() // invoked when a read deadline reclaims the session
 	closeOnce           sync.Once
 }
 
@@ -119,6 +121,12 @@ func (s *session) readLoop(handler func([]byte)) {
 		}
 		payload, err := s.framer.ReadFrame(s.conn)
 		if err != nil {
+			// A deadline expiry means the peer went silent (a half-open or
+			// zombie connection) rather than disconnecting cleanly; surface
+			// the reclaim so the server can count it.
+			if shared.IsTimeout(err) && s.onIdleClose != nil {
+				s.onIdleClose()
+			}
 			return
 		}
 		s.touch()
