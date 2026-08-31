@@ -328,6 +328,76 @@ func TestQUICServerDirectStop(t *testing.T) {
 	}
 }
 
+// TestQUICIdleReclaimsSilentPeer verifies that a connection whose peer goes
+// silent is reclaimed by quic-go's idle timeout (configurable via
+// WithQUICMaxIdleTimeout) instead of holding a session forever.
+func TestQUICIdleReclaimsSilentPeer(t *testing.T) {
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithTLS(testTLSConfig(t)),
+		WithMaxIdleTimeout(200*time.Millisecond),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gateway := runtime.NewGateway()
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer stopGateway(t, gateway)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, err := quicgo.DialAddr(ctx, server.Addr().String(), ClientTLSConfig(true), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseWithError(0, "")
+
+	// Prove the connection was accepted and served once.
+	stream, err := conn.OpenStreamSync(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Write([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Close(); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := conn.AcceptStream(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 16)
+	if err := resp.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	n, err := io.ReadFull(resp, buf[:4])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(buf[:n]) != "ping" {
+		t.Fatalf("echo = %q, want ping", buf[:n])
+	}
+
+	// Now keep the connection open but silent: the server-side idle timeout
+	// must reclaim the session on its own.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if gateway.Runtime().Sessions().Count() == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("silent QUIC peer not reclaimed after idle timeout")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 func stopGateway(tb testing.TB, gateway *runtime.Gateway) {
 	tb.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

@@ -272,6 +272,10 @@ func WithQUICAcceptRate(rate float64) QUICOption {
 	return quic.WithAcceptRate(rate)
 }
 
+func WithQUICMaxIdleTimeout(timeout time.Duration) QUICOption {
+	return quic.WithMaxIdleTimeout(timeout)
+}
+
 func NewGRPCWebServer(opts ...GRPCWebOption) *GRPCWebServer {
 	return grpcweb.NewServer(opts...)
 }

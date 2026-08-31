@@ -17,6 +17,11 @@ type Options struct {
 	MaxMessageSize int
 	MaxConnections int64
 	AcceptRate     float64
+	// MaxIdleTimeout is the quic-go connection idle timeout: a peer that
+	// stops sending any packet for this long is closed by quic-go itself
+	// (the last line of defense against half-open QUIC connections). 0 uses
+	// the quic-go default (30s).
+	MaxIdleTimeout time.Duration
 }
 
 type Option func(*Options)
@@ -54,4 +59,14 @@ func WithMaxConnections(max int64) Option {
 // excess connections are closed with an application error.
 func WithAcceptRate(rate float64) Option {
 	return func(o *Options) { o.AcceptRate = rate }
+}
+
+// WithMaxIdleTimeout sets the quic-go connection idle timeout. Values <= 0
+// keep the quic-go default (30s). See Options.MaxIdleTimeout.
+func WithMaxIdleTimeout(timeout time.Duration) Option {
+	return func(o *Options) {
+		if timeout > 0 {
+			o.MaxIdleTimeout = timeout
+		}
+	}
 }

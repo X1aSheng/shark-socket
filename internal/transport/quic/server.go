@@ -54,7 +54,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 	s.closed.Store(false)
 	s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate)
-	ln, err := quicgo.ListenAddr(s.opts.Addr, s.opts.TLSConfig, nil)
+	ln, err := quicgo.ListenAddr(s.opts.Addr, s.opts.TLSConfig, quicConfig(s.opts))
 	if err != nil {
 		s.started.Store(false)
 		return fmt.Errorf("quic listen %s: %w", s.opts.Addr, err)
@@ -238,3 +238,12 @@ var (
 	_ core.RuntimeConfigurable = (*Server)(nil)
 	_ core.StagedServer        = (*Server)(nil)
 )
+
+// quicConfig builds the quic-go listener config from options, or nil to use
+// quic-go defaults. Currently only the connection idle timeout is surfaced.
+func quicConfig(opts Options) *quicgo.Config {
+	if opts.MaxIdleTimeout <= 0 {
+		return nil
+	}
+	return &quicgo.Config{MaxIdleTimeout: opts.MaxIdleTimeout}
+}
