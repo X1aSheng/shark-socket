@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/infra/observability"
 	"github.com/X1aSheng/shark-socket/internal/runtime"
 )
 
@@ -305,6 +306,84 @@ func TestTCPServerDirectStop(t *testing.T) {
 	}
 	if _, err := net.DialTimeout("tcp", server.Addr().String(), 500*time.Millisecond); err == nil {
 		t.Fatal("server still accepting after Stop")
+	}
+}
+
+// TestTCPIdleReadTimeoutReclaimsSilentPeer verifies that a peer which
+// connects and then goes silent (a half-open or zombie connection, e.g. a
+// device that lost power without closing the socket) is reclaimed when the
+// per-frame read deadline expires, that the reclaim is counted in
+// sessions_reclaimed_total, and that the server keeps serving afterwards.
+func TestTCPIdleReadTimeoutReclaimsSilentPeer(t *testing.T) {
+	metrics := observability.NewMemoryMetrics()
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithReadTimeout(80*time.Millisecond),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gateway := runtime.NewGateway(runtime.WithMetrics(metrics))
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer shutdownCancel()
+		_ = gateway.Stop(shutdownCtx)
+	}()
+
+	// A silent peer: connect and send nothing.
+	conn, err := dialWithLinger(context.Background(), "tcp", server.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	// Wait for the session to register (dial returns before the accept
+	// goroutine registers it), then for the read deadline to reclaim it.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if gateway.Runtime().Sessions().Count() >= 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("session not registered after connect")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for {
+		if gateway.Runtime().Sessions().Count() == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("silent peer not reclaimed after read timeout")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := metrics.Counter("sessions_reclaimed_total"); got < 1 {
+		t.Fatalf("sessions_reclaimed_total = %v, want >= 1", got)
+	}
+
+	// The server is still alive: a new connection echoes normally.
+	conn2, err := dialWithLinger(context.Background(), "tcp", server.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn2.Close()
+	framer := LengthPrefixFramer{MaxFrameBytes: 1024}
+	if err := framer.WriteFrame(conn2, []byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := framer.ReadFrame(conn2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "ping" {
+		t.Fatalf("echo = %q, want ping", got)
 	}
 }
 
