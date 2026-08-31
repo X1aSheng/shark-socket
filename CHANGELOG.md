@@ -7,6 +7,14 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### Zombie-Connection Reclaim (2026-08-31)
+
+假链接/僵尸连接回收的可见性与回归保护：
+
+- **新增 `sessions_reclaimed_total` 计数器**：TCP 读超时、UDP/CoAP 伪会话 TTL sweep、UDP/CoAP DTLS 读超时、WebSocket/gRPC-Web 读超时（PongTimeout）五个回收点全部埋点；`shared.IsTimeout` 统一判定 deadline 过期；sweep 仅在真正移除会话时计数（防与 DTLS 读超时双计）；QUIC 由 quic-go 内部 idle 处理，不经过该计数（文档注明）
+- **回收回归测试**：TCP 静默对端读超时回收（含计数断言+服务器存活验证）、gRPC-Web WS 模式死对端 PongTimeout 回收（含计数断言）
+- **QUIC idle 可配置**：新增 `WithQUICMaxIdleTimeout`（api 门面同步暴露），`TestQUICIdleReclaimsSilentPeer` 验证静默连接被 200ms idle 超时回收
+
 ### Test Completeness — Batch 4 (2026-08-31)
 
 压力测试收尾（C10）：
