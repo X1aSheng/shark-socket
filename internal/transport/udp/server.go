@@ -300,9 +300,12 @@ func (s *Server) sweepLoop(ctx context.Context) {
 			s.sessions.Range(func(key, value any) bool {
 				sess := value.(*session)
 				if now.Sub(sess.LastActiveAt()) > s.opts.SessionTTL {
-					// The pseudo-session outlived its peer: count the reclaim.
-					s.rt.Metrics().IncCounter("sessions_reclaimed_total")
-					s.closeSession(context.Background(), key, sess)
+					// Count only if the sweep actually removed the session, so
+					// a DTLS session already reclaimed by its read deadline is
+					// not double-counted.
+					if s.closeSession(context.Background(), key, sess) {
+						s.rt.Metrics().IncCounter("sessions_reclaimed_total")
+					}
 				}
 				return true
 			})
@@ -343,13 +346,14 @@ func (s *Server) getOrCreateSession(addr *net.UDPAddr) *session {
 	return sess
 }
 
-func (s *Server) closeSession(ctx context.Context, key any, sess *session) {
+func (s *Server) closeSession(ctx context.Context, key any, sess *session) bool {
 	if _, loaded := s.sessions.LoadAndDelete(key); !loaded {
-		return
+		return false
 	}
 	s.rt.Sessions().Unregister(sess.ID())
 	_ = sess.Close(ctx)
 	s.rt.Plugins().OnClose(sess)
+	return true
 }
 
 var (

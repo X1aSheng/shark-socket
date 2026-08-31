@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/infra/observability"
 	"github.com/X1aSheng/shark-socket/internal/runtime"
 	"github.com/gorilla/websocket"
 )
@@ -338,6 +340,63 @@ func TestGRPCWebServerDirectStop(t *testing.T) {
 	}
 	if err := post(); err == nil {
 		t.Fatal("server still accepting after Stop")
+	}
+}
+
+// TestGRPCWebWSDeadPeerReclaimed verifies that a WebSocket-mode peer which
+// never answers the server's pings (a vanished client) is reclaimed after
+// PongTimeout instead of holding a goroutine/session forever, and that the
+// reclaim is counted in sessions_reclaimed_total.
+func TestGRPCWebWSDeadPeerReclaimed(t *testing.T) {
+	metrics := observability.NewMemoryMetrics()
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithWebSocketMode("/grpc/ws"),
+		WithCheckOrigin(func(*http.Request) bool { return true }),
+		WithPingInterval(50*time.Millisecond),
+		WithPongTimeout(150*time.Millisecond),
+		WithHandler(func(sess core.Session, msg core.Message) error { return nil }),
+	)
+	gateway := runtime.NewGateway(runtime.WithMetrics(metrics))
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer stopGateway(t, gateway)
+
+	u := url.URL{Scheme: "ws", Host: server.Addr().String(), Path: "/grpc/ws"}
+	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	// Wait for the session to register (the upgrade returns before the
+	// server-side session is stored), then never read: the peer never answers
+	// the server's pings, so the read deadline expires after PongTimeout.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if gateway.Runtime().Sessions().Count() >= 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("session not registered after upgrade")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for {
+		if gateway.Runtime().Sessions().Count() == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("dead gRPC-Web WebSocket peer not reclaimed after PongTimeout")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := metrics.Counter("sessions_reclaimed_total"); got < 1 {
+		t.Fatalf("sessions_reclaimed_total = %v, want >= 1", got)
 	}
 }
 
