@@ -1,6 +1,6 @@
 # shark-socket
 
-**English** | [简体中文](README.zh-CN.md)
+[简体中文](README.zh-CN.md) | **English**
 
 ## Project Overview
 
@@ -39,8 +39,8 @@ execution, and graceful shutdown explicit.
 - Not an HTTP reverse proxy competing with Nginx/Envoy (HTTP is a lightweight
   option only).
 - No built-in MQTT broker — external
-  [shark-MQTT](https://github.com/X1aSheng/shark-MQTT) interoperates through a
-  data contract.
+  [shark-MQTT](https://gitee.com/X1aSheng/shark-mqtt) interoperates through a
+  data contract; the gateway connects as an MQTT client (paho adapter).
 - Not a replacement for `google.golang.org/grpc` (gRPC-Web supports Unary and
   Server Streaming only).
 
@@ -61,35 +61,43 @@ execution, and graceful shutdown explicit.
 - **Zero-value usability**: Functional Options with sensible defaults everywhere.
 - **Failure isolation**: a panic in one connection/goroutine never takes down
   the process; PluginRunner captures plugin panics and returns control errors.
+- **Zombie-connection reclaim, observable**: every idle/dead-peer reclaim path
+  is bounded by a timeout (TCP read deadline, UDP/CoAP TTL sweep, DTLS read
+  deadline, WebSocket/gRPC-Web PongTimeout, configurable QUIC idle timeout) and
+  counted in `sessions_reclaimed_total`, so ghost connections can never live
+  forever and their reclamation is monitorable.
 - **Observability first**: metrics, traces, and logs on critical paths;
-  Prometheus metrics pre-registered to avoid cardinality explosion; `/healthz`
-  and `/readyz` endpoints plus `sessions_active` session metrics.
+  Prometheus metrics use a fixed key set (no cardinality explosion);
+  `/healthz` and `/readyz` endpoints plus `sessions_active` /
+  `sessions_reclaimed_total` session metrics.
 - **Benchmark-driven**: optimizations require benchmark and pprof evidence.
 - **Compile-time verification**: `var _ Interface = (*Impl)(nil)` checks, with
   key invariants expressed in the type system.
 - **Security built in**: TLS cert hot-reload, mTLS, DTLS, accept rate limiting,
-  write deadlines, non-root containers, read-only root FS, drop-ALL
-  capabilities.
+  connection caps, write deadlines, non-root containers, read-only root FS,
+  drop-ALL capabilities.
 
 ## Feature Matrix
 
 | Area | Status | Notes |
 | --- | --- | --- |
 | Runtime/Gateway | Implemented | Runtime injection, shared SessionManager, plugin chain, staged stop |
-| TCP | Implemented | Length-prefix, line, fixed-size, raw framers, TLS server/client, worker pool, accept rate limiting, write deadlines |
-| UDP | Implemented | Pseudo-sessions, TTL sweep, DTLS support, plugin path |
+| TCP | Implemented | Length-prefix, line, fixed-size, raw framers, TLS server/client, worker pool, accept rate limiting, connection caps, write deadlines, idle read timeout |
+| UDP | Implemented | Pseudo-sessions, TTL sweep, DTLS support (configurable read buffer), plugin path |
 | HTTP | Implemented | Mode A router and Mode B session/plugin/handler flow |
-| WebSocket | Implemented | Binary message path, origin check, ping loop, write deadlines, accept rate limiting |
-| CoAP | Implemented | Message parse/marshal, CON ACK, pseudo-sessions, DTLS, option encoding (RFC 7252), Observe (RFC 7641) |
+| WebSocket | Implemented | Binary message path, origin check, ping loop, write deadlines, accept rate limiting, connection caps |
+| CoAP | Implemented | Message parse/marshal, CON ACK, pseudo-sessions, DTLS (configurable read buffer), option encoding (RFC 7252), Observe (RFC 7641) |
 | LwM2M | Implemented | Object/resource model with operation masks, TLV binary codec, discover/register/update/deregister/write/read, Observer notifications |
-| QUIC | Implemented | TLS-required stream transport using quic-go, write deadlines, accept rate limiting |
-| gRPC-Web | Implemented | Direct HTTP mode, binary framing/trailers, and WebSocket mode |
-| Plugins | Implemented | Blacklist, RateLimit (sliding window), Heartbeat, Persistence (Store+MessageLog), AutoBan (per-IP expiry), SlowHandler, Cluster |
+| QUIC | Implemented | TLS-required stream transport using quic-go, write deadlines, accept rate limiting, connection caps, configurable idle timeout |
+| gRPC-Web | Implemented | Direct HTTP mode, binary framing/trailers, WebSocket mode, connection caps |
+| Plugins | Implemented | Blacklist (exact + CIDR), RateLimit (32-shard sliding window), Heartbeat, Persistence (Store+MessageLog), AutoBan, SlowHandler, Cluster |
 | Security | Implemented | TLS cert hot-reload via file watcher, mTLS client auth, DTLS for UDP/CoAP |
 | Persistence | Implemented | Store interface (error-returning), BoltDB backend, durable message log with sequence numbers, session snapshots |
 | Infra | Implemented | In-memory cache/store/pubsub/circuitbreaker/observability, Prometheus metrics exporter, OpenTelemetry tracer adapter, TLS cert cache |
 | MQTT | Integrated | External broker adapter (paho client), docker-compose mosquitto for E2E tests |
-| Fuzz Testing | 11 tests | TCP framers, CoAP message parse, LwM2M TLV codec — all passing |
+| Zombie reclaim | Implemented | Bounded idle timeouts on every transport, counted via `sessions_reclaimed_total` |
+| Fuzz Testing | 8 tests | TCP framers, CoAP message parse, LwM2M TLV codec — all passing |
+| Stress Testing | 6 suites | TCP sustained/burst/reconnect + UDP/WebSocket/HTTP with leak detection |
 | Benchmark | 6 protocols | TCP, UDP, HTTP, WebSocket, gRPC-Web, QUIC — all benchmarked |
 | Deploy | Hardened | Docker (HEALTHCHECK, non-root), K8s (HPA, PDB, NetworkPolicy, ConfigMap), Helm _helpers.tpl |
 
@@ -97,6 +105,15 @@ execution, and graceful shutdown explicit.
 
 `shark-socket` is statically linked with no external runtime dependency, so it
 deploys on resource-constrained edge nodes.
+
+**Measured footprint** (idle, local dev machine)
+
+- Idle process: ~46 MB private / ~10 MB resident
+- Per idle TCP connection: ~24.8 KB (fully released on close — verified with
+  2,000 connections)
+- Per DTLS peer: 16 KiB read buffer by default (was 64 KiB; configurable via
+  `WithDTLSReadBufferBytes`) — 10,000 DTLS peers previously held ~640 MB of
+  read buffers alone
 
 **Artifacts**
 
@@ -172,10 +189,11 @@ docker compose -f deploy/docker/docker-compose.yml --profile test run mqtt-test
 |-------|---------|--------|
 | Unit tests (26 suites) | `go test ./...` | ✅ |
 | Race detection | `go test -race ./...` | ✅ |
-| Coverage (70% threshold) | `go run scripts/run_tests.go -mode cover` | ✅ 75.2% |
+| Coverage (70% threshold) | `go run scripts/run_tests.go -mode cover` | ✅ 78.6% |
 | Lint (golangci-lint) | `golangci-lint run` | ✅ |
 | Security (govulncheck) | `govulncheck ./...` | ✅ |
 | Deploy manifests | `go run scripts/run_tests.go -mode deploy` | ✅ |
+| Stress (6 suites incl. leak detection) | `go test ./tests/stress/ -count=1 -p 1` | ✅ |
 
 Fast validation:
 
@@ -244,6 +262,7 @@ Raw JSON and readable reports are written to `logs/`.
 - [Configuration Guide](docs/guides/CONFIGURATION-20260530.md)
 - [Test Strategy](docs/guides/TEST-STRATEGY-20260529.md)
 - [Protocol Test Guide](docs/guides/PROTOCOL-TEST-GUIDE-20260530.md)
+- [MQTT Integration](docs/guides/MQTT-INTEGRATION.md)
 - [Examples](docs/guides/EXAMPLES.md)
 - [Architecture Analysis](docs/reports/ARCHITECTURE-ANALYSIS-260626.md)
 - [Architecture Methodology](docs/reports/ARCHITECTURE-METHODOLOGY-260626.md)
