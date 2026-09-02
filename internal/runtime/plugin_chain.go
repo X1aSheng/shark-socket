@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"fmt"
 	"slices"
 	"sync"
 
@@ -47,6 +48,44 @@ func (c *PluginChain) Append(plugins ...core.Plugin) {
 		return a.Priority() - b.Priority()
 	})
 	c.plugins = next
+}
+
+// StartAll starts every plugin that implements core.LifecyclePlugin, in
+// priority order. If a plugin fails to start, the plugins started so far are
+// stopped in reverse order and the failure is returned so Gateway.Start can
+// abort. Passive plugins (no Start/Stop) are skipped. Repeated calls are safe:
+// the built-in lifecycle-aware plugins treat a second Start as a no-op.
+func (c *PluginChain) StartAll() error {
+	plugins, _ := c.snapshot()
+	var started []core.Plugin
+	for _, p := range plugins {
+		lp, ok := p.(core.LifecyclePlugin)
+		if !ok {
+			continue
+		}
+		if err := lp.Start(); err != nil {
+			for i := len(started) - 1; i >= 0; i-- {
+				if stop, ok := started[i].(core.LifecyclePlugin); ok {
+					_ = stop.Stop()
+				}
+			}
+			return fmt.Errorf("plugin %q start: %w", p.Name(), err)
+		}
+		started = append(started, p)
+	}
+	return nil
+}
+
+// StopAll stops every plugin that implements core.LifecyclePlugin, in reverse
+// priority order. Safe to call when nothing was started (plugins tolerate
+// Stop without Start) and from multiple goroutines.
+func (c *PluginChain) StopAll() {
+	plugins, _ := c.snapshot()
+	for i := len(plugins) - 1; i >= 0; i-- {
+		if lp, ok := plugins[i].(core.LifecyclePlugin); ok {
+			_ = lp.Stop()
+		}
+	}
 }
 
 func (c *PluginChain) OnAccept(sess core.Session) error {

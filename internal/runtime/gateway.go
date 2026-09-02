@@ -89,6 +89,13 @@ func (g *Gateway) Start(ctx context.Context) error {
 			configurable.UseRuntime(g.rt)
 		}
 	}
+	// Start lifecycle-aware plugins (AutoBan/RateLimit/Heartbeat/Cluster and
+	// user plugins implementing Start/Stop) before any server accepts traffic,
+	// so their cleanup/consume loops are running from the first message.
+	// On failure nothing has been started yet and StartAll rolls back.
+	if err := g.rt.Plugins().StartAll(); err != nil {
+		return err
+	}
 	started := make([]core.Server, 0, len(servers))
 	for _, srv := range servers {
 		if err := srv.Start(ctx); err != nil {
@@ -100,6 +107,7 @@ func (g *Gateway) Start(ctx context.Context) error {
 				}
 			}
 			cancel()
+			g.rt.Plugins().StopAll()
 			return err
 		}
 		started = append(started, srv)
@@ -156,6 +164,10 @@ func (g *Gateway) Stop(ctx context.Context) error {
 	}); err != nil && firstErr == nil {
 		firstErr = err
 	}
+	// Stop lifecycle-aware plugins only after every session is closed, so
+	// plugin background loops (heartbeat sweeps, cluster consumers) never
+	// race the transport teardown above.
+	g.rt.Plugins().StopAll()
 	// started was already cleared at the top of Stop so readyz reports
 	// not-ready for the whole shutdown window; only the uptime is stale here.
 	g.startedAt.Store(nil)

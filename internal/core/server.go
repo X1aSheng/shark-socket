@@ -28,6 +28,16 @@ type PluginRunner interface {
 	OnAccept(Session) error
 	OnMessage(Session, []byte) ([]byte, error)
 	OnClose(Session)
+
+	// StartAll starts every plugin that implements LifecyclePlugin, in
+	// priority order, rolling back already-started plugins on failure.
+	// Gateway.Start calls it before starting any server.
+	StartAll() error
+
+	// StopAll stops every plugin that implements LifecyclePlugin, in
+	// reverse priority order. Gateway.Stop calls it after all sessions
+	// have been closed. Repeated or unpaired calls are no-ops.
+	StopAll()
 }
 
 // StagedServer is optional. Gateway uses it for precise graceful shutdown.
