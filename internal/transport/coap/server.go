@@ -216,6 +216,17 @@ func (s *Server) dtlsAcceptLoop(ctx context.Context) {
 			}
 			continue
 		}
+		// Enforce the configured client-authentication policy ourselves:
+		// pion/dtls v3 does not reliably apply it on every handshake path.
+		// The peer cannot exchange application data before Accept returns, so
+		// closing here is equivalent to rejecting the handshake.
+		if err := shared.EnforceServerClientAuth(s.opts.TLSConfig, conn); err != nil {
+			_ = conn.Close()
+			if s.rt != nil {
+				s.rt.Logger().Warn("coap dtls client auth rejected", "error", err)
+			}
+			continue
+		}
 		s.wg.Add(1)
 		go s.handleDTLSConn(ctx, conn)
 	}
