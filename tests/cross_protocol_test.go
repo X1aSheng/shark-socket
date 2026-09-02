@@ -283,8 +283,8 @@ func TestCrossProtocolPlugin(t *testing.T) {
 // either direction and the server keeps running.
 func TestCrossProtocolOnAcceptBlock(t *testing.T) {
 	blocked := []struct {
-		name    string
-		assert  func(t *testing.T, addr string)
+		name   string
+		assert func(t *testing.T, addr string)
 	}{
 		{
 			name: "TCP",

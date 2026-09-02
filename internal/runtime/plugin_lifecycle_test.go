@@ -83,8 +83,8 @@ func (s *loggingServer) Stop(context.Context) error {
 	s.log.add("server:stop")
 	return nil
 }
-func (s *loggingServer) StopAccept(context.Context) error    { return nil }
-func (s *loggingServer) Drain(context.Context) error         { return nil }
+func (s *loggingServer) StopAccept(context.Context) error { return nil }
+func (s *loggingServer) Drain(context.Context) error      { return nil }
 func (s *loggingServer) CloseSessions(context.Context) error {
 	s.log.add("server:stop")
 	return nil
