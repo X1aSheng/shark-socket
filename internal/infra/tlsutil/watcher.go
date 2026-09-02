@@ -16,8 +16,12 @@ func WatchFiles(ctx context.Context, interval time.Duration, onChange func(), fi
 }
 
 // WatchFilesWithWG is like WatchFiles but accepts an optional WaitGroup for
-// tracking the background goroutine.
+// tracking the background goroutine. A non-positive interval (which would
+// panic in time.NewTicker) falls back to the default 30s poll.
 func WatchFilesWithWG(ctx context.Context, interval time.Duration, onChange func(), wg *sync.WaitGroup, files ...string) context.CancelFunc {
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
 	childCtx, cancel := context.WithCancel(ctx)
 
 	modTimes := make(map[string]time.Time, len(files))

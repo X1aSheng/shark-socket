@@ -32,6 +32,10 @@ func (p *PubSub) Subscribe(topic string, buffer int) (<-chan Message, func()) {
 				// transient topics accumulate empty-slice entries forever.
 				if len(subs) == 1 {
 					delete(p.subs, topic)
+					// The dropped counter is only observable through
+					// subscribers; without any, keep the map from leaking
+					// per-topic counters forever.
+					delete(p.dropped, topic)
 				} else {
 					p.subs[topic] = append(subs[:i], subs[i+1:]...)
 				}

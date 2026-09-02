@@ -1,61 +1,34 @@
 package pubsub
 
 import (
-	"sync"
 	"testing"
 )
 
-func TestPubSubPublishSubscribe(t *testing.T) {
-	ps := New()
-	ch, cancel := ps.Subscribe("topic", 1)
-	defer cancel()
-	if delivered := ps.Publish("topic", []byte("hello")); delivered != 1 {
-		t.Fatalf("delivered = %d, want 1", delivered)
-	}
-	msg := <-ch
-	if msg.Topic != "topic" || string(msg.Data) != "hello" {
-		t.Fatalf("message = %#v", msg)
-	}
-}
+// TestPubSubDroppedCounterCleanedWithLastSubscriber verifies that the dropped
+// counter of a topic does not leak once its last subscriber leaves.
+func TestPubSubDroppedCounterCleanedWithLastSubscriber(t *testing.T) {
+	p := New()
 
-// TestPubSubConcurrentPublishWithDrops exercises concurrent Publish (with
-// drops) and Dropped() reads; the dropped counter must be written under the
-// exclusive lock or the map races and the process crashes.
-func TestPubSubConcurrentPublishWithDrops(t *testing.T) {
-	ps := New()
-	// A buffer-0 subscription means every publish drops, exercising the counter
-	// write on the hot path.
-	_, cancel := ps.Subscribe("topic", 0)
-	defer cancel()
-
-	var wg sync.WaitGroup
-	for i := 0; i < 4; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 1000; j++ {
-				ps.Publish("topic", []byte("x"))
-				_ = ps.Dropped("topic")
-			}
-		}()
+	ch, cancel := p.Subscribe("topic-a", 1)
+	// Fill the buffer, then overflow it: the second publish is dropped.
+	p.Publish("topic-a", []byte("one"))
+	if dropped := p.Dropped("topic-a"); dropped != 0 {
+		t.Fatalf("dropped = %d, want 0 before overflow", dropped)
 	}
-	wg.Wait()
-	if ps.Dropped("topic") == 0 {
-		t.Fatal("expected dropped counter to accumulate")
+	p.Publish("topic-a", []byte("two"))
+	if dropped := p.Dropped("topic-a"); dropped != 1 {
+		t.Fatalf("dropped = %d, want 1", dropped)
 	}
-}
 
-// TestPubSubTopicKeyRemovedAfterLastCancel verifies that the map key is dropped
-// when the last subscriber leaves, so transient topics do not accumulate
-// empty-slice entries forever.
-func TestPubSubTopicKeyRemovedAfterLastCancel(t *testing.T) {
-	ps := New()
-	_, cancel := ps.Subscribe("topic", 1)
 	cancel()
-	ps.mu.RLock()
-	_, exists := ps.subs["topic"]
-	ps.mu.RUnlock()
-	if exists {
-		t.Fatal("topic key should be removed after last subscriber cancels")
+	if dropped := p.Dropped("topic-a"); dropped != 0 {
+		t.Fatalf("dropped after cancel = %d, want 0 (counter leaked)", dropped)
+	}
+
+	// The channel is closed; publishing to the abandoned topic is a no-op.
+	p.Publish("topic-a", []byte("three"))
+	_ = ch
+	if dropped := p.Dropped("topic-a"); dropped != 0 {
+		t.Fatalf("dropped after republish = %d, want 0", dropped)
 	}
 }

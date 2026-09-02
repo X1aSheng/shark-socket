@@ -74,6 +74,12 @@ func (b *Breaker) Success() {
 func (b *Breaker) Failure() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	// Ignore failures while Open: refreshing openedAt on every late Failure
+	// would push the half-open probe indefinitely into the future for call
+	// paths that report failures without going through Allow/Execute.
+	if b.state == Open {
+		return
+	}
 	b.failures++
 	b.halfOpenActive = false
 	if b.failures >= b.threshold {
