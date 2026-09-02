@@ -23,6 +23,10 @@ type Adapter struct {
 	opts   Options
 	client mqttClient
 	mu     sync.Mutex
+	// gen is bumped by every Stop. Start captures it before dialing and
+	// compares afterwards, so a Stop that lands inside the dial window cannot
+	// be silently undone by the dial finishing and installing a live client.
+	gen uint64
 }
 
 func NewAdapter(opts ...Option) (*Adapter, error) {
@@ -42,9 +46,10 @@ func (a *Adapter) Start(ctx context.Context) error {
 		a.mu.Unlock()
 		return nil
 	}
-	opts := a.opts // copy under lock
+	gen := a.gen
 	a.mu.Unlock()
 
+	opts := a.opts // copy under lock
 	client := opts.clientFactory(pahoOptions(opts))
 	token := client.Connect()
 	if err := waitToken(ctx, token, opts.ConnectTimeout); err != nil {
@@ -63,23 +68,40 @@ func (a *Adapter) Start(ctx context.Context) error {
 		}
 	}
 
-	// Double-check under the lock: a concurrent Start may have connected a
-	// client while this one was dialing. Discard this duplicate connection
-	// instead of overwriting (which would leak the other client).
 	a.mu.Lock()
+	defer a.mu.Unlock()
+	// A Stop that ran while this Start was dialing must win: installing the
+	// freshly connected client would resurrect the adapter after Stop
+	// returned ("stopped" but actually connected).
+	if gen != a.gen {
+		client.Disconnect(0)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return fmt.Errorf("mqtt adapter stopped during start")
+	}
 	if a.client != nil && a.client.IsConnected() {
-		a.mu.Unlock()
+		// A concurrent Start connected first: discard this duplicate instead
+		// of overwriting (which would leak the other client).
 		client.Disconnect(250)
 		return nil
 	}
+	if a.client != nil {
+		// The previous client exists but is not connected (e.g. its paho
+		// auto-reconnect loop is still running after a broker drop). It must
+		// be stopped explicitly before being replaced; otherwise its
+		// reconnection goroutines keep dialing with the same ClientID and
+		// fight the new client at the broker.
+		a.client.Disconnect(0)
+	}
 	a.client = client
-	a.mu.Unlock()
 	return nil
 }
 
 func (a *Adapter) Stop(ctx context.Context) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.gen++
 	if a.client == nil {
 		return nil
 	}
@@ -102,6 +124,10 @@ func waitToken(ctx context.Context, token paho.Token, timeout time.Duration) err
 	}
 }
 
+// Publish publishes a message and waits for the publish to complete (or time
+// out). The payload is copied: paho encodes asynchronously, so handing over
+// the caller's slice without a copy would race with the caller reusing it
+// after Publish returns.
 func (a *Adapter) Publish(topic string, qos byte, payload []byte) error {
 	a.mu.Lock()
 	client := a.client
@@ -109,7 +135,7 @@ func (a *Adapter) Publish(topic string, qos byte, payload []byte) error {
 	if client == nil || !client.IsConnected() {
 		return fmt.Errorf("mqtt not connected")
 	}
-	token := client.Publish(topic, qos, false, payload)
+	token := client.Publish(topic, qos, false, append([]byte(nil), payload...))
 	if !token.WaitTimeout(a.opts.ConnectTimeout) {
 		return fmt.Errorf("mqtt publish timeout")
 	}
