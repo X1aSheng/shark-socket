@@ -44,7 +44,10 @@ func (c *PluginChain) Append(plugins ...core.Plugin) {
 		}
 		next = append(next, p)
 	}
-	slices.SortFunc(next, func(a, b core.Plugin) int {
+	// Stable sort so plugins appended with equal priorities execute in append
+	// order (a nondeterministic order would make equal-priority chains behave
+	// differently between runs and platforms).
+	slices.SortStableFunc(next, func(a, b core.Plugin) int {
 		return a.Priority() - b.Priority()
 	})
 	c.plugins = next

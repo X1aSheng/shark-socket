@@ -98,10 +98,15 @@ func parseOptions(data []byte) (map[uint16][]byte, []byte) {
 		offset += deltaBytes
 		lengthExtended, lengthBytes := readOptionExtended(data[offset:], length)
 		offset += lengthBytes
-		optionNum := prevNum + uint16(deltaExtended)
-		if optionNum < prevNum {
+		// RFC 7252 option numbers live in a 16-bit space, so an extended delta
+		// that would overflow it is malformed. Check before the uint16
+		// conversion: readOptionExtended can return up to 65804 (nibble 14
+		// with 0xFFFF+269), and truncating first would turn an illegal delta
+		// into a legal small one, silently aliasing option numbers.
+		if deltaExtended > uint32(^uint16(0))-uint32(prevNum) {
 			break // delta overflow: malformed message
 		}
+		optionNum := prevNum + uint16(deltaExtended)
 		prevNum = optionNum
 		if offset+int(lengthExtended) > len(data) {
 			break

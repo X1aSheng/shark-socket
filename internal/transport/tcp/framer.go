@@ -34,12 +34,15 @@ func (f LengthPrefixFramer) ReadFrame(r io.Reader) ([]byte, error) {
 	if _, err := io.ReadFull(r, header[:]); err != nil {
 		return nil, err
 	}
-	n := int(binary.BigEndian.Uint32(header[:]))
+	raw := binary.BigEndian.Uint32(header[:])
 	max := f.maxBytes()
-	if n > max {
-		return nil, fmt.Errorf("%w: %d > %d", core.ErrFrameTooLarge, n, max)
+	// Compare in uint32 space before converting to int: on 32-bit platforms
+	// int(uint32) turns values >= 2^31 negative, which would bypass the size
+	// check and panic in make([]byte, negative) — a one-frame remote crash.
+	if raw > uint32(max) {
+		return nil, fmt.Errorf("%w: %d > %d", core.ErrFrameTooLarge, raw, max)
 	}
-	payload := make([]byte, n)
+	payload := make([]byte, int(raw))
 	_, err := io.ReadFull(r, payload)
 	return payload, err
 }

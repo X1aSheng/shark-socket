@@ -207,7 +207,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		// Never leak internal/plugin error details to the client: log them
+		// and answer with a generic status text.
+		s.rt.Logger().Warn("grpc-web plugin message error", "session", id, "error", err)
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 	if s.opts.Handler != nil {
@@ -218,7 +221,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			}
 			// The trailer frame already commits the response; issuing http.Error
 			// afterwards would append a superfluous 500 status + text body after
-			// the frame (a protocol violation for gRPC-Web clients).
+			// the frame (a protocol violation for gRPC-Web clients). The handler
+			// is application code: its error message travels in grpc-message
+			// (a contract covered by server_integration_test), unlike internal
+			// plugin errors which are logged and kept generic above.
 			_ = sess.SendTrailers(13, err.Error())
 			return
 		}

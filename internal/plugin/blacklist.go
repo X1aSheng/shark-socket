@@ -19,7 +19,7 @@ func NewBlacklist(entries ...string) *Blacklist {
 			p.nets = append(p.nets, cidr)
 			continue
 		}
-		p.exact[entry] = struct{}{}
+		p.exact[normalizeIP(entry)] = struct{}{}
 	}
 	return p
 }
@@ -36,6 +36,10 @@ func (p *Blacklist) OnAccept(sess core.Session) error {
 	if err != nil {
 		host = addr.String()
 	}
+	// Normalize both sides so an IPv4-mapped IPv6 address
+	// ("::ffff:10.0.0.1" from a dual-stack socket) cannot bypass an exact
+	// "10.0.0.1" entry.
+	host = normalizeIP(host)
 	if _, ok := p.exact[host]; ok {
 		return core.ErrPluginBlock
 	}
@@ -49,4 +53,19 @@ func (p *Blacklist) OnAccept(sess core.Session) error {
 		}
 	}
 	return nil
+}
+
+// normalizeIP returns the canonical string form of an IP literal, mapping
+// IPv4-mapped IPv6 addresses (::ffff:a.b.c.d) to plain IPv4 so exact matches
+// are consistent across dual-stack sockets. Non-IP strings (hostnames) are
+// returned unchanged.
+func normalizeIP(host string) string {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return host
+	}
+	if v4 := ip.To4(); v4 != nil {
+		return v4.String()
+	}
+	return ip.String()
 }

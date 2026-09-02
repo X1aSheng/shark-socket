@@ -200,12 +200,16 @@ func (s *Server) handleWithSession(w stdhttp.ResponseWriter, r *stdhttp.Request)
 			w.WriteHeader(stdhttp.StatusNoContent)
 			return
 		}
-		stdhttp.Error(w, err.Error(), stdhttp.StatusBadRequest)
+		// Never leak internal/plugin error details to the client: log them
+		// and answer with a generic status text.
+		s.rt.Logger().Warn("http plugin message error", "session", sess.ID(), "error", err)
+		stdhttp.Error(w, stdhttp.StatusText(stdhttp.StatusBadRequest), stdhttp.StatusBadRequest)
 		return
 	}
 	msg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolHTTP, Payload: body}
 	if err := s.opts.Handler(sess, msg); err != nil {
-		stdhttp.Error(w, err.Error(), stdhttp.StatusInternalServerError)
+		s.rt.Logger().Error("http handler error", "session", sess.ID(), "error", err)
+		stdhttp.Error(w, stdhttp.StatusText(stdhttp.StatusInternalServerError), stdhttp.StatusInternalServerError)
 		return
 	}
 }
