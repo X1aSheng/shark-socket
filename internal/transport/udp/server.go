@@ -318,7 +318,19 @@ func (s *Server) sweepLoop(ctx context.Context) {
 func (s *Server) getOrCreateSession(addr *net.UDPAddr) *session {
 	key := addr.String()
 	if value, ok := s.sessions.Load(key); ok {
-		return value.(*session)
+		sess := value.(*session)
+		// A plugin or error path may have Closed this session while the peer
+		// keeps sending (e.g. AutoBan kill, handler failure). Such a session
+		// can never send again and would otherwise linger here, refreshed by
+		// every datagram via touch(), until the idle sweep eventually gives up
+		// — retaining a dead slot and a stale session ID. Reap it and let the
+		// next packet create a fresh session (which re-runs OnAccept, so
+		// blacklist/autoban gating still applies).
+		if sess.State() == core.StateClosed {
+			s.closeSession(context.Background(), key, sess)
+		} else {
+			return sess
+		}
 	}
 	// Allocate the ID up front so the published session never carries a
 	// provisional id=0 that a concurrent sweep/close could observe (a data
