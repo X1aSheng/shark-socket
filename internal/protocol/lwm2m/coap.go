@@ -65,7 +65,10 @@ func (s *Server) handleRegister(fields []string) ([]byte, error) {
 		}
 		objects = append(objects, path)
 	}
-	reg := s.Register(fields[1], lifetime, objects...)
+	reg, err := s.Register(fields[1], lifetime, objects...)
+	if err != nil {
+		return nil, err
+	}
 	return []byte("registered " + reg.Endpoint), nil
 }
 
@@ -147,9 +150,13 @@ func (s *Server) handleDiscover(_ []string) ([]byte, error) {
 	return []byte(strings.Join(lines, "\n")), nil
 }
 
+// parseLifetime parses a registration lifetime in seconds. Values above
+// maxLifetime are rejected so a peer cannot register (or refresh) a
+// near-infinite lifetime, and the value is bounded far below the point where
+// the seconds-to-Duration multiplication could overflow int64.
 func parseLifetime(raw string) (time.Duration, error) {
 	seconds, err := strconv.Atoi(raw)
-	if err != nil || seconds < 0 {
+	if err != nil || seconds < 0 || int64(seconds) > int64(maxLifetime/time.Second) {
 		return 0, ErrInvalidCoAPPayload
 	}
 	return time.Duration(seconds) * time.Second, nil

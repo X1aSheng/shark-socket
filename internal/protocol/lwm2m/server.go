@@ -6,27 +6,52 @@ import (
 )
 
 type Server struct {
-	mu            sync.RWMutex
-	registrations map[string]Registration
-	resources     map[string]map[string]Resource
-	objects       map[int]ObjectDefinition
-	defaultLife   time.Duration
-	OnWrite       func(resourcePath string, value []byte)
+	mu               sync.RWMutex
+	registrations    map[string]Registration
+	resources        map[string]map[string]Resource
+	objects          map[int]ObjectDefinition
+	defaultLife      time.Duration
+	maxRegistrations int
+	lastSweepAt      time.Time
+	OnWrite          func(resourcePath string, value []byte)
 }
+
+// Registry bounds. The registry is fed by unauthenticated network input in
+// the CoAP responder mode, so both the entry count and every registration's
+// lifetime are capped; expired entries are reclaimed by a throttled sweep
+// when the registry is full.
+const (
+	defaultMaxRegistrations = 65536
+	maxLifetime             = 30 * 24 * time.Hour
+	sweepThrottle           = time.Minute
+)
 
 type ServerOption func(*Server)
 
 func NewServer(opts ...ServerOption) *Server {
 	s := &Server{
-		registrations: make(map[string]Registration),
-		resources:     make(map[string]map[string]Resource),
-		objects:       make(map[int]ObjectDefinition),
-		defaultLife:   5 * time.Minute,
+		registrations:    make(map[string]Registration),
+		resources:        make(map[string]map[string]Resource),
+		objects:          make(map[int]ObjectDefinition),
+		defaultLife:      5 * time.Minute,
+		maxRegistrations: defaultMaxRegistrations,
 	}
 	for _, opt := range opts {
 		opt(s)
 	}
 	return s
+}
+
+// WithMaxRegistrations caps the number of concurrent endpoint registrations.
+// Values <= 0 keep the default (65536). When the cap is reached, Register
+// first attempts a throttled sweep of expired registrations before refusing
+// with ErrRegistrationLimit.
+func WithMaxRegistrations(max int) ServerOption {
+	return func(s *Server) {
+		if max > 0 {
+			s.maxRegistrations = max
+		}
+	}
 }
 
 // RegisterObject adds a supported OMA object definition to the server.
@@ -71,9 +96,17 @@ func WithDefaultLifetime(lifetime time.Duration) ServerOption {
 	}
 }
 
-func (s *Server) Register(endpoint string, lifetime time.Duration, objects ...ObjectPath) Registration {
+// Register stores or replaces an endpoint registration. Lifetime is clamped
+// to maxLifetime. When the registration table is full, expired entries are
+// reclaimed by a throttled sweep; if the table is still full the registration
+// is refused with ErrRegistrationLimit so an unauthenticated peer cannot grow
+// the registry without bound.
+func (s *Server) Register(endpoint string, lifetime time.Duration, objects ...ObjectPath) (Registration, error) {
 	if lifetime <= 0 {
 		lifetime = s.defaultLife
+	}
+	if lifetime > maxLifetime {
+		lifetime = maxLifetime
 	}
 	now := time.Now()
 	reg := Registration{
@@ -84,12 +117,26 @@ func (s *Server) Register(endpoint string, lifetime time.Duration, objects ...Ob
 		UpdatedAt: now,
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.registrations[endpoint]; !exists {
+		if len(s.registrations) >= s.maxRegistrations {
+			// Throttled amortized sweep: only reclaim stale entries at most
+			// once per sweepThrottle so a saturation flood cannot force an
+			// O(n) scan per packet.
+			if time.Since(s.lastSweepAt) >= sweepThrottle {
+				s.sweepLocked(now)
+				s.lastSweepAt = now
+			}
+			if len(s.registrations) >= s.maxRegistrations {
+				return Registration{}, ErrRegistrationLimit
+			}
+		}
+	}
 	s.registrations[endpoint] = reg
 	if _, ok := s.resources[endpoint]; !ok {
 		s.resources[endpoint] = make(map[string]Resource)
 	}
-	s.mu.Unlock()
-	return reg
+	return reg, nil
 }
 
 func (s *Server) Update(endpoint string, lifetime time.Duration) (Registration, error) {
@@ -100,6 +147,9 @@ func (s *Server) Update(endpoint string, lifetime time.Duration) (Registration, 
 		return Registration{}, ErrRegistrationGone
 	}
 	if lifetime > 0 {
+		if lifetime > maxLifetime {
+			lifetime = maxLifetime
+		}
 		reg.Lifetime = lifetime
 	}
 	reg.UpdatedAt = time.Now()
@@ -165,9 +215,17 @@ func (s *Server) Read(endpoint string, path ObjectPath) (Resource, bool) {
 	return resource, ok
 }
 
+// SweepExpired removes registrations whose lifetime has elapsed. Callers may
+// invoke it periodically; the registry also sweeps internally (throttled)
+// when Register hits the capacity limit.
 func (s *Server) SweepExpired(now time.Time) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.sweepLocked(now)
+}
+
+// sweepLocked removes expired registrations. Caller must hold s.mu.
+func (s *Server) sweepLocked(now time.Time) int {
 	removed := 0
 	for endpoint, reg := range s.registrations {
 		if reg.Expired(now) {

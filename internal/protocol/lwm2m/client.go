@@ -33,7 +33,7 @@ func WithObjects(objects ...ObjectPath) ClientOption {
 	}
 }
 
-func (c *Client) Register() Registration {
+func (c *Client) Register() (Registration, error) {
 	return c.server.Register(c.Endpoint, c.Lifetime, c.Objects...)
 }
 

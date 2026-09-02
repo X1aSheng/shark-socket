@@ -62,11 +62,14 @@ func TestServerGetResourceDefinition(t *testing.T) {
 
 func TestServerRegisterAndUpdate(t *testing.T) {
 	srv := NewServer()
-	reg := srv.Register("device-1", 3600*time.Second, ObjectPath{ObjectID: 3, InstanceID: 0})
+	reg, err := srv.Register("device-1", 3600*time.Second, ObjectPath{ObjectID: 3, InstanceID: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if reg.Endpoint != "device-1" {
 		t.Fatalf("endpoint = %s, want device-1", reg.Endpoint)
 	}
-	_, err := srv.Update("device-1", 7200*time.Second)
+	_, err = srv.Update("device-1", 7200*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,10 +9,11 @@ import (
 )
 
 var (
-	ErrInvalidPath      = errors.New("invalid lwm2m path")
-	ErrRegistrationGone = errors.New("registration not found")
-	ErrReadOnly         = errors.New("resource is read-only")
-	ErrNotSupported     = errors.New("operation not supported")
+	ErrInvalidPath       = errors.New("invalid lwm2m path")
+	ErrRegistrationGone  = errors.New("registration not found")
+	ErrReadOnly          = errors.New("resource is read-only")
+	ErrNotSupported      = errors.New("operation not supported")
+	ErrRegistrationLimit = errors.New("registration limit reached")
 )
 
 // ResourceType represents OMA LwM2M resource data types.

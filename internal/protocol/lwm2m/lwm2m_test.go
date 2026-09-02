@@ -23,7 +23,10 @@ func TestRegistrationLifecycleAndResources(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := NewClient("device-1", server, WithObjects(path))
-	reg := client.Register()
+	reg, err := client.Register()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if reg.Endpoint != "device-1" || len(reg.Objects) != 1 {
 		t.Fatalf("registration = %#v", reg)
 	}
