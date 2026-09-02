@@ -6,9 +6,12 @@ services:
       args:
         GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
     ports:
+      # Only the device-facing TCP port is published. Metrics (18080) and
+      # health (18081) are unauthenticated and stay container-internal; if you
+      # need them on the host (local debugging), map them explicitly, e.g.
+      #   - "18080:18080"
+      #   - "18081:18081"
       - "18000:18000"
-      - "18080:18080"
-      - "18081:18081"
     environment:
       SHARK_TCP_ADDR: 0.0.0.0:18000
       SHARK_METRICS_ADDR: 0.0.0.0:18080

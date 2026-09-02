@@ -37,15 +37,23 @@ Shark-Socket 采用**分层防御**策略，安全控制分布在六个层级：
 
 ### 2.1 支持协议
 
-TLS 仅在 **TCP** 和 **QUIC** 上支持，QUIC 强制要求 TLS。
+TLS 在 **TCP** 与 **QUIC** 上支持（QUIC 强制要求），DTLS 在 **UDP** 与 **CoAP** 上支持。
 
-| 协议 | TLS | mTLS | 说明 |
-|------|-----|------|------|
-| TCP | 可选 | 可选 | 通过 `tls_cert_file` / `tls_key_file` 启用 |
+| 协议 | TLS/DTLS | mTLS | 说明 |
+|------|----------|------|------|
+| TCP | 可选 | 可选 | 通过 `tls_cert_file` / `tls_key_file` 启用，证书热加载 |
 | QUIC | **必须** | 可选 | 启动时校验，缺少证书直接拒绝启动 |
 | WebSocket | — | — | 建议前置 TLS 反向代理 |
 | HTTP | — | — | 建议前置 TLS 反向代理 |
-| CoAP | — | — | DTLS 需外部代理支持 |
+| UDP | 可选（DTLS） | 可选 | 通过 `tls_cert_file` / `tls_key_file` 启用 |
+| CoAP | 可选（DTLS） | 可选 | 通过 `tls_cert_file` / `tls_key_file` 启用 |
+
+**UDP/CoAP DTLS 与 mTLS 注意**：应用配置路径（JSON / `SHARK_*` 环境变量）的证书经
+`GetCertificate` 桥接进 pion/dtls（配置 `Certificates` 恒为空），映射层负责在
+Accept 后按 `tls_client_auth` 策略强制校验客户端证书（缺失/链不可信即关闭连接）。
+该强制不依赖 pion/dtls 自身的客户端认证流程——其 v3.1.2 在部分路径上不会可靠执行
+链校验，客户端认证握手也可能停滞，因此接入真实 DTLS 客户端栈（libcoap、openssl
+等）时需做互操作验证。
 
 ### 2.2 配置方式
 
@@ -84,7 +92,7 @@ TLS 仅在 **TCP** 和 **QUIC** 上支持，QUIC 强制要求 TLS。
 - `tls_client_ca_file` 必须配合 cert/key 使用
 - `tls_client_auth` 必须配合 cert/key 使用
 - QUIC 协议必须提供 cert/key（否则启动失败）
-- 非 TCP/QUIC 协议不支持 TLS 字段（否则启动失败）
+- 非 TCP/UDP/CoAP/QUIC 协议不支持 TLS 字段（否则启动失败）
 
 ### 2.4 环境变量
 
@@ -107,10 +115,10 @@ SHARK_TCP_CLIENT_AUTH=require_and_verify
 blacklist := plugin.NewBlacklist("10.0.0.1", "192.168.0.0/16")
 ```
 
-- **精确匹配**：IP 地址直接查哈希表，O(1)
+- **精确匹配**：IP 地址直接查哈希表，O(1)；条目与对端地址均做 IP 归一化
+  （IPv4-mapped `::ffff:a.b.c.d` 与纯 IPv4 等价，不会绕过精确条目）
 - **CIDR 匹配**：遍历网段列表，`net.IPNet.Contains()` 判断
 - 触发时返回 `ErrPluginBlock`，立即拒绝连接
-- 可通过 AutoBan 动态添加
 
 ### 3.2 自动封禁（AutoBanPlugin，优先级 5）
 
@@ -138,13 +146,39 @@ rateLimit := plugin.NewRateLimit(100, time.Second) // 每秒 100 条消息
 - 超过空闲阈值的会话自动关闭
 - 防止僵尸连接消耗资源
 
-### 3.5 插件组合建议
+### 3.5 插件生命周期（重要）
+
+插件分为两类：
+
+- **被动钩子插件**（Blacklist、Persistence、业务插件）：只实现
+  `OnAccept/OnMessage/OnClose`，无需额外管理。
+- **生命周期插件**（AutoBan、RateLimit、Heartbeat、Cluster）：内部有后台
+  清理/扫荡 goroutine（例如过期封禁与限速计数回收、心跳扫荡、集群消费），
+  必须随 Gateway 启停。这些插件实现 `core.LifecyclePlugin`（`Start()/Stop()`）；
+  经 `api.WithPlugins` 挂载后，**Gateway.Start 会自动按优先级启动它们、
+  Gateway.Stop 会在所有会话关闭后自动逆序停止它们**，无需手工调用。
+  若脱离 Gateway 直接使用插件链，需自行调用 `Start()`/`Stop()`（实现幂等，
+  可安全重复调用与 Stop-without-Start）。
+
+> 历史缺陷（已修复）：插件 `Start/Stop` 曾完全未被 Gateway 调用，导致
+> Heartbeat/Cluster 挂载后不工作、AutoBan/RateLimit 的清理永不运行、计数
+> 表随远端 IP 无界增长。
+
+### 3.6 插件组合建议
 
 **生产环境推荐配置（优先级顺序）：**
 
 ```
 Blacklist(0) → AutoBan(5) → RateLimit(10) → [业务插件] → Heartbeat(50) → Persistence(90)
 ```
+
+说明：
+- AutoBan 是**按消息数**计数的每 IP 限幅器（不是违规检测器）：阈值即该 IP
+  允许发送的消息总数，默认 3 偏保守，需按业务量调大，否则会误封合法客户端；
+- 封禁/计数表在进程内存中，**进程重启即清零**，且清理周期由自动生命周期
+  保证；需要持久封禁时请接入外部封禁列表；
+- 反向代理/网关拓扑下所有客户端共享代理 IP，黑名单/封禁/限流退化为单键，
+  请按部署拓扑配置。
 
 ---
 
@@ -179,7 +213,9 @@ api.NewWebSocketServer(
 
 - `AllowedOrigins` 配置白名单，精确匹配 Origin 头
 - 包含 `*` 表示允许所有来源（仅限开发环境）
-- 不设置时使用 gorilla/websocket 默认策略
+- **不设置时默认拒绝所有来源**（库默认 `CheckOrigin` 返回 false，与
+  gorilla/websocket 的宽松默认不同——禁止跨站 WebSocket 劫持；同源 Web
+  应用需显式配置自己的 Origin）
 
 ### 4.3 CORS 配置（HTTP）
 
@@ -341,6 +377,9 @@ securityContext:
 | 单点故障扩散 | L5 运行时 | Plugin panic 隔离、Gateway 启动回滚 |
 | 容器逃逸 | L6 容器 | non-root + read-only + drop ALL + seccomp |
 | 协议层重复处理 | L2 传输 | CoAP CON MessageID 去重 |
+| 僵尸连接资源耗尽 | L1 + L5 | 传输读超时/TTL 清扫 + HeartbeatPlugin + SessionManager 容量；含观察者会话豁免空闲清扫，订阅经 RST / 重传耗尽 / 会话拆除结束 |
+| 无界订阅/注册状态增长 | L2 + 应用层 | CoAP observe：每源 64 / 全局 4096 上限、同 (resource,remote) 重复注册替换、RST 注销、CON 通知重传耗尽自动注销；LwM2M 注册表：容量上限（默认 65536，可配）与节流过期清扫、lifetime 上限 30 天 |
+| 明文 UDP 伪造源填充 | L2 + 部署 | UDP/CoAP 会话按源地址记账、空闲 TTL 回收、closed 会话即时重建；生产建议 DTLS + mTLS 或可信网络边界 |
 
 ---
 

@@ -52,6 +52,20 @@ PluginRunner 负责（详见 GATEWAY.md §4）：
   - 自身指标的记录（不依赖 PluginRunner 代劳）
 ```
 
+### 1.2.1 生命周期插件（Start/Stop）
+
+需要后台 goroutine 的插件（**AutoBan**、**RateLimit**、**Heartbeat**、
+**Cluster**）实现可选的 `core.LifecyclePlugin`（`Start() error` /
+`Stop() error`），用于启动/停止其清理、扫荡或消费循环（过期封禁与计数
+回收、心跳扫荡、跨节点消息消费）。
+
+- 经 `api.WithPlugins` 挂载后，`Gateway.Start` 会在任何服务 accept 流量
+  之前按优先级顺序调用 `Start()`（失败则回滚已启动插件并拒绝启动）；
+  `Gateway.Stop` 会在所有会话关闭后逆序调用 `Stop()`。无需手工调用。
+- 被动插件（只实现 `OnAccept/OnMessage/OnClose`）被自动跳过。
+- 脱离 Gateway 单独使用插件链时须自行 `Start()/Stop()`；内置生命周期辅助
+  （`internal/plugin/lifecycle.go`）保证重复调用、Stop-without-Start 安全。
+
 ### 1.3 文件清单
 
 ```

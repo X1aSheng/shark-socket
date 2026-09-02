@@ -7,6 +7,43 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### Security Hardening — Audit Batch (2026-09-02)
+
+全量代码审计（传输/插件/运行时/LwM2M/CoAP/部署四路并行复核）后的修复批次：
+
+- **插件生命周期接入 Gateway**：`AutoBan/RateLimit/Heartbeat/Cluster` 的 `Start/Stop`
+  此前无人调用（Heartbeat/Cluster 挂载后完全失效、AutoBan/RateLimit 清理永不运行、计数随远端
+  IP 无界增长）。新增 `core.LifecyclePlugin` + `PluginRunner.StartAll/StopAll`：
+  Gateway.Start 在服务器 accept 之前按优先级启动（失败回滚并拒绝启动），Gateway.Stop 在
+  会话全部关闭后逆序停止；插件启动失败也会回滚已启动服务器
+- **UDP/CoAP closed 会话重建**：插件/错误路径 `Close` 的明文 UDP 会话此前被同源后续报文
+  静默复用（`touch()` 续命、Send 全失败、槽位永久占用）；现在按状态即时回收并重建新会话
+  （重新执行 OnAccept 门控）
+- **CoAP observe（RFC 7641）**：同 (resource, remote) 重复注册替换旧关系（token 轮换不再
+  累积）、RST 按 token 注销观察者、CON 通知重传耗尽自动注销死订阅、每源 64/全局 4096
+  订阅上限、空闲清扫豁免含观察者的会话（低频率通知不再静默断订阅）、DTLS 会话拆除清理
+  观察者
+- **LwM2M 注册表治理**：默认 65536 注册上限（`WithMaxRegistrations`）+ 满员时节流过期清扫
+  （`ErrRegistrationLimit`，此前 `SweepExpired` 仅测试调用）；lifetime 钳制 30 天并拒绝
+  溢出值（此前 `seconds*time.Second` 可 int64 溢出、注册永不过期）；`Client.Register` 透传错误
+- **DTLS 配置映射**：应用配置路径（`GetCertificate` 热载、`Certificates` 恒空）此前经映射后
+  DTLS 服务端无证书、握手必然失败——现桥接 `GetCertificate`；`tls_client_auth` 此前被静默
+  丢弃——现数值映射并在 UDP/CoAP Accept 后按 crypto/tls 策略强制校验（存在性 + 链验证，
+  不依赖 pion 内部路径，v3.1.2 客户端认证流程不可靠的互操作限制见 SECURITY.md）
+- **32 位崩溃**：LengthPrefixFramer 对 ≥2³¹ 长度前缀先转 int 再比较，32 位平台负数绕过上限
+  并在 `make` 崩溃——改为 uint32 域比较（单帧远程崩溃，IoT 类 32 位部署）
+- **黑名单 IPv4-mapped 绕过**：精确条目与对端地址双向 IP 归一化（`::ffff:a.b.c.d`）
+- **错误信息收敛**：HTTP/gRPC-Web 不再把内部/插件错误文本回显给客户端（通用状态文本 +
+  服务端日志；gRPC-Web 业务 handler 错误仍经 grpc-message 透传，契约不变）
+- **infra**：证书热载原子化（CA 失败不再留半更新状态）、watcher 轮询间隔防 panic、
+  熔断器 Open 态不再被迟到 Failure 无限延长窗口、PubSub dropped 计数随最后订阅者清理
+- **MQTT**：Start 覆盖"未连接旧 client"前先 Disconnect（旧自动重连 goroutine 不再泄漏并与
+  新连接互踢）、Stop 与拨号窗口竞态（generation 校验，Stop 后不再被迟到拨号复活）、
+  Publish 防御性拷贝
+- **文档校准**：SECURITY.md（DTLS/mTLS 支持与限制、插件生命周期、WS Origin 默认拒绝、
+  黑名单动态添加不实声明移除、攻击面矩阵补订阅/注册治理行）、PLUGIN.md（生命周期插件
+  章节）、docker-compose 不再向宿主机发布无鉴权 metrics/health 端口
+
 ### Zombie-Connection Reclaim (2026-08-31)
 
 假链接/僵尸连接回收的可见性与回归保护：
