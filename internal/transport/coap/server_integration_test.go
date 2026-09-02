@@ -276,7 +276,7 @@ func TestCoAPNONObserveInitialValue(t *testing.T) {
 // CON notification so it is not retransmitted.
 func TestCoAPNotificationAckClearsPending(t *testing.T) {
 	s := NewServer(WithAddr("127.0.0.1:0"))
-	s.trackNotify("127.0.0.1:1", 42, []byte("data"))
+	s.trackNotify("127.0.0.1:1", 42, []byte("tok"), []byte("data"))
 	if got := len(s.pendingNotifies); got != 1 {
 		t.Fatalf("pending = %d, want 1", got)
 	}

@@ -30,9 +30,12 @@ type notifyKey struct {
 }
 
 // pendingNotify tracks an unacknowledged CON observe notification for
-// retransmission (RFC 7641 / RFC 7252 reliability).
+// retransmission (RFC 7641 / RFC 7252 reliability). token is the observe
+// relation token carried by the notification, used to cancel the relation
+// when the peer never acknowledges.
 type pendingNotify struct {
 	data     []byte
+	token    []byte
 	attempts int
 }
 
@@ -231,6 +234,11 @@ func (s *Server) handleDTLSConn(ctx context.Context, conn net.Conn) {
 	accepted := false
 	defer func() {
 		s.dtlsConns.Delete(id)
+		// The peer's transport session has ended (disconnect, read deadline,
+		// or shutdown); drop any observe relations it held so they cannot
+		// linger until the next notification. Idempotent: closeSession also
+		// performs this cleanup when it runs first.
+		s.observers.RemoveBySession(sess.remote.String())
 		// Guarded by LoadAndDelete so OnClose fires exactly once even when
 		// CloseSessions already removed this session via closeSession.
 		if _, loaded := s.sessions.LoadAndDelete(id); loaded {
@@ -325,8 +333,11 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 		return
 	}
 	if msg.Type == TypeRST {
-		// RST rejects a CON notification; stop retransmitting it.
+		// RST rejects a CON notification: stop retransmitting it and cancel
+		// the observe relation the rejected notification refers to (RFC 7641
+		// §4.4) — the notification token identifies the relation.
 		s.clearPendingNotify(sess.remote.String(), msg.MessageID)
+		s.observers.RemoveByToken(sess.remote.String(), msg.Token)
 		return
 	}
 
@@ -419,8 +430,10 @@ func (s *Server) handleObserve(sess *session, msg Message) bool {
 	if hasObserve && len(obsVal) > 0 {
 		reg := obsVal[0]
 		if reg == 0 {
-			s.observers.Register(resource, remote, msg.Token)
-			return true
+			// Register returns nil when subscription limits are reached; the
+			// request is then answered without an observe relation instead of
+			// unboundedly growing the registry.
+			return s.observers.Register(resource, remote, msg.Token) != nil
 		} else if reg == 1 {
 			s.observers.Remove(resource, remote, msg.Token)
 		}
@@ -491,13 +504,17 @@ func (s *Server) NotifyObservers(resource string, payload []byte) {
 			s.observers.Remove(resource, obs.Remote, obs.Token)
 			continue
 		}
-		s.trackNotify(obs.Remote, notify.MessageID, data)
+		s.trackNotify(obs.Remote, notify.MessageID, notify.Token, data)
 	}
 }
 
-func (s *Server) trackNotify(remote string, msgID uint16, data []byte) {
+func (s *Server) trackNotify(remote string, msgID uint16, token []byte, data []byte) {
 	s.retransmitMu.Lock()
-	s.pendingNotifies[notifyKey{remote: remote, msgID: msgID}] = pendingNotify{data: data}
+	s.pendingNotifies[notifyKey{remote: remote, msgID: msgID}] = pendingNotify{
+		data:     data,
+		token:    append([]byte(nil), token...),
+		attempts: 0,
+	}
 	s.retransmitMu.Unlock()
 }
 
@@ -531,9 +548,20 @@ func (s *Server) retransmitDue() {
 	// other observer's retransmission.
 	s.retransmitMu.Lock()
 	due := make([]notifyKey, 0, len(s.pendingNotifies))
+	var abandoned []struct {
+		remote string
+		token  []byte
+	}
 	for key, pn := range s.pendingNotifies {
 		if pn.attempts >= maxRetransmit {
 			delete(s.pendingNotifies, key)
+			// The peer never acknowledged the notification: cancel the
+			// observe relation so a dead or unreachable client cannot keep a
+			// subscription (and its notification stream) alive forever.
+			abandoned = append(abandoned, struct {
+				remote string
+				token  []byte
+			}{remote: key.remote, token: pn.token})
 			continue
 		}
 		due = append(due, key)
@@ -561,6 +589,12 @@ func (s *Server) retransmitDue() {
 		if err := sess.Send(data); err != nil {
 			s.untrackNotify(remote, key.msgID)
 		}
+	}
+	// Cancel relations whose CON notifications were never acknowledged: the
+	// client is unreachable, so keeping the relation would only produce more
+	// notifications for a peer that cannot receive them.
+	for _, abandoned := range abandoned {
+		s.observers.RemoveByToken(abandoned.remote, abandoned.token)
 	}
 }
 
@@ -591,6 +625,15 @@ func (s *Server) sweepLoop(ctx context.Context) {
 			now := time.Now()
 			s.sessions.Range(func(key, value any) bool {
 				sess := value.(*session)
+				// Sessions that still hold observe relations belong to clients
+				// that may legitimately be silent between notifications (the
+				// next notification is due less often than SessionTTL). Idle
+				// sweeping them would silently drop live subscriptions, so
+				// they are exempt; relations end via RST (RFC 7641 §4.4),
+				// retransmission exhaustion or session teardown instead.
+				if s.observers.HasObservers(sess.remote.String()) {
+					return true
+				}
 				if now.Sub(sess.LastActiveAt()) > s.opts.SessionTTL {
 					// Count only if the sweep actually removed the session, so
 					// a DTLS session already reclaimed by its read deadline is
