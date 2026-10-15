@@ -16,12 +16,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Default to the narrowest useful scope. Only the jobs that upload logs need
+# actions:write; granting it workflow-wide would let any step (including a
+# third-party action) overwrite the run's artifacts. The uploading jobs add it
+# explicitly below.
 permissions:
   contents: read
-  # actions:write is required for actions/upload-artifact to store the logs;
-  # with only contents:read, every other scope (including actions) is denied
-  # and the upload steps would 403.
-  actions: write
 
 jobs:
   lint:
@@ -101,6 +101,11 @@ jobs:
     name: Validate (ubuntu-latest)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # actions:write is required for actions/upload-artifact; with only
+    # contents:read the upload step would 403.
+    permissions:
+      contents: read
+      actions: write
     services:
       mosquitto:
         image: eclipse-mosquitto:2
@@ -152,6 +157,11 @@ jobs:
     name: Validate (windows-latest)
     runs-on: windows-latest
     timeout-minutes: 20
+    # actions:write is required for actions/upload-artifact; with only
+    # contents:read the upload step would 403.
+    permissions:
+      contents: read
+      actions: write
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -186,6 +196,11 @@ jobs:
     name: Race (ubuntu-latest)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # actions:write is required for actions/upload-artifact; with only
+    # contents:read the upload step would 403.
+    permissions:
+      contents: read
+      actions: write
     services:
       mosquitto:
         image: eclipse-mosquitto:2
@@ -230,6 +245,11 @@ jobs:
     name: Coverage (ubuntu-latest)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # actions:write is required for actions/upload-artifact; with only
+    # contents:read the upload step would 403.
+    permissions:
+      contents: read
+      actions: write
     services:
       mosquitto:
         image: eclipse-mosquitto:2
