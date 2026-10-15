@@ -23,8 +23,8 @@
 
 ### 1. 代码获取
 ```
-Source: GitHub → git clone https://github.com/X1aSheng/shark-socket.git
-Status: ✅ 成功
+Source: GitHub -> git clone https://github.com/X1aSheng/shark-socket.git
+Status: [OK] 成功
 Commit: c32df0e4
 ```
 
@@ -33,7 +33,7 @@ Commit: c32df0e4
 go test ./... -count=1
 GOPROXY=https://goproxy.cn,direct
 
-Result: ✅ 25/25 suites PASS
+Result: [OK] 25/25 suites PASS
 Time: ~50s
 ```
 
@@ -42,7 +42,7 @@ Time: ~50s
 docker build -f deploy/docker/Dockerfile -t shark-socket:v4 .
 Image SHA: fe3f7410825966b8f789ebf61b6b983ad3d56eabefade3e6b56999d69d23de4a
 
-Result: ✅ 构建成功 (68.9s)
+Result: [OK] 构建成功 (68.9s)
 ```
 
 ### 4. Docker Compose 部署
@@ -52,37 +52,37 @@ SHARK_TCP_ADDR=0.0.0.0:18000 SHARK_HEALTH_ADDR=0.0.0.0:18081 \
   SHARK_METRICS_ADDR=0.0.0.0:18080 docker compose up -d --build
 
 Running containers:
-  - docker-shark-socket-1  (0.0.0.0:18000, :18080, :18081)  ✅ healthy
-  - docker-mosquitto-1     (0.0.0.0:1883)                   ✅ healthy
+  - docker-shark-socket-1  (0.0.0.0:18000, :18080, :18081)  [OK] healthy
+  - docker-mosquitto-1     (0.0.0.0:1883)                   [OK] healthy
 
-Result: ✅ 2 containers healthy
+Result: [OK] 2 containers healthy
 ```
 
 ### 5. 健康检查
 ```
-curl http://120.76.44.233:18081/healthz → "ok"     ✅
-curl http://120.76.44.233:18081/readyz  → "ready"  ✅
+curl http://120.76.44.233:18081/healthz -> "ok"     [OK]
+curl http://120.76.44.233:18081/readyz  -> "ready"  [OK]
 ```
 
-### 6. 客户端 ↔ 云端 TCP Echo
+### 6. 客户端 <-> 云端 TCP Echo
 ```
-本地 Windows → 120.76.44.233:18000
+本地 Windows -> 120.76.44.233:18000
 Protocol: TCP, LengthPrefixFramer
 Payload:  "HELLO-CLOUD-SHARK-SOCKET"
 Response: "HELLO-CLOUD-SHARK-SOCKET"
 
-Result: ✅ Echo 正确往返
+Result: [OK] Echo 正确往返
 ```
 
 ### 7. GitHub Actions CI
 ```
 CI workflow: .github/workflows/ci.yml
   - golangci-lint: v1.64.2 (pinned)
-  - govulncheck: ✅
-  - Docker build: ✅
+  - govulncheck: [OK]
+  - Docker build: [OK]
   - mosquitto health check: mosquitto_sub (proper MQTT check)
 
-Result: ✅ CI 配置正确
+Result: [OK] CI 配置正确
 ```
 
 ---
@@ -91,15 +91,15 @@ Result: ✅ CI 配置正确
 
 | 检查项 | 结果 |
 |--------|------|
-| 代码推送 (GitHub + Gitee) | ✅ 双仓库同步 |
-| 云服务器 clone | ✅ GitHub 公共仓库 |
-| `go test ./...` | ✅ 25/25 PASS |
-| Docker 构建 | ✅ shark-socket:v4 |
-| Docker Compose 部署 | ✅ 2 containers healthy |
-| 健康检查 | ✅ healthz/readyz OK |
-| TCP Echo (本地→云端) | ✅ HELLO-CLOUD-SHARK-SOCKET 正确往返 |
-| Prometheus metrics | ✅ 端点响应 |
-| CI 配置 | ✅ lint 版本固定, mosquitto_sub |
+| 代码推送 (GitHub + Gitee) | [OK] 双仓库同步 |
+| 云服务器 clone | [OK] GitHub 公共仓库 |
+| `go test ./...` | [OK] 25/25 PASS |
+| Docker 构建 | [OK] shark-socket:v4 |
+| Docker Compose 部署 | [OK] 2 containers healthy |
+| 健康检查 | [OK] healthz/readyz OK |
+| TCP Echo (本地->云端) | [OK] HELLO-CLOUD-SHARK-SOCKET 正确往返 |
+| Prometheus metrics | [OK] 端点响应 |
+| CI 配置 | [OK] lint 版本固定, mosquitto_sub |
 
 ---
 

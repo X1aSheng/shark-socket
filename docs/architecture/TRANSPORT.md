@@ -1,12 +1,12 @@
-# TRANSPORT.md — Part 1/5: TCP
+# TRANSPORT.md - Part 1/5: TCP
 
-> Shark-Socket 传输层：TCP 协议实现细节  
-> 版本：v0.2.x-alpha  
-> 最后更新：2026-06-01
+> Shark-Socket 传输层:TCP 协议实现细节  
+> 版本:v0.2.x-alpha  
+> 最后更新:2026-06-01
 
 ---
 
-## 目录（TCP 部分）
+## 目录(TCP 部分)
 
 1. [TCP 协议概述](#1-tcp-协议概述)
 2. [Framer 接口与内置实现](#2-framer-接口与内置实现)
@@ -21,22 +21,22 @@
 
 ### 1.1 在框架中的定位
 
-TCP 是框架的**核心传输协议**，其设计模式是其他协议实现的参考基础：
+TCP 是框架的**核心传输协议**,其设计模式是其他协议实现的参考基础:
 
-- **Framer 接口**：解决 TCP 字节流的帧边界问题
-- **写队列 + drain**：Session 关闭的六步状态机在 TCP 中首次定义
-- **WorkerPool**：消息处理并发模型
-- **StagedServer**：TCP 完整实现三阶段关闭
+- **Framer 接口**:解决 TCP 字节流的帧边界问题
+- **写队列 + drain**:Session 关闭的六步状态机在 TCP 中首次定义
+- **WorkerPool**:消息处理并发模型
+- **StagedServer**:TCP 完整实现三阶段关闭
 
 ### 1.2 文件清单
 
 ```
 internal/transport/tcp/
-├── framer.go    # Framer 接口 + 4 种内置实现
-├── session.go   # TCPSession：写队列 + drain + 6 步 Close
-├── server.go    # TCPServer：accept + Framer + WorkerPool + StagedServer
-├── client.go    # TCPClient：自动重连 + 指数退避
-└── options.go   # TCPOption Functional Options
++-- framer.go    # Framer 接口 + 4 种内置实现
++-- session.go   # TCPSession:写队列 + drain + 6 步 Close
++-- server.go    # TCPServer:accept + Framer + WorkerPool + StagedServer
++-- client.go    # TCPClient:自动重连 + 指数退避
++-- options.go   # TCPOption Functional Options
 ```
 
 ### 1.3 编译期验证
@@ -60,38 +60,38 @@ var _ core.Session = (*Session)(nil)
 ```go
 // internal/transport/tcp/framer.go
 
-// Framer 解决 TCP 字节流的帧边界问题。
-// 实现约束：
-//   - ReadFrame 必须无状态，不跨调用保持预读缓冲（禁止使用 bufio.Reader 跨调用）
-//   - WriteFrame 必须保证完整写入（处理短写，不允许部分发送）
-//   - ReadFrame 和 WriteFrame 不需要并发安全（调用方保证单 goroutine 调用）
+// Framer 解决 TCP 字节流的帧边界问题.
+// 实现约束:
+//   - ReadFrame 必须无状态,不跨调用保持预读缓冲(禁止使用 bufio.Reader 跨调用)
+//   - WriteFrame 必须保证完整写入(处理短写,不允许部分发送)
+//   - ReadFrame 和 WriteFrame 不需要并发安全(调用方保证单 goroutine 调用)
 type Framer interface {
     ReadFrame(r io.Reader) ([]byte, error)
     WriteFrame(w io.Writer, payload []byte) error
 }
 ```
 
-**禁止使用 `bufio.Reader` 跨调用的原因：**
+**禁止使用 `bufio.Reader` 跨调用的原因:**
 
 ```
-问题场景：
+问题场景:
   bufio.Reader 内部预读缓冲跨 ReadFrame 调用保持状态
   若 ReadFrame 返回后调用方切换到不同 reader 或重用连接
-  预读数据已被消费，后续 ReadFrame 从错误位置读取
-  导致帧错位，丢失后续消息
+  预读数据已被消费,后续 ReadFrame 从错误位置读取
+  导致帧错位,丢失后续消息
 
-正确方案：
-  使用 io.ReadFull 精确读取固定字节数（无状态，每次调用独立）
-  逐字节读到分隔符（LineFramer 方案）
+正确方案:
+  使用 io.ReadFull 精确读取固定字节数(无状态,每次调用独立)
+  逐字节读到分隔符(LineFramer 方案)
 ```
 
-### 2.2 LengthPrefixFramer（默认推荐）
+### 2.2 LengthPrefixFramer(默认推荐)
 
 ```go
-// LengthPrefixFramer 使用 4 字节大端长度前缀分帧。
-// 格式：[4 字节大端长度][payload 字节]
+// LengthPrefixFramer 使用 4 字节大端长度前缀分帧.
+// 格式:[4 字节大端长度][payload 字节]
 type LengthPrefixFramer struct {
-    MaxFrameSize int // 默认 1MB，防大包攻击
+    MaxFrameSize int // 默认 1MB,防大包攻击
 }
 
 func (f *LengthPrefixFramer) ReadFrame(r io.Reader) ([]byte, error) {
@@ -109,7 +109,7 @@ func (f *LengthPrefixFramer) ReadFrame(r io.Reader) ([]byte, error) {
             core.ErrFrameTooLarge, length, f.MaxFrameSize)
     }
     if length == 0 {
-        return []byte{}, nil // 空帧（心跳）
+        return []byte{}, nil // 空帧(心跳)
     }
 
     // 读取 payload
@@ -131,7 +131,7 @@ func (f *LengthPrefixFramer) WriteFrame(w io.Writer, payload []byte) error {
     var header [4]byte
     binary.BigEndian.PutUint32(header[:], uint32(length))
 
-    // 一次性写入头 + payload，防止短写
+    // 一次性写入头 + payload,防止短写
     buf := make([]byte, 4+length)
     copy(buf[:4], header[:])
     copy(buf[4:], payload)
@@ -140,29 +140,29 @@ func (f *LengthPrefixFramer) WriteFrame(w io.Writer, payload []byte) error {
 }
 ```
 
-**短写处理说明：**
+**短写处理说明:**
 
 ```
-问题：net.Conn.Write(buf) 可能只写入部分字节（短写）
-场景：buf 长度超过系统发送缓冲区，内核只接受部分数据
+问题:net.Conn.Write(buf) 可能只写入部分字节(短写)
+场景:buf 长度超过系统发送缓冲区,内核只接受部分数据
 
-正确方案（当前实现）：
+正确方案(当前实现):
   将 header + payload 合并为单个 buf 一次性写入
   net.Conn 的 Write 实现会内部重试直到全部写入或返回错误
-  禁止分两次调用 Write（header 和 payload 分开写可能导致帧截断）
+  禁止分两次调用 Write(header 和 payload 分开写可能导致帧截断)
 
-错误方案（禁止）：
-  w.Write(header[:])   ← 可能短写
-  w.Write(payload)     ← 第二次写可能和其他 goroutine 的写交错
+错误方案(禁止):
+  w.Write(header[:])   <- 可能短写
+  w.Write(payload)     <- 第二次写可能和其他 goroutine 的写交错
 ```
 
 ### 2.3 LineFramer
 
 ```go
-// LineFramer 以换行符 \n 作为帧分隔符，适用于文本行协议。
-// 使用逐字节读取，保持无状态（不使用 bufio.Reader）。
+// LineFramer 以换行符 \n 作为帧分隔符,适用于文本行协议.
+// 使用逐字节读取,保持无状态(不使用 bufio.Reader).
 type LineFramer struct {
-    MaxLineSize int // 默认 64KB，防内存耗尽
+    MaxLineSize int // 默认 64KB,防内存耗尽
 }
 
 func (f *LineFramer) ReadFrame(r io.Reader) ([]byte, error) {
@@ -176,7 +176,7 @@ func (f *LineFramer) ReadFrame(r io.Reader) ([]byte, error) {
         }
 
         if oneByte[0] == '\n' {
-            // 去除末尾 \r（兼容 \r\n）
+            // 去除末尾 \r(兼容 \r\n)
             if len(buf) > 0 && buf[len(buf)-1] == '\r' {
                 buf = buf[:len(buf)-1]
             }
@@ -205,7 +205,7 @@ func (f *LineFramer) WriteFrame(w io.Writer, payload []byte) error {
 ### 2.4 FixedSizeFramer
 
 ```go
-// FixedSizeFramer 使用固定长度帧，适用于硬件协议、传感器数据。
+// FixedSizeFramer 使用固定长度帧,适用于硬件协议,传感器数据.
 type FixedSizeFramer struct {
     FrameSize int // 必须 > 0
 }
@@ -234,11 +234,11 @@ func (f *FixedSizeFramer) WriteFrame(w io.Writer, payload []byte) error {
 ### 2.5 RawFramer
 
 ```go
-// RawFramer 直接透传，单次 Read 返回。
-// 注意：TCP 是字节流协议，单次 Read 不保证读取完整消息，调用方需自行处理粘包。
-// 适用场景：简单测试、已知对端总是发送完整消息。
+// RawFramer 直接透传,单次 Read 返回.
+// 注意:TCP 是字节流协议,单次 Read 不保证读取完整消息,调用方需自行处理粘包.
+// 适用场景:简单测试,已知对端总是发送完整消息.
 type RawFramer struct {
-    BufferSize int // 单次读取缓冲大小，默认 4096
+    BufferSize int // 单次读取缓冲大小,默认 4096
 }
 
 func (f *RawFramer) ReadFrame(r io.Reader) ([]byte, error) {
@@ -269,7 +269,7 @@ func (f *RawFramer) WriteFrame(w io.Writer, payload []byte) error {
 ```go
 // internal/transport/tcp/session.go
 type Session struct {
-    // 身份（不可变）
+    // 身份(不可变)
     id         uint64
     remoteAddr net.Addr
     localAddr  net.Addr
@@ -281,14 +281,14 @@ type Session struct {
 
     // 状态
     state      atomic.Int32  // core.SessionState
-    lastActive atomic.Int64  // UnixNano，TouchActive 无锁更新
+    lastActive atomic.Int64  // UnixNano,TouchActive 无锁更新
     ctx        context.Context
     cancel     context.CancelFunc
 
     // 写队列
     writeQueue chan []byte
-    draining   chan struct{} // 关闭信号：Close 步骤2 触发
-    drained    chan struct{} // 完成信号：writeLoop 发送完成后关闭
+    draining   chan struct{} // 关闭信号:Close 步骤2 触发
+    drained    chan struct{} // 完成信号:writeLoop 发送完成后关闭
 
     // 并发控制
     closeOnce     sync.Once
@@ -379,7 +379,7 @@ func (s *Session) Send(data []byte) error {
         return core.ErrSessionClosed
     }
 
-    // 复制调用方 data，防止 writeQueue 中的 buffer 被调用方复用覆盖
+    // 复制调用方 data,防止 writeQueue 中的 buffer 被调用方复用覆盖
     buf := make([]byte, len(data))
     copy(buf, data)
 
@@ -409,17 +409,17 @@ func (s *Session) Close(ctx context.Context) error {
 }
 
 func (s *Session) doClose(ctx context.Context) error {
-    // 步骤1：CAS Active → Draining
+    // 步骤1:CAS Active -> Draining
     if !s.state.CompareAndSwap(int32(core.Active), int32(core.Draining)) {
-        // 已在关闭或已关闭，直接返回
+        // 已在关闭或已关闭,直接返回
         return nil
     }
 
-    // 步骤2：触发排空信号
+    // 步骤2:触发排空信号
     if s.writerStarted.Load() {
         close(s.draining) // 通知 writeLoop 开始排空
     } else {
-        // writeLoop 未启动，直接释放 writeQueue 中的待发数据
+        // writeLoop 未启动,直接释放 writeQueue 中的待发数据
         for {
             select {
             case <-s.writeQueue:
@@ -431,26 +431,26 @@ func (s *Session) doClose(ctx context.Context) error {
     skipDrain:
     }
 
-    // 步骤3：等待排空完成
+    // 步骤3:等待排空完成
     if s.writerStarted.Load() {
         select {
         case <-s.drained:
             // 正常排空完成
         case <-ctx.Done():
-            // DrainTimeout 超时，强制继续
+            // DrainTimeout 超时,强制继续
             s.logger.Warn("session drain timeout",
                 "session_id", s.id,
                 "remote_addr", s.remoteAddr.String())
         }
     }
 
-    // 步骤4：CAS Draining → Closed
+    // 步骤4:CAS Draining -> Closed
     s.state.Store(int32(core.Closed))
 
-    // 步骤5：CancelContext → 通知所有 <-ctx.Done() 退出
+    // 步骤5:CancelContext -> 通知所有 <-ctx.Done() 退出
     s.cancel()
 
-    // 步骤6：关闭底层连接
+    // 步骤6:关闭底层连接
     err := s.conn.Close()
 
     s.metrics.Gauge("shark_sessions_active", "protocol", "tcp").Dec()
@@ -521,7 +521,7 @@ func (s *Session) readLoop(
         data, err := plugins.RunMessage(s, payload)
         if err != nil {
             if errors.Is(err, core.ErrPluginDrop) {
-                continue // 消息被丢弃，继续读取
+                continue // 消息被丢弃,继续读取
             }
             return // ErrPluginBlock 或其他致命错误
         }
@@ -600,7 +600,7 @@ type Server struct {
     pool     *WorkerPool
     handler  core.Handler
 
-    // Runtime（通过 UseRuntime 注入）
+    // Runtime(通过 UseRuntime 注入)
     runtime core.Runtime
 
     // 并发控制
@@ -671,7 +671,7 @@ func (s *Server) acceptLoop() {
         conn, err := s.listener.Accept()
         if err != nil {
             if errors.Is(err, net.ErrClosed) {
-                return // listener 已关闭，正常退出
+                return // listener 已关闭,正常退出
             }
 
             consecutiveErrors++
@@ -758,7 +758,7 @@ func (s *Server) handleConn(conn net.Conn) {
 ### 4.6 StagedServer 三阶段实现
 
 ```go
-// StopAccept 停止接受新连接，停止 WorkerPool 接收新任务。
+// StopAccept 停止接受新连接,停止 WorkerPool 接收新任务.
 func (s *Server) StopAccept(ctx context.Context) error {
     if s.listener != nil {
         s.listener.Close() // acceptLoop 检测到 net.ErrClosed 后退出
@@ -768,7 +768,7 @@ func (s *Server) StopAccept(ctx context.Context) error {
     return nil
 }
 
-// Drain 等待所有 readLoop / writeLoop goroutine 退出。
+// Drain 等待所有 readLoop / writeLoop goroutine 退出.
 func (s *Server) Drain(ctx context.Context) error {
     done := make(chan struct{})
     go func() {
@@ -786,7 +786,7 @@ func (s *Server) Drain(ctx context.Context) error {
     }
 }
 
-// CloseSessions 关闭所有活跃 TCPSession。
+// CloseSessions 关闭所有活跃 TCPSession.
 func (s *Server) CloseSessions(ctx context.Context) error {
     s.runtime.Sessions().Range(func(sess core.Session) bool {
         if sess.Protocol() == core.TCP {
@@ -798,7 +798,7 @@ func (s *Server) CloseSessions(ctx context.Context) error {
     return nil
 }
 
-// Stop 完整停止（非 StagedServer 场景使用）。
+// Stop 完整停止(非 StagedServer 场景使用).
 func (s *Server) Stop(ctx context.Context) error {
     if err := s.StopAccept(ctx); err != nil {
         return err
@@ -831,7 +831,7 @@ type ClientOptions struct {
     Addr            string
     TLSConfig       *tls.Config
     ConnectTimeout  time.Duration // 默认 10s
-    ReadTimeout     time.Duration // 默认 0（不限）
+    ReadTimeout     time.Duration // 默认 0(不限)
     WriteTimeout    time.Duration // 默认 10s
     Framer          Framer        // 默认 LengthPrefixFramer
     AutoReconnect   bool          // 默认 false
@@ -841,7 +841,7 @@ type ClientOptions struct {
 type BackoffOptions struct {
     InitialDelay time.Duration // 默认 100ms
     MaxDelay     time.Duration // 默认 30s
-    JitterFactor float64       // 默认 0.2（±20% 随机抖动）
+    JitterFactor float64       // 默认 0.2(+/-20% 随机抖动)
 }
 ```
 
@@ -964,25 +964,25 @@ func (c *Client) Close() error {
 type Options struct {
     // 网络
     Addr      string      // 默认 "0.0.0.0:18000"
-    TLSConfig *tls.Config // 默认 nil（不启用 TLS）
+    TLSConfig *tls.Config // 默认 nil(不启用 TLS)
 
     // 帧解析
     Framer Framer // 默认 &LengthPrefixFramer{MaxFrameSize: 1MB}
 
     // 会话限制
-    MaxSessions     int64 // 默认 100000（0=不限制）
-    MaxMessageSize  int   // 默认 1MB（1<<20）
-    WriteQueueSize  int   // 默认 128（每连接写队列容量）
+    MaxSessions     int64 // 默认 100000(0=不限制)
+    MaxMessageSize  int   // 默认 1MB(1<<20)
+    WriteQueueSize  int   // 默认 128(每连接写队列容量)
 
     // 超时
-    ReadTimeout     time.Duration // 默认 0（不限）
+    ReadTimeout     time.Duration // 默认 0(不限)
     WriteTimeout    time.Duration // 默认 10s
-    IdleTimeout     time.Duration // 默认 0（不限，HeartbeatPlugin 控制）
-    HandlerTimeout  time.Duration // 默认 0（不限）
+    IdleTimeout     time.Duration // 默认 0(不限,HeartbeatPlugin 控制)
+    HandlerTimeout  time.Duration // 默认 0(不限)
     DrainTimeout    time.Duration // 默认 5s
 
     // 错误容忍
-    MaxConsecutiveErrors int // 默认 100，超限断连
+    MaxConsecutiveErrors int // 默认 100,超限断连
 
     // WorkerPool
     WorkerPoolOptions WorkerPoolOptions
@@ -993,8 +993,8 @@ type WorkerPoolOptions struct {
     MaxWorkers      int           // 默认 WorkerCount*4
     TaskQueueSize   int           // 默认 WorkerCount*128
     QueueFullPolicy QueuePolicy   // 默认 PolicyDrop
-    HandlerTimeout  time.Duration // 默认 0（不限制）
-    OverloadWindow  time.Duration // 默认 30s（PolicyClose 使用）
+    HandlerTimeout  time.Duration // 默认 0(不限制)
+    OverloadWindow  time.Duration // 默认 30s(PolicyClose 使用)
 }
 ```
 
@@ -1083,15 +1083,15 @@ func defaultOptions() Options {
 
 ---
 
-# TRANSPORT.md — Part 2/5: UDP
+# TRANSPORT.md - Part 2/5: UDP
 
-> Shark-Socket 传输层：UDP 协议实现细节  
-> 版本：v0.2.x-alpha  
-> 最后更新：2026-06-01
+> Shark-Socket 传输层:UDP 协议实现细节  
+> 版本:v0.2.x-alpha  
+> 最后更新:2026-06-01
 
 ---
 
-## 目录（UDP 部分）
+## 目录(UDP 部分)
 
 1. [UDP 协议概述](#1-udp-协议概述)
 2. [伪会话模型](#2-伪会话模型)
@@ -1104,20 +1104,20 @@ func defaultOptions() Options {
 
 ## 1. UDP 协议概述
 
-UDP 是无连接的传输协议，Shark-Socket 在其上实现了**伪会话（pseudo-session）**模型：
+UDP 是无连接的传输协议,Shark-Socket 在其上实现了**伪会话(pseudo-session)**模型:
 
 - 每个唯一的远端地址 `(*net.UDPAddr)` 对应一个伪会话
-- 伪会话具有完整的 `core.Session` 生命周期（Register → Active → Closed）
+- 伪会话具有完整的 `core.Session` 生命周期(Register -> Active -> Closed)
 - 通过 TTL 和定时清扫机制自动淘汰不活跃的伪会话
 
-**与 TCP 的关键区别：**
+**与 TCP 的关键区别:**
 
 | 特性 | TCP | UDP |
 |------|-----|-----|
-| 连接模型 | 有连接，per-conn goroutine | 无连接，单 conn + 远端地址映射 |
+| 连接模型 | 有连接,per-conn goroutine | 无连接,单 conn + 远端地址映射 |
 | Session 创建时机 | Accept 时 | 首次收到数据报时 |
 | Session 销毁时机 | 连接关闭 | TTL 超时或主动关闭 |
-| Framer | 可插拔（LengthPrefix/Line/FixedSize/Raw） | 无（原始数据报） |
+| Framer | 可插拔(LengthPrefix/Line/FixedSize/Raw) | 无(原始数据报) |
 | 写入方式 | 异步写队列 + writeLoop | 直接 `WriteToUDP` |
 | 并发模型 | per-connection goroutine | 单 `readLoop` + 单 `sweepLoop` |
 
@@ -1131,10 +1131,10 @@ UDP 是无连接的传输协议，Shark-Socket 在其上实现了**伪会话（p
 type session struct {
     id        uint64
     conn      *net.UDPConn      // 共享的 UDP 连接
-    remote    *net.UDPAddr      // 远端地址（会话标识）
+    remote    *net.UDPAddr      // 远端地址(会话标识)
     local     net.Addr          // 本地地址
     createdAt time.Time
-    activeAt  atomic.Int64      // 最后活跃时间（UnixNano）
+    activeAt  atomic.Int64      // 最后活跃时间(UnixNano)
     state     atomic.Uint32     // SessionState
     meta      sync.Map          // 元数据
     ctx       context.Context
@@ -1143,33 +1143,33 @@ type session struct {
 }
 ```
 
-**关键设计：**
-- `activeAt` 使用 `atomic.Int64` 存储 `time.Time.UnixNano()`，避免锁竞争
-- `touch()` 在每次收到数据报时调用，更新活跃时间
+**关键设计:**
+- `activeAt` 使用 `atomic.Int64` 存储 `time.Time.UnixNano()`,避免锁竞争
+- `touch()` 在每次收到数据报时调用,更新活跃时间
 - `Close()` 使用 `sync.Once` 保证幂等
-- `Send()` 直接调用 `conn.WriteToUDP()`，无需写队列（UDP 无背压）
+- `Send()` 直接调用 `conn.WriteToUDP()`,无需写队列(UDP 无背压)
 
-### 2.2 Session 创建（getOrCreateSession）
+### 2.2 Session 创建(getOrCreateSession)
 
 ```
 收到 UDP 数据报
-    ↓
+    v
 提取 remoteAddr 作为 key
-    ↓
-sessions.Load(key) → 命中？→ 返回已有 session，touch()
-    ↓ 未命中
-NextID() → newSession()
-    ↓
-sessions.LoadOrStore(key, sess) → 竞态保护
-    ↓ 成功存储
-Register(sess) → SessionManager
-    ↓
-Plugins.OnAccept(sess) → 插件链
-    ↓
+    v
+sessions.Load(key) -> 命中?-> 返回已有 session,touch()
+    v 未命中
+NextID() -> newSession()
+    v
+sessions.LoadOrStore(key, sess) -> 竞态保护
+    v 成功存储
+Register(sess) -> SessionManager
+    v
+Plugins.OnAccept(sess) -> 插件链
+    v
 返回 session
 ```
 
-**竞态安全：** `LoadOrStore` 保证同一远端地址只创建一个 session。若两个 goroutine 同时为同一地址创建 session，后到者关闭多余的 session。
+**竞态安全:** `LoadOrStore` 保证同一远端地址只创建一个 session.若两个 goroutine 同时为同一地址创建 session,后到者关闭多余的 session.
 
 ---
 
@@ -1204,7 +1204,7 @@ func (s *Server) Start(ctx context.Context) error {
 
     // 3. 启动两个 goroutine
     s.wg.Add(2)
-    go s.readLoop(runCtx)   // 读取数据报 → 分发
+    go s.readLoop(runCtx)   // 读取数据报 -> 分发
     go s.sweepLoop(runCtx)  // 定期清理过期会话
     return nil
 }
@@ -1253,10 +1253,10 @@ func (s *Server) readLoop(ctx context.Context) {
 }
 ```
 
-**设计要点：**
-- 数据报复制（`append([]byte(nil), buf[:n]...)`）：避免下次读取覆盖数据
-- Handler 错误导致 session 关闭：UDP 无重传，单次处理失败即清理
-- `ErrPluginDrop` 不关闭 session：限流丢弃是正常控制流
+**设计要点:**
+- 数据报复制(`append([]byte(nil), buf[:n]...)`):避免下次读取覆盖数据
+- Handler 错误导致 session 关闭:UDP 无重传,单次处理失败即清理
+- `ErrPluginDrop` 不关闭 session:限流丢弃是正常控制流
 
 ### 3.4 sweepLoop
 
@@ -1283,20 +1283,20 @@ func (s *Server) sweepLoop(ctx context.Context) {
 }
 ```
 
-**TTL 机制：**
-- 每个 `SweepInterval`（默认 30s）扫描所有伪会话
+**TTL 机制:**
+- 每个 `SweepInterval`(默认 30s)扫描所有伪会话
 - `LastActiveAt() + SessionTTL < now` 的会话被关闭并注销
-- 默认 SessionTTL 为 2 分钟，适用于 IoT 设备心跳间隔
+- 默认 SessionTTL 为 2 分钟,适用于 IoT 设备心跳间隔
 
 ### 3.5 StagedServer 实现
 
 | 阶段 | 行为 |
 |------|------|
-| StopAccept | CAS 标记关闭 → cancel 上下文 → 关闭 UDP conn |
+| StopAccept | CAS 标记关闭 -> cancel 上下文 -> 关闭 UDP conn |
 | Drain | WaitGroup 等待 readLoop 和 sweepLoop 退出 |
-| CloseSessions | Range 遍历所有 session，调用 closeSession |
+| CloseSessions | Range 遍历所有 session,调用 closeSession |
 
-`closeSession` 执行完整清理：
+`closeSession` 执行完整清理:
 
 ```go
 func (s *Server) closeSession(ctx context.Context, key string, sess *session) {
@@ -1313,15 +1313,15 @@ func (s *Server) closeSession(ctx context.Context, key string, sess *session) {
 
 ```go
 type Options struct {
-    Addr          string        // 监听地址，默认 "127.0.0.1:18200"
+    Addr          string        // 监听地址,默认 "127.0.0.1:18200"
     Handler       core.Handler  // 消息处理函数
-    SessionTTL    time.Duration // 伪会话 TTL，默认 2 分钟
-    SweepInterval time.Duration // 清扫间隔，默认 30 秒
-    MaxDatagram   int           // 最大数据报大小，默认 64KB
+    SessionTTL    time.Duration // 伪会话 TTL,默认 2 分钟
+    SweepInterval time.Duration // 清扫间隔,默认 30 秒
+    MaxDatagram   int           // 最大数据报大小,默认 64KB
 }
 ```
 
-**Functional Options：**
+**Functional Options:**
 
 | Option | 默认值 | 说明 |
 |--------|--------|------|
@@ -1331,13 +1331,13 @@ type Options struct {
 | `WithSweepInterval(interval)` | `30s` | 清扫周期 |
 | `WithMaxDatagram(size)` | `64KB` | 单数据报最大字节数 |
 
-**配置建议：**
+**配置建议:**
 
 | 场景 | SessionTTL | SweepInterval | MaxDatagram |
 |------|-----------|---------------|-------------|
-| IoT 设备（心跳 60s） | 3m | 30s | 64KB |
-| 实时游戏（高频 UDP） | 30s | 10s | 1KB |
-| DNS 服务（无状态） | 10s | 5s | 512B |
+| IoT 设备(心跳 60s) | 3m | 30s | 64KB |
+| 实时游戏(高频 UDP) | 30s | 10s | 1KB |
+| DNS 服务(无状态) | 10s | 5s | 512B |
 
 ---
 
@@ -1345,54 +1345,54 @@ type Options struct {
 
 ```
 客户端发送 UDP 数据报
-    ↓
+    v
 Server.readLoop() 接收
-    ↓
+    v
 getOrCreateSession(remoteAddr)
-    ├── 已有 → touch() + 返回
-    └── 新建 → Register → OnAccept → 返回
-    ↓
+    +-- 已有 -> touch() + 返回
+    +-- 新建 -> Register -> OnAccept -> 返回
+    v
 sess.touch() 更新活跃时间
-    ↓
+    v
 Plugins.OnMessage(sess, payload)
-    ├── ErrPluginDrop → 丢弃（不关闭 session）
-    ├── ErrPluginBlock → sess.Close()
-    └── 正常 → payload 继续
-    ↓
+    +-- ErrPluginDrop -> 丢弃(不关闭 session)
+    +-- ErrPluginBlock -> sess.Close()
+    +-- 正常 -> payload 继续
+    v
 Handler(sess, msg)
-    ├── err != nil → sess.Close()
-    └── 正常 → Handler 内调用 sess.Send() 响应
-    ↓
+    +-- err != nil -> sess.Close()
+    +-- 正常 -> Handler 内调用 sess.Send() 响应
+    v
 [后台] sweepLoop 定期检查
-    └── LastActiveAt + TTL < now → closeSession()
+    +-- LastActiveAt + TTL < now -> closeSession()
 ```
 
 ---
 
 ## 6. 与 CoAP 的关系
 
-CoAP（Constrained Application Protocol）是基于 UDP 的应用层协议。在 Shark-Socket 中：
+CoAP(Constrained Application Protocol)是基于 UDP 的应用层协议.在 Shark-Socket 中:
 
 | 层级 | 实现 | 位置 |
 |------|------|------|
-| 传输层 | CoAP Server（UDP 基础 + 帧解析 + CON/ACK） | `internal/transport/coap/` |
-| 应用层 | LwM2M Server/Client（CoAP Responder 适配） | `internal/protocol/lwm2m/` |
+| 传输层 | CoAP Server(UDP 基础 + 帧解析 + CON/ACK) | `internal/transport/coap/` |
+| 应用层 | LwM2M Server/Client(CoAP Responder 适配) | `internal/protocol/lwm2m/` |
 
-**UDP Server 是 CoAP 的基础**，但 CoAP Server 有独立的实现（包含 CoAP 帧解析、CON/ACK 确认、MessageID 去重等），不复用 UDP Server。两者的 session 模型相同（伪会话 + TTL）。
+**UDP Server 是 CoAP 的基础**,但 CoAP Server 有独立的实现(包含 CoAP 帧解析,CON/ACK 确认,MessageID 去重等),不复用 UDP Server.两者的 session 模型相同(伪会话 + TTL).
 
-详见 CoAP 部分（Part 3）和 PROTOCOL.md。
-
----
-
-# TRANSPORT.md — Part 3/5: CoAP
-
-> Shark-Socket 传输层：CoAP 协议实现细节  
-> 版本：v0.2.x-alpha  
-> 最后更新：2026-06-01
+详见 CoAP 部分(Part 3)和 PROTOCOL.md.
 
 ---
 
-## 目录（CoAP 部分）
+# TRANSPORT.md - Part 3/5: CoAP
+
+> Shark-Socket 传输层:CoAP 协议实现细节  
+> 版本:v0.2.x-alpha  
+> 最后更新:2026-06-01
+
+---
+
+## 目录(CoAP 部分)
 
 1. [CoAP 协议概述](#1-coap-协议概述)
 2. [CoAP 帧结构](#2-coap-帧结构)
@@ -1406,60 +1406,60 @@ CoAP（Constrained Application Protocol）是基于 UDP 的应用层协议。在
 
 ### 1.1 在框架中的定位
 
-CoAP（Constrained Application Protocol，RFC 7252）是**面向受限设备的应用层协议**，基于 UDP 传输。
+CoAP(Constrained Application Protocol,RFC 7252)是**面向受限设备的应用层协议**,基于 UDP 传输.
 
-**CoAP 在框架分层中的位置：**
+**CoAP 在框架分层中的位置:**
 
 ```
-┌─────────────────────────────────────┐
-│ protocol/lwm2m/                     │  应用协议层（LwM2M 语义）
-│   基于 CoAP transport 提供设备管理   │
-├─────────────────────────────────────┤
-│ transport/coap/                     │  传输层（本文档）
-│   CoAP 帧解析、CON/ACK、去重        │
-├─────────────────────────────────────┤
-│ transport/udp/                      │  网络层（UDP 数据报）
-│   单 conn + 伪会话模型               │
-└─────────────────────────────────────┘
++-------------------------------------+
+| protocol/lwm2m/                     |  应用协议层(LwM2M 语义)
+|   基于 CoAP transport 提供设备管理   |
++-------------------------------------+
+| transport/coap/                     |  传输层(本文档)
+|   CoAP 帧解析,CON/ACK,去重        |
++-------------------------------------+
+| transport/udp/                      |  网络层(UDP 数据报)
+|   单 conn + 伪会话模型               |
++-------------------------------------+
 ```
 
-**CoAP 与 UDP 的关系（ADR-009 决策）：**
+**CoAP 与 UDP 的关系(ADR-009 决策):**
 
-- CoAP Server **独立于** UDP Server，不复用 UDP Server 的伪会话模型
-- CoAP Server 内部创建自己的 `*net.UDPConn`，自行管理 CoAP 级别的伪会话
-- CoAP 伪会话携带额外状态（`pendingACKs`、`messageCache`），不能直接复用 UDP 伪会话
-- LwM2M 基于 CoAP transport，通过 `responder.go` 接入（详见 `PROTOCOL.md`）
+- CoAP Server **独立于** UDP Server,不复用 UDP Server 的伪会话模型
+- CoAP Server 内部创建自己的 `*net.UDPConn`,自行管理 CoAP 级别的伪会话
+- CoAP 伪会话携带额外状态(`pendingACKs`,`messageCache`),不能直接复用 UDP 伪会话
+- LwM2M 基于 CoAP transport,通过 `responder.go` 接入(详见 `PROTOCOL.md`)
 
 ### 1.2 CoAP 消息类型
 
 | 类型 | 值 | 说明 |
 |------|---|------|
-| CON（Confirmable） | 0 | 可靠消息，对端必须回 ACK |
-| NON（Non-confirmable） | 1 | 不可靠消息，无需 ACK |
-| ACK（Acknowledgement） | 2 | 对 CON 的确认 |
-| RST（Reset） | 3 | 拒绝或无法处理，取消重传 |
+| CON(Confirmable) | 0 | 可靠消息,对端必须回 ACK |
+| NON(Non-confirmable) | 1 | 不可靠消息,无需 ACK |
+| ACK(Acknowledgement) | 2 | 对 CON 的确认 |
+| RST(Reset) | 3 | 拒绝或无法处理,取消重传 |
 
 ### 1.3 P0 实现范围
 
-| 功能 | P0（当前） | P1（后续） |
+| 功能 | P0(当前) | P1(后续) |
 |------|-----------|-----------|
-| CON 基础 ACK | ✓ | - |
-| NON 消息处理 | ✓ | - |
-| MessageID 去重 | ✓ | - |
-| retransmitLoop | ✓ | - |
-| Block-wise 传输 | ✗ | ✓ |
-| Observe/Notify | ✗ | ✓ |
-| DTLS | ✗ | ✓ |
-| 完整 Option 编解码 | 部分（Uri-Path/Content-Format） | 完整 |
+| CON 基础 ACK | [OK] | - |
+| NON 消息处理 | [OK] | - |
+| MessageID 去重 | [OK] | - |
+| retransmitLoop | [OK] | - |
+| Block-wise 传输 | [X] | [OK] |
+| Observe/Notify | [X] | [OK] |
+| DTLS | [X] | [OK] |
+| 完整 Option 编解码 | 部分(Uri-Path/Content-Format) | 完整 |
 
 ### 1.4 文件清单
 
 ```
 internal/transport/coap/
-├── message.go   # CoAP 帧结构、解析、序列化
-├── session.go   # CoAPSession：伪会话 + pendingACK + messageCache
-├── server.go    # CoAPServer：readLoop + ACK 响应 + retransmitLoop
-└── options.go   # CoAPOption Functional Options
++-- message.go   # CoAP 帧结构,解析,序列化
++-- session.go   # CoAPSession:伪会话 + pendingACK + messageCache
++-- server.go    # CoAPServer:readLoop + ACK 响应 + retransmitLoop
++-- options.go   # CoAPOption Functional Options
 ```
 
 ### 1.5 编译期验证
@@ -1482,7 +1482,7 @@ var _ core.RuntimeConfigurable = (*Server)(nil)
 ```go
 // internal/transport/coap/message.go
 
-// MsgType 是 CoAP 消息类型。
+// MsgType 是 CoAP 消息类型.
 type MsgType uint8
 
 const (
@@ -1492,12 +1492,12 @@ const (
     MsgTypeRST MsgType = 3 // Reset
 )
 
-// Code 是 CoAP 方法码或响应码。
-// 格式：c.dd（class.detail），编码为 uint8：(c << 5) | dd
+// Code 是 CoAP 方法码或响应码.
+// 格式:c.dd(class.detail),编码为 uint8:(c << 5) | dd
 type Code uint8
 
 const (
-    // 方法码（请求）
+    // 方法码(请求)
     CodeGET    Code = 0x01 // 0.01
     CodePOST   Code = 0x02 // 0.02
     CodePUT    Code = 0x03 // 0.03
@@ -1527,7 +1527,7 @@ const (
     CodeGatewayTimeout      Code = 0xA4 // 5.04
 )
 
-// OptionNumber 是 CoAP Option 编号。
+// OptionNumber 是 CoAP Option 编号.
 type OptionNumber uint16
 
 const (
@@ -1549,13 +1549,13 @@ const (
     OptionSize1         OptionNumber = 60
 )
 
-// Option 是 CoAP 选项。
+// Option 是 CoAP 选项.
 type Option struct {
     Number OptionNumber
     Value  []byte
 }
 
-// Message 是 CoAP 消息结构。
+// Message 是 CoAP 消息结构.
 type Message struct {
     Version   uint8   // 必须为 1
     Type      MsgType
@@ -1570,7 +1570,7 @@ type Message struct {
 ### 2.2 帧解析
 
 ```go
-// Parse 从字节切片解析 CoAP 消息。
+// Parse 从字节切片解析 CoAP 消息.
 func Parse(data []byte) (*Message, error) {
     if len(data) < 4 {
         return nil, fmt.Errorf("%w: message too short (%d bytes)",
@@ -1628,7 +1628,7 @@ func Parse(data []byte) (*Message, error) {
     }, nil
 }
 
-// parseOptions 解析 CoAP Options（delta 编码）。
+// parseOptions 解析 CoAP Options(delta 编码).
 func parseOptions(data []byte, offset int) ([]Option, int, error) {
     var options []Option
     currentOptionNumber := OptionNumber(0)
@@ -1636,7 +1636,7 @@ func parseOptions(data []byte, offset int) ([]Option, int, error) {
     for offset < len(data) {
         if data[offset] == 0xFF {
             // Payload Marker
-            offset++ // 跳过 0xFF，后续是 payload
+            offset++ // 跳过 0xFF,后续是 payload
             return options, offset, nil
         }
 
@@ -1705,7 +1705,7 @@ func decodeOptionValue(data []byte, offset int, nibble byte) (int, int, error) {
 ### 2.3 帧序列化
 
 ```go
-// Marshal 将 CoAP 消息序列化为字节切片。
+// Marshal 将 CoAP 消息序列化为字节切片.
 func (m *Message) Marshal() ([]byte, error) {
     if len(m.Token) > 8 {
         return nil, fmt.Errorf("%w: token length %d exceeds 8",
@@ -1728,7 +1728,7 @@ func (m *Message) Marshal() ([]byte, error) {
     // Token
     buf.Write(m.Token)
 
-    // Options（delta 编码）
+    // Options(delta 编码)
     if err := marshalOptions(&buf, m.Options); err != nil {
         return nil, err
     }
@@ -1743,7 +1743,7 @@ func (m *Message) Marshal() ([]byte, error) {
 }
 
 func marshalOptions(buf *bytes.Buffer, options []Option) error {
-    // 按 Option Number 升序排序（CoAP 规范要求）
+    // 按 Option Number 升序排序(CoAP 规范要求)
     slices.SortFunc(options, func(a, b Option) int {
         return int(a.Number) - int(b.Number)
     })
@@ -1785,7 +1785,7 @@ func writeOptionHeader(buf *bytes.Buffer, delta, length int) {
 ### 2.4 Option 辅助函数
 
 ```go
-// GetUriPath 提取所有 Uri-Path Option 值，拼接为路径字符串。
+// GetUriPath 提取所有 Uri-Path Option 值,拼接为路径字符串.
 func (m *Message) GetUriPath() string {
     var parts []string
     for _, opt := range m.Options {
@@ -1796,7 +1796,7 @@ func (m *Message) GetUriPath() string {
     return "/" + strings.Join(parts, "/")
 }
 
-// GetUriQuery 提取所有 Uri-Query Option 值。
+// GetUriQuery 提取所有 Uri-Query Option 值.
 func (m *Message) GetUriQuery() map[string]string {
     result := make(map[string]string)
     for _, opt := range m.Options {
@@ -1810,7 +1810,7 @@ func (m *Message) GetUriQuery() map[string]string {
     return result
 }
 
-// GetContentFormat 提取 Content-Format Option 值。
+// GetContentFormat 提取 Content-Format Option 值.
 func (m *Message) GetContentFormat() (uint16, bool) {
     for _, opt := range m.Options {
         if opt.Number == OptionContentFormat && len(opt.Value) > 0 {
@@ -1825,7 +1825,7 @@ func (m *Message) GetContentFormat() (uint16, bool) {
     return 0, false
 }
 
-// NewACK 构造对 CON 消息的 ACK 响应。
+// NewACK 构造对 CON 消息的 ACK 响应.
 func NewACK(request *Message, responseCode Code, payload []byte) *Message {
     return &Message{
         Version:   1,
@@ -1837,7 +1837,7 @@ func NewACK(request *Message, responseCode Code, payload []byte) *Message {
     }
 }
 
-// NewNON 构造 NON 消息。
+// NewNON 构造 NON 消息.
 func NewNON(code Code, messageID uint16, token, payload []byte) *Message {
     return &Message{
         Version:   1,
@@ -1849,7 +1849,7 @@ func NewNON(code Code, messageID uint16, token, payload []byte) *Message {
     }
 }
 
-// SelectACKCode 根据请求方法码选择合适的 ACK 响应码。
+// SelectACKCode 根据请求方法码选择合适的 ACK 响应码.
 func SelectACKCode(requestCode Code) Code {
     switch requestCode {
     case CodeGET:
@@ -1875,12 +1875,12 @@ func SelectACKCode(requestCode Code) Code {
 ```go
 // internal/transport/coap/session.go
 
-// pendingACK 跟踪一个等待确认的 CON 消息。
+// pendingACK 跟踪一个等待确认的 CON 消息.
 type pendingACK struct {
     messageID  uint16
-    ackData    []byte        // 已发送的 ACK 字节，用于重传
+    ackData    []byte        // 已发送的 ACK 字节,用于重传
     sentAt     time.Time     // 首次发送时间
-    lastSentAt time.Time     // 最后发送时间（重传更新）
+    lastSentAt time.Time     // 最后发送时间(重传更新)
     attempts   int           // 已重传次数
 }
 ```
@@ -1888,11 +1888,11 @@ type pendingACK struct {
 ### 3.2 messageCache 结构
 
 ```go
-// messageCache 是 MessageID 去重缓存（环形淘汰）。
+// messageCache 是 MessageID 去重缓存(环形淘汰).
 type messageCache struct {
     mu       sync.Mutex
-    cache    map[uint16][]byte // messageID → 已发送的 ACK 字节
-    order    []uint16          // 插入顺序（用于淘汰最旧条目）
+    cache    map[uint16][]byte // messageID -> 已发送的 ACK 字节
+    order    []uint16          // 插入顺序(用于淘汰最旧条目)
     maxSize  int               // 最大缓存条目数
 }
 
@@ -1904,9 +1904,9 @@ func newMessageCache(maxSize int) *messageCache {
     }
 }
 
-// CheckAndRecord 检查 MessageID 是否重复。
-// 返回值：(cachedACK []byte, isDuplicate bool)
-// 若重复，返回缓存的 ACK 字节；若首次，记录占位（nil），等待 CacheResponse 填充。
+// CheckAndRecord 检查 MessageID 是否重复.
+// 返回值:(cachedACK []byte, isDuplicate bool)
+// 若重复,返回缓存的 ACK 字节;若首次,记录占位(nil),等待 CacheResponse 填充.
 func (c *messageCache) CheckAndRecord(messageID uint16) ([]byte, bool) {
     c.mu.Lock()
     defer c.mu.Unlock()
@@ -1915,20 +1915,20 @@ func (c *messageCache) CheckAndRecord(messageID uint16) ([]byte, bool) {
         return ack, true // 重复消息
     }
 
-    // 环形淘汰：超过 maxSize 时删除最旧条目
+    // 环形淘汰:超过 maxSize 时删除最旧条目
     if len(c.cache) >= c.maxSize {
         oldest := c.order[0]
         c.order = c.order[1:]
         delete(c.cache, oldest)
     }
 
-    // 记录占位（nil 表示 Handler 尚未处理完）
+    // 记录占位(nil 表示 Handler 尚未处理完)
     c.cache[messageID] = nil
     c.order = append(c.order, messageID)
     return nil, false
 }
 
-// CacheResponse 填充 MessageID 对应的 ACK 响应（Handler 处理完成后调用）。
+// CacheResponse 填充 MessageID 对应的 ACK 响应(Handler 处理完成后调用).
 func (c *messageCache) CacheResponse(messageID uint16, ackData []byte) {
     c.mu.Lock()
     defer c.mu.Unlock()
@@ -1942,21 +1942,21 @@ func (c *messageCache) CacheResponse(messageID uint16, ackData []byte) {
 
 ```go
 type Session struct {
-    // 身份（不可变）
+    // 身份(不可变)
     id         uint64
     remoteAddr *net.UDPAddr
     localAddr  net.Addr
     createdAt  time.Time
 
-    // 网络（共享单 conn）
+    // 网络(共享单 conn)
     conn *net.UDPConn
 
     // CoAP 状态
     messageCache  *messageCache
-    pendingACKs   map[uint16]*pendingACK // 等待 ACK 的 CON 消息（由 retransmitLoop 管理）
+    pendingACKs   map[uint16]*pendingACK // 等待 ACK 的 CON 消息(由 retransmitLoop 管理)
     pendingMu     sync.Mutex             // 保护 pendingACKs
 
-    // 活跃 MessageID 索引（避免 retransmitLoop 自锁死锁）
+    // 活跃 MessageID 索引(避免 retransmitLoop 自锁死锁)
     activeIDs   []uint16    // retransmitLoop 读取的索引
     activeIDsMu sync.Mutex  // 保护 activeIDs
 
@@ -1982,27 +1982,27 @@ type Session struct {
 var _ core.Session = (*Session)(nil)
 ```
 
-### 3.4 retransmitLoop 死锁问题与解决方案（ADR-003 修复）
+### 3.4 retransmitLoop 死锁问题与解决方案(ADR-003 修复)
 
-**错误方案（导致死锁）：**
+**错误方案(导致死锁):**
 
 ```
-retransmitLoop 执行：
-  pendingMu.Lock()              ← 获取锁，遍历 pendingACKs
-  for id, pending := range pendingACKs：
-    if 超时：
-      delete(pendingACKs, id)   ← 在持锁状态下删除，正常
-      conn.WriteToUDP(...)      ← 发送重传
+retransmitLoop 执行:
+  pendingMu.Lock()              <- 获取锁,遍历 pendingACKs
+  for id, pending := range pendingACKs:
+    if 超时:
+      delete(pendingACKs, id)   <- 在持锁状态下删除,正常
+      conn.WriteToUDP(...)      <- 发送重传
   pendingMu.Unlock()
 
-问题：若重传触发 OnMessage，OnMessage 内部可能调用：
-  session.TrackCON(msgID, ackData)  ← 需要 pendingMu.Lock() → 死锁！
+问题:若重传触发 OnMessage,OnMessage 内部可能调用:
+  session.TrackCON(msgID, ackData)  <- 需要 pendingMu.Lock() -> 死锁!
 ```
 
-**正确方案（活跃索引）：**
+**正确方案(活跃索引):**
 
 ```go
-// retransmitLoop 只读 activeIDs 索引，不持 pendingMu 遍历
+// retransmitLoop 只读 activeIDs 索引,不持 pendingMu 遍历
 func (s *Session) retransmitLoop(
     ackTimeout time.Duration,
     maxRetransmit int,
@@ -2021,7 +2021,7 @@ func (s *Session) retransmitLoop(
 }
 
 func (s *Session) retransmitOnce(ackTimeout time.Duration, maxRetransmit int) {
-    // 步骤1：读取当前活跃 ID 列表（持 activeIDsMu 短暂复制）
+    // 步骤1:读取当前活跃 ID 列表(持 activeIDsMu 短暂复制)
     s.activeIDsMu.Lock()
     ids := make([]uint16, len(s.activeIDs))
     copy(ids, s.activeIDs)
@@ -2031,7 +2031,7 @@ func (s *Session) retransmitOnce(ackTimeout time.Duration, maxRetransmit int) {
     var expiredIDs []uint16
 
     for _, id := range ids {
-        // 步骤2：获取 pending 状态（持 pendingMu 短暂读取）
+        // 步骤2:获取 pending 状态(持 pendingMu 短暂读取)
         s.pendingMu.Lock()
         pending, exists := s.pendingACKs[id]
         if !exists {
@@ -2052,7 +2052,7 @@ func (s *Session) retransmitOnce(ackTimeout time.Duration, maxRetransmit int) {
         // 释放锁后再执行 I/O 操作
 
         if maxExceeded {
-            // 超过最大重传次数，放弃
+            // 超过最大重传次数,放弃
             expiredIDs = append(expiredIDs, id)
             s.logger.Warn("coap retransmit max exceeded",
                 "session_id", s.id,
@@ -2062,7 +2062,7 @@ func (s *Session) retransmitOnce(ackTimeout time.Duration, maxRetransmit int) {
         }
 
         if shouldRetransmit {
-            // 步骤3：发送重传（不持锁）
+            // 步骤3:发送重传(不持锁)
             s.mu.Lock()
             _, err := s.conn.WriteToUDP(ackData, s.remoteAddr)
             s.mu.Unlock()
@@ -2074,7 +2074,7 @@ func (s *Session) retransmitOnce(ackTimeout time.Duration, maxRetransmit int) {
                     "error", err)
             }
 
-            // 步骤4：更新重传状态（持 pendingMu 短暂更新）
+            // 步骤4:更新重传状态(持 pendingMu 短暂更新)
             s.pendingMu.Lock()
             if p, ok := s.pendingACKs[id]; ok {
                 p.lastSentAt = now
@@ -2087,7 +2087,7 @@ func (s *Session) retransmitOnce(ackTimeout time.Duration, maxRetransmit int) {
         }
     }
 
-    // 步骤5：清理过期 ID
+    // 步骤5:清理过期 ID
     if len(expiredIDs) > 0 {
         s.pendingMu.Lock()
         for _, id := range expiredIDs {
@@ -2111,7 +2111,7 @@ func (s *Session) retransmitOnce(ackTimeout time.Duration, maxRetransmit int) {
 ### 3.5 CON 跟踪方法
 
 ```go
-// TrackCON 记录已发送的 ACK，供 retransmitLoop 重传使用。
+// TrackCON 记录已发送的 ACK,供 retransmitLoop 重传使用.
 func (s *Session) TrackCON(messageID uint16, ackData []byte) {
     s.pendingMu.Lock()
     s.pendingACKs[messageID] = &pendingACK{
@@ -2129,7 +2129,7 @@ func (s *Session) TrackCON(messageID uint16, ackData []byte) {
     s.activeIDsMu.Unlock()
 }
 
-// ResetCON 收到 RST 时取消对应 MessageID 的重传。
+// ResetCON 收到 RST 时取消对应 MessageID 的重传.
 func (s *Session) ResetCON(messageID uint16) {
     s.pendingMu.Lock()
     delete(s.pendingACKs, messageID)
@@ -2206,10 +2206,10 @@ type Server struct {
     conn    *net.UDPConn
     handler core.Handler
 
-    // 伪会话存储（remoteAddr.String() → *Session）
+    // 伪会话存储(remoteAddr.String() -> *Session)
     sessions sync.Map
 
-    // Runtime（通过 UseRuntime 注入）
+    // Runtime(通过 UseRuntime 注入)
     runtime core.Runtime
 
     // 并发控制
@@ -2312,7 +2312,7 @@ func (s *Server) handleDatagram(
     logger core.Logger,
     metrics core.Metrics,
 ) {
-    // 解析 CoAP 消息（帧验证）
+    // 解析 CoAP 消息(帧验证)
     msg, err := Parse(datagram)
     if err != nil {
         metrics.Counter("shark_transport_errors_total",
@@ -2339,10 +2339,10 @@ func (s *Server) handleDatagram(
     case MsgTypeNON:
         s.handleNON(sess, msg, plugins, logger, metrics)
     case MsgTypeACK:
-        // 收到 ACK，停止重传
+        // 收到 ACK,停止重传
         sess.ResetCON(msg.MessageID)
     case MsgTypeRST:
-        // 收到 RST，取消重传
+        // 收到 RST,取消重传
         sess.ResetCON(msg.MessageID)
         logger.Debug("coap RST received",
             "session_id", sess.ID(),
@@ -2351,7 +2351,7 @@ func (s *Server) handleDatagram(
 }
 ```
 
-### 4.5 handleCON 实现（CON 可靠性，RFC 7252 §4.2）
+### 4.5 handleCON 实现(CON 可靠性,RFC 7252 sec.4.2)
 
 ```go
 func (s *Server) handleCON(
@@ -2366,7 +2366,7 @@ func (s *Server) handleCON(
 
     if isDuplicate {
         if cachedACK != nil {
-            // 重复 CON + 已有缓存响应 → 重发缓存 ACK（不重复执行 Handler）
+            // 重复 CON + 已有缓存响应 -> 重发缓存 ACK(不重复执行 Handler)
             sess.Send(cachedACK)
             metrics.Counter("shark_transport_errors_total",
                 "protocol", "coap", "type", "duplicate_con").Inc()
@@ -2374,15 +2374,15 @@ func (s *Server) handleCON(
                 "session_id", sess.ID(),
                 "message_id", msg.MessageID)
         }
-        // cachedACK == nil 说明 Handler 仍在处理中，忽略重复 CON
+        // cachedACK == nil 说明 Handler 仍在处理中,忽略重复 CON
         return
     }
 
-    // 首次 CON：插件链处理
+    // 首次 CON:插件链处理
     data, err := plugins.RunMessage(sess, msg.Payload)
     if err != nil {
         if errors.Is(err, core.ErrPluginDrop) {
-            // 丢弃消息，但仍需发送 ACK（否则对端会一直重传）
+            // 丢弃消息,但仍需发送 ACK(否则对端会一直重传)
             ackMsg := NewACK(msg, CodeContent, nil)
             ackData, _ := ackMsg.Marshal()
             sess.Send(ackData)
@@ -2428,11 +2428,11 @@ func (s *Server) handleCON(
 
     sess.Send(ackData)
 
-    // 缓存 ACK 响应（供去重时重发）
+    // 缓存 ACK 响应(供去重时重发)
     sess.messageCache.CacheResponse(msg.MessageID, ackData)
 
-    // 跟踪 CON（若对端需要重传确认，此处暂不跟踪服务端发出的 ACK）
-    // 注：RFC 7252 服务端发 ACK 后对端负责确认收到，服务端无需重传 ACK
+    // 跟踪 CON(若对端需要重传确认,此处暂不跟踪服务端发出的 ACK)
+    // 注:RFC 7252 服务端发 ACK 后对端负责确认收到,服务端无需重传 ACK
 }
 ```
 
@@ -2446,7 +2446,7 @@ func (s *Server) handleNON(
     logger core.Logger,
     metrics core.Metrics,
 ) {
-    // NON 消息无需 ACK，直接处理
+    // NON 消息无需 ACK,直接处理
     data, err := plugins.RunMessage(sess, msg.Payload)
     if err != nil {
         if errors.Is(err, core.ErrPluginDrop) {
@@ -2640,19 +2640,19 @@ func (s *Server) Stop(ctx context.Context) error {
 // internal/transport/coap/options.go
 type Options struct {
     // 网络
-    Addr           string // 默认 "0.0.0.0:5683"（CoAP 标准端口）
+    Addr           string // 默认 "0.0.0.0:5683"(CoAP 标准端口)
     ReadBufferSize int    // 默认 2MB
 
     // 消息限制
     MaxMessageSize int   // 默认 65535
     MaxSessions    int64 // 默认 100000
 
-    // CON 可靠性（RFC 7252 §4.8）
-    AckTimeout    time.Duration // 默认 2s（首次 ACK 超时）
-    MaxRetransmit int           // 默认 4（最大重传次数）
+    // CON 可靠性(RFC 7252 sec.4.8)
+    AckTimeout    time.Duration // 默认 2s(首次 ACK 超时)
+    MaxRetransmit int           // 默认 4(最大重传次数)
 
     // 去重缓存
-    MessageIDCacheSize int // 默认 500（最近 N 条 MessageID）
+    MessageIDCacheSize int // 默认 500(最近 N 条 MessageID)
 
     // 伪会话 TTL
     SessionTTL    time.Duration // 默认 5m
@@ -2716,15 +2716,15 @@ func NewServer(handler core.Handler, opts ...Option) *Server {
 }
 ```
 
-# TRANSPORT.md — Part 4/5: WebSocket
+# TRANSPORT.md - Part 4/5: WebSocket
 
-> Shark-Socket 传输层：WebSocket 协议实现细节  
-> 版本：v0.2.x-alpha  
-> 最后更新：2026-06-01
+> Shark-Socket 传输层:WebSocket 协议实现细节  
+> 版本:v0.2.x-alpha  
+> 最后更新:2026-06-01
 
 ---
 
-## 目录（WebSocket 部分）
+## 目录(WebSocket 部分)
 
 1. [WebSocket 协议概述](#1-websocket-协议概述)
 2. [WSSession](#2-wssession)
@@ -2737,50 +2737,50 @@ func NewServer(handler core.Handler, opts ...Option) *Server {
 
 ### 1.1 在框架中的定位
 
-WebSocket 是**基于 HTTP Upgrade 的全双工长连接协议**，与 TCP 的核心差异：
+WebSocket 是**基于 HTTP Upgrade 的全双工长连接协议**,与 TCP 的核心差异:
 
 | 维度 | TCP | WebSocket |
 |------|-----|-----------|
-| 连接建立 | `net.Listen` + `Accept` | HTTP Upgrade（`gorilla/websocket` 处理） |
-| 帧边界 | 需要 Framer 处理粘包 | 协议内置消息边界（Text/Binary/Control 帧） |
-| 写并发安全 | writeLoop 单 goroutine 独占 | `writeMu sync.Mutex`（gorilla 要求） |
-| 心跳机制 | 应用层自定义（HeartbeatPlugin） | 协议内置 Ping/Pong 控制帧 |
-| 关闭流程 | 六步状态机（drain 写队列） | 发送 Close 帧 + 等待对端 Close 帧 |
-| Goroutine 数量 | 每连接 2 个 | 每连接 2 个（handleSession + pingLoop） |
+| 连接建立 | `net.Listen` + `Accept` | HTTP Upgrade(`gorilla/websocket` 处理) |
+| 帧边界 | 需要 Framer 处理粘包 | 协议内置消息边界(Text/Binary/Control 帧) |
+| 写并发安全 | writeLoop 单 goroutine 独占 | `writeMu sync.Mutex`(gorilla 要求) |
+| 心跳机制 | 应用层自定义(HeartbeatPlugin) | 协议内置 Ping/Pong 控制帧 |
+| 关闭流程 | 六步状态机(drain 写队列) | 发送 Close 帧 + 等待对端 Close 帧 |
+| Goroutine 数量 | 每连接 2 个 | 每连接 2 个(handleSession + pingLoop) |
 
 ### 1.2 gorilla/websocket 并发约束
 
-`gorilla/websocket` 库的**核心约束**（必须严格遵守）：
+`gorilla/websocket` 库的**核心约束**(必须严格遵守):
 
 ```
-并发读：不允许（同一连接同时只能有一个 Read 调用）
-并发写：不允许（同一连接同时只能有一个 Write 调用）
+并发读:不允许(同一连接同时只能有一个 Read 调用)
+并发写:不允许(同一连接同时只能有一个 Write 调用)
 
-框架处理方式：
-  读：handleSession goroutine 独占 ReadMessage（天然串行）
-  写：所有写操作（Send / SendText / sendPing）加 writeMu 互斥锁
+框架处理方式:
+  读:handleSession goroutine 独占 ReadMessage(天然串行)
+  写:所有写操作(Send / SendText / sendPing)加 writeMu 互斥锁
 ```
 
 ### 1.3 OnClose 单次执行保证
 
-WebSocket 有两条并发退出路径：
+WebSocket 有两条并发退出路径:
 
 ```
-路径1：Gateway.Stop() → StagedServer.CloseSessions() → sess.Close()
-路径2：handleSession readLoop → conn.ReadMessage() 返回 EOF → sess.Close()
+路径1:Gateway.Stop() -> StagedServer.CloseSessions() -> sess.Close()
+路径2:handleSession readLoop -> conn.ReadMessage() 返回 EOF -> sess.Close()
 
 两条路径都调用 sess.Close()
-→ closeOnce.Do() 保证内部逻辑只执行一次
-→ RunClose(sess) 在 Do() 内部，天然单次执行
+-> closeOnce.Do() 保证内部逻辑只执行一次
+-> RunClose(sess) 在 Do() 内部,天然单次执行
 ```
 
 ### 1.4 文件清单
 
 ```
 internal/transport/websocket/
-├── session.go   # WSSession：writeMu + Ping/Pong + OnClose 单次保证
-├── server.go    # WSServer：Upgrade + handleSession + pingLoop + StagedServer
-└── options.go   # WSOption Functional Options
++-- session.go   # WSSession:writeMu + Ping/Pong + OnClose 单次保证
++-- server.go    # WSServer:Upgrade + handleSession + pingLoop + StagedServer
++-- options.go   # WSOption Functional Options
 ```
 
 ### 1.5 编译期验证
@@ -2804,7 +2804,7 @@ var _ core.StagedServer        = (*Server)(nil)
 ```go
 // internal/transport/websocket/session.go
 type Session struct {
-    // 身份（不可变）
+    // 身份(不可变)
     id         uint64
     remoteAddr net.Addr
     localAddr  net.Addr
@@ -2813,7 +2813,7 @@ type Session struct {
     // 网络
     conn *websocket.Conn
 
-    // 写并发保护（gorilla/websocket 要求）
+    // 写并发保护(gorilla/websocket 要求)
     writeMu sync.Mutex
 
     // 状态
@@ -2895,11 +2895,11 @@ func (s *Session) GetMeta(key string) (any, bool) { return s.meta.Load(key) }
 func (s *Session) DelMeta(key string) { s.meta.Delete(key) }
 ```
 
-### 2.4 Send 实现（Binary 消息）
+### 2.4 Send 实现(Binary 消息)
 
 ```go
-// Send 发送 Binary 消息。
-// 必须加 writeMu，gorilla/websocket 写操作非并发安全。
+// Send 发送 Binary 消息.
+// 必须加 writeMu,gorilla/websocket 写操作非并发安全.
 func (s *Session) Send(data []byte) error {
     if !s.IsAlive() {
         return core.ErrSessionClosed
@@ -2923,10 +2923,10 @@ func (s *Session) Send(data []byte) error {
 }
 ```
 
-### 2.5 SendText 实现（Text 消息）
+### 2.5 SendText 实现(Text 消息)
 
 ```go
-// SendText 发送 Text 消息（UTF-8 编码）。
+// SendText 发送 Text 消息(UTF-8 编码).
 func (s *Session) SendText(data []byte) error {
     if !s.IsAlive() {
         return core.ErrSessionClosed
@@ -2947,10 +2947,10 @@ func (s *Session) SendText(data []byte) error {
 }
 ```
 
-### 2.6 sendPing 实现（内部心跳）
+### 2.6 sendPing 实现(内部心跳)
 
 ```go
-// sendPing 发送 Ping 控制帧（内部方法，由 pingLoop 调用）。
+// sendPing 发送 Ping 控制帧(内部方法,由 pingLoop 调用).
 func (s *Session) sendPing() error {
     s.writeMu.Lock()
     defer s.writeMu.Unlock()
@@ -2959,29 +2959,29 @@ func (s *Session) sendPing() error {
 }
 ```
 
-**三个写方法的锁使用一致性：**
+**三个写方法的锁使用一致性:**
 
 ```
-Send       → writeMu.Lock() → WriteMessage(BinaryMessage) → Unlock
-SendText   → writeMu.Lock() → WriteMessage(TextMessage)   → Unlock
-sendPing   → writeMu.Lock() → WriteMessage(PingMessage)   → Unlock
-sendClose  → writeMu.Lock() → WriteMessage(CloseMessage)  → Unlock
+Send       -> writeMu.Lock() -> WriteMessage(BinaryMessage) -> Unlock
+SendText   -> writeMu.Lock() -> WriteMessage(TextMessage)   -> Unlock
+sendPing   -> writeMu.Lock() -> WriteMessage(PingMessage)   -> Unlock
+sendClose  -> writeMu.Lock() -> WriteMessage(CloseMessage)  -> Unlock
 
-所有写操作必须通过 writeMu，不允许绕过锁直接调用 conn.WriteMessage
+所有写操作必须通过 writeMu,不允许绕过锁直接调用 conn.WriteMessage
 ```
 
-### 2.7 Close 实现（OnClose 单次保证）
+### 2.7 Close 实现(OnClose 单次保证)
 
 ```go
-// Close 关闭 WebSocket 会话。
-// sync.Once 保证多条并发退出路径（Gateway Stop + readLoop EOF）只执行一次清理。
+// Close 关闭 WebSocket 会话.
+// sync.Once 保证多条并发退出路径(Gateway Stop + readLoop EOF)只执行一次清理.
 func (s *Session) Close(ctx context.Context) error {
     var closeErr error
     s.closeOnce.Do(func() {
-        // 步骤1：标记状态
+        // 步骤1:标记状态
         s.state.Store(int32(core.Closed))
 
-        // 步骤2：发送 Close 帧（通知对端）
+        // 步骤2:发送 Close 帧(通知对端)
         s.writeMu.Lock()
         s.conn.WriteMessage(
             websocket.CloseMessage,
@@ -2989,10 +2989,10 @@ func (s *Session) Close(ctx context.Context) error {
         )
         s.writeMu.Unlock()
 
-        // 步骤3：取消 context（通知 pingLoop 退出）
+        // 步骤3:取消 context(通知 pingLoop 退出)
         s.cancel()
 
-        // 步骤4：关闭底层连接
+        // 步骤4:关闭底层连接
         closeErr = s.conn.Close()
 
         s.metrics.Gauge("shark_sessions_active", "protocol", "websocket").Dec()
@@ -3004,17 +3004,17 @@ func (s *Session) Close(ctx context.Context) error {
 }
 ```
 
-**注意：** WebSocket 的 `Close` 不包含 drain 写队列步骤，因为：
+**注意:** WebSocket 的 `Close` 不包含 drain 写队列步骤,因为:
 
 ```
-WebSocket 无写队列：
-  Send 通过 writeMu 同步写，不经过队列
+WebSocket 无写队列:
+  Send 通过 writeMu 同步写,不经过队列
   Close 发送 Close 帧后直接关闭连接
-  对端收到 Close 帧后停止发送，连接双方协商关闭
+  对端收到 Close 帧后停止发送,连接双方协商关闭
 
-与 TCP 的差异：
-  TCP Close：drain 写队列（确保已入队消息全部发出）
-  WebSocket Close：发送 Close 帧（协议层握手关闭）
+与 TCP 的差异:
+  TCP Close:drain 写队列(确保已入队消息全部发出)
+  WebSocket Close:发送 Close 帧(协议层握手关闭)
 ```
 
 ---
@@ -3030,10 +3030,10 @@ type Server struct {
     upgrader websocket.Upgrader
     handler  core.Handler
 
-    // HTTP Server（负责 Upgrade）
+    // HTTP Server(负责 Upgrade)
     httpServer *http.Server
 
-    // Runtime（通过 UseRuntime 注入）
+    // Runtime(通过 UseRuntime 注入)
     runtime core.Runtime
 
     // 并发控制
@@ -3041,7 +3041,7 @@ type Server struct {
     closed atomic.Bool
 
     // StagedServer 控制
-    acceptStopped chan struct{} // StopAccept 后关闭，阻止新 Upgrade
+    acceptStopped chan struct{} // StopAccept 后关闭,阻止新 Upgrade
 }
 
 // 编译期验证
@@ -3087,7 +3087,7 @@ func (s *Server) Start(ctx context.Context) error {
         Handler: mux,
     }
 
-    // 启动 HTTP Server（异步）
+    // 启动 HTTP Server(异步)
     startErr := make(chan error, 1)
     go func() {
         var err error
@@ -3102,12 +3102,12 @@ func (s *Server) Start(ctx context.Context) error {
         }
     }()
 
-    // 等待启动确认（短暂检查）
+    // 等待启动确认(短暂检查)
     select {
     case err := <-startErr:
         return fmt.Errorf("%w: %v", core.ErrListenFailed, err)
     case <-time.After(50 * time.Millisecond):
-        // 启动成功（http.Server 未立即报错）
+        // 启动成功(http.Server 未立即报错)
     }
 
     s.runtime.Logger().Info("websocket server started",
@@ -3122,17 +3122,17 @@ func (s *Server) Start(ctx context.Context) error {
 ### 3.4 Origin 检查
 
 ```go
-// checkOrigin 检查请求来源是否在白名单中。
-// AllowedOrigins 为空时拒绝所有跨域请求（生产环境必须配置）。
+// checkOrigin 检查请求来源是否在白名单中.
+// AllowedOrigins 为空时拒绝所有跨域请求(生产环境必须配置).
 func (s *Server) checkOrigin(r *http.Request) bool {
     origin := r.Header.Get("Origin")
 
-    // 无 Origin 头（非浏览器客户端）：允许
+    // 无 Origin 头(非浏览器客户端):允许
     if origin == "" {
         return true
     }
 
-    // AllowedOrigins 为空：拒绝所有跨域
+    // AllowedOrigins 为空:拒绝所有跨域
     if len(s.options.AllowedOrigins) == 0 {
         s.runtime.Logger().Warn("websocket origin rejected: AllowedOrigins not configured",
             "origin", origin,
@@ -3158,7 +3158,7 @@ func (s *Server) checkOrigin(r *http.Request) bool {
 
 ```go
 func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
-    // 检查是否已停止接受（StopAccept 后拒绝新连接）
+    // 检查是否已停止接受(StopAccept 后拒绝新连接)
     select {
     case <-s.acceptStopped:
         http.Error(w, "service unavailable", http.StatusServiceUnavailable)
@@ -3171,7 +3171,7 @@ func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
     logger  := s.runtime.Logger()
     metrics := s.runtime.Metrics()
 
-    // HTTP → WebSocket Upgrade
+    // HTTP -> WebSocket Upgrade
     conn, err := s.upgrader.Upgrade(w, r, nil)
     if err != nil {
         logger.Error("websocket upgrade failed",
@@ -3216,7 +3216,7 @@ func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
         "remote_addr", r.RemoteAddr,
         "origin", r.Header.Get("Origin"))
 
-    // 启动会话处理（handleSession 包含 readLoop + pingLoop）
+    // 启动会话处理(handleSession 包含 readLoop + pingLoop)
     s.wg.Add(1)
     go func() {
         defer s.wg.Done()
@@ -3235,20 +3235,20 @@ func (s *Server) handleSession(
 ) {
     manager := s.runtime.Sessions()
 
-    // 退出时清理（保证 OnClose 单次执行）
+    // 退出时清理(保证 OnClose 单次执行)
     defer func() {
         drainCtx, cancel := context.WithTimeout(
             context.Background(), 5*time.Second)
         defer cancel()
         sess.Close(drainCtx)              // closeOnce 保证幂等
-        plugins.RunClose(sess)            // closeOnce 内部已调用，此处不重复
+        plugins.RunClose(sess)            // closeOnce 内部已调用,此处不重复
         manager.Unregister(sess.ID())
     }()
 
-    // 设置 Pong Handler（收到 Pong 时更新活跃时间和 ReadDeadline）
+    // 设置 Pong Handler(收到 Pong 时更新活跃时间和 ReadDeadline)
     sess.conn.SetPongHandler(func(appData string) error {
         sess.TouchActive()
-        // 重设 ReadDeadline：PingInterval + PongTimeout
+        // 重设 ReadDeadline:PingInterval + PongTimeout
         deadline := time.Now().Add(
             s.options.PingInterval + s.options.PongTimeout)
         sess.conn.SetReadDeadline(deadline)
@@ -3266,7 +3266,7 @@ func (s *Server) handleSession(
         s.pingLoop(sess)
     }()
 
-    // readLoop（当前 goroutine，阻塞直到连接关闭）
+    // readLoop(当前 goroutine,阻塞直到连接关闭)
     for {
         msgType, data, err := sess.conn.ReadMessage()
         if err != nil {
@@ -3287,7 +3287,7 @@ func (s *Server) handleSession(
             return // 触发 defer 清理
         }
 
-        // 仅处理 Text 和 Binary 消息（控制帧由 gorilla 内部处理）
+        // 仅处理 Text 和 Binary 消息(控制帧由 gorilla 内部处理)
         if msgType != websocket.TextMessage && msgType != websocket.BinaryMessage {
             continue
         }
@@ -3332,27 +3332,27 @@ func (s *Server) handleSession(
 }
 ```
 
-**OnClose 执行时机说明：**
+**OnClose 执行时机说明:**
 
 ```
-defer 中的清理顺序：
+defer 中的清理顺序:
   1. sess.Close(drainCtx)
-     → closeOnce.Do() 执行：
-         state → Closed
+     -> closeOnce.Do() 执行:
+         state -> Closed
          发送 Close 帧
-         cancel()（通知 pingLoop 退出）
+         cancel()(通知 pingLoop 退出)
          conn.Close()
 
   2. plugins.RunClose(sess)
-     → 逆序执行所有插件的 OnClose
+     -> 逆序执行所有插件的 OnClose
 
   3. manager.Unregister(sess.ID())
 
-注意：
-  若 sess.Close() 已在 closeOnce.Do() 外部被调用过（如 Gateway.Stop()）
-  则此处 sess.Close() 是幂等的（closeOnce 保证 Do 内逻辑不重复执行）
+注意:
+  若 sess.Close() 已在 closeOnce.Do() 外部被调用过(如 Gateway.Stop())
+  则此处 sess.Close() 是幂等的(closeOnce 保证 Do 内逻辑不重复执行)
   但 plugins.RunClose 和 manager.Unregister 仍需在 defer 中执行
-  因此 RunClose 不放在 closeOnce 内部，而是放在 defer 中显式调用
+  因此 RunClose 不放在 closeOnce 内部,而是放在 defer 中显式调用
 ```
 
 ### 3.7 pingLoop 实现
@@ -3385,35 +3385,35 @@ func (s *Server) pingLoop(sess *Session) {
 }
 ```
 
-**ReadDeadline 动态设置时序：**
+**ReadDeadline 动态设置时序:**
 
 ```
-时间线：
+时间线:
 
-T=0     建立连接，设置 ReadDeadline = T + PingInterval + PongTimeout
+T=0     建立连接,设置 ReadDeadline = T + PingInterval + PongTimeout
 T=30s   pingLoop 发送 Ping
-T=30s+  客户端收到 Ping，回复 Pong
-T=30s+  PongHandler 收到 Pong：
+T=30s+  客户端收到 Ping,回复 Pong
+T=30s+  PongHandler 收到 Pong:
           TouchActive()
-          ReadDeadline = now + PingInterval + PongTimeout（重设）
+          ReadDeadline = now + PingInterval + PongTimeout(重设)
 T=60s   pingLoop 再次发送 Ping
 ...
-T=45s   若客户端在 T=30s 后 15s（PongTimeout=15s）内未回 Pong：
+T=45s   若客户端在 T=30s 后 15s(PongTimeout=15s)内未回 Pong:
           ReadDeadline 到期
           conn.ReadMessage() 返回 timeout 错误
-          handleSession 退出 → sess.Close()
+          handleSession 退出 -> sess.Close()
 
-配置关系：
-  PingInterval = 30s（Ping 发送间隔）
-  PongTimeout  = 15s（等待 Pong 的超时）
+配置关系:
+  PingInterval = 30s(Ping 发送间隔)
+  PongTimeout  = 15s(等待 Pong 的超时)
   ReadDeadline = PingInterval + PongTimeout = 45s
-  （设置为总超时，确保在两次 Ping 间有足够时间等待 Pong）
+  (设置为总超时,确保在两次 Ping 间有足够时间等待 Pong)
 ```
 
 ### 3.8 StagedServer 三阶段实现
 
 ```go
-// StopAccept 停止接受新的 WebSocket 升级请求。
+// StopAccept 停止接受新的 WebSocket 升级请求.
 func (s *Server) StopAccept(ctx context.Context) error {
     if s.closed.CompareAndSwap(false, true) {
         close(s.acceptStopped) // 新 Upgrade 请求返回 503
@@ -3422,7 +3422,7 @@ func (s *Server) StopAccept(ctx context.Context) error {
     return nil
 }
 
-// Drain 等待所有 handleSession + pingLoop goroutine 退出。
+// Drain 等待所有 handleSession + pingLoop goroutine 退出.
 func (s *Server) Drain(ctx context.Context) error {
     done := make(chan struct{})
     go func() {
@@ -3440,7 +3440,7 @@ func (s *Server) Drain(ctx context.Context) error {
     }
 }
 
-// CloseSessions 向所有活跃 WSSession 发送 Close 帧并关闭。
+// CloseSessions 向所有活跃 WSSession 发送 Close 帧并关闭.
 func (s *Server) CloseSessions(ctx context.Context) error {
     s.runtime.Sessions().Range(func(sess core.Session) bool {
         if sess.Protocol() == core.WebSocket {
@@ -3452,13 +3452,13 @@ func (s *Server) CloseSessions(ctx context.Context) error {
     return nil
 }
 
-// Stop 完整停止（非 StagedServer 场景使用）。
+// Stop 完整停止(非 StagedServer 场景使用).
 func (s *Server) Stop(ctx context.Context) error {
     if err := s.StopAccept(ctx); err != nil {
         return err
     }
 
-    // 关闭 HTTP Server（停止接受新的 HTTP 连接）
+    // 关闭 HTTP Server(停止接受新的 HTTP 连接)
     if s.httpServer != nil {
         if err := s.httpServer.Shutdown(ctx); err != nil {
             s.runtime.Logger().Warn("websocket http server shutdown error",
@@ -3484,24 +3484,24 @@ func (s *Server) Stop(ctx context.Context) error {
 type Options struct {
     // 网络
     Addr      string      // 默认 "0.0.0.0:18700"
-    Path      string      // 默认 "/ws"（WebSocket 升级路径）
-    TLSConfig *tls.Config // 默认 nil（不启用 TLS）
+    Path      string      // 默认 "/ws"(WebSocket 升级路径)
+    TLSConfig *tls.Config // 默认 nil(不启用 TLS)
 
     // 缓冲区
-    ReadBufferSize  int // 默认 4096（gorilla Upgrader 读缓冲）
-    WriteBufferSize int // 默认 4096（gorilla Upgrader 写缓冲）
+    ReadBufferSize  int // 默认 4096(gorilla Upgrader 读缓冲)
+    WriteBufferSize int // 默认 4096(gorilla Upgrader 写缓冲)
 
     // 消息限制
-    MaxMessageSize int   // 默认 1MB（conn.SetReadLimit 设置）
+    MaxMessageSize int   // 默认 1MB(conn.SetReadLimit 设置)
     MaxSessions    int64 // 默认 100000
 
     // 心跳
-    PingInterval time.Duration // 默认 30s（Ping 发送间隔）
-    PongTimeout  time.Duration // 默认 15s（等待 Pong 超时）
+    PingInterval time.Duration // 默认 30s(Ping 发送间隔)
+    PongTimeout  time.Duration // 默认 15s(等待 Pong 超时)
 
     // 安全
-    AllowedOrigins  []string      // 默认 []（空=拒绝所有跨域，生产必须配置）
-    UpgradeTimeout  time.Duration // 默认 5s（HTTP Upgrade 超时）
+    AllowedOrigins  []string      // 默认 [](空=拒绝所有跨域,生产必须配置)
+    UpgradeTimeout  time.Duration // 默认 5s(HTTP Upgrade 超时)
 }
 ```
 
@@ -3557,8 +3557,8 @@ func WithPongTimeout(d time.Duration) Option {
     return func(o *Options) { o.PongTimeout = d }
 }
 
-// WithAllowedOrigins 设置允许的跨域来源。
-// 生产环境必须明确配置，禁止使用 "*"（安全风险）。
+// WithAllowedOrigins 设置允许的跨域来源.
+// 生产环境必须明确配置,禁止使用 "*"(安全风险).
 func WithAllowedOrigins(origins ...string) Option {
     return func(o *Options) { o.AllowedOrigins = origins }
 }
@@ -3599,7 +3599,7 @@ server := websocket.NewServer(
     websocket.WithMaxMessageSize(64*1024), // 64KB
 )
 
-// WSS（WebSocket over TLS）
+// WSS(WebSocket over TLS)
 tlsConfig := &tls.Config{
     MinVersion: tls.VersionTLS13,
     // 证书通过 GetConfigForClient 热加载
@@ -3614,16 +3614,16 @@ secureServer := websocket.NewServer(handler,
 ### 4.5 AllowedOrigins 配置规范
 
 ```
-生产环境规范：
-  ✓ 明确列出允许的来源（精确匹配）
-  ✓ 使用 HTTPS 来源（防中间人）
-  ✗ 禁止使用 "*"（允许任意跨域，CSRF 风险）
-  ✗ 禁止留空（空列表拒绝所有跨域，非浏览器客户端不受影响）
+生产环境规范:
+  [OK] 明确列出允许的来源(精确匹配)
+  [OK] 使用 HTTPS 来源(防中间人)
+  [X] 禁止使用 "*"(允许任意跨域,CSRF 风险)
+  [X] 禁止留空(空列表拒绝所有跨域,非浏览器客户端不受影响)
 
-开发环境（可临时使用）：
+开发环境(可临时使用):
   websocket.WithAllowedOrigins("http://localhost:3000")
 
-多来源示例：
+多来源示例:
   websocket.WithAllowedOrigins(
       "https://app.example.com",
       "https://admin.example.com",
@@ -3632,41 +3632,41 @@ secureServer := websocket.NewServer(handler,
 
 ### 4.6 运维注意事项
 
-**Ping/Pong 超时调优：**
+**Ping/Pong 超时调优:**
 
 ```
-问题：网络抖动导致 Pong 延迟，误判连接断开
-解决：适当增大 PongTimeout（默认 15s 通常足够）
+问题:网络抖动导致 Pong 延迟,误判连接断开
+解决:适当增大 PongTimeout(默认 15s 通常足够)
 
-问题：移动网络客户端频繁重连（省电模式）
-解决：增大 PingInterval（如 60s），减少不必要的心跳
+问题:移动网络客户端频繁重连(省电模式)
+解决:增大 PingInterval(如 60s),减少不必要的心跳
 
-问题：大量连接心跳检测消耗 CPU
-解决：P2 引入时间轮替代 ticker（HeartbeatPlugin 也适用）
+问题:大量连接心跳检测消耗 CPU
+解决:P2 引入时间轮替代 ticker(HeartbeatPlugin 也适用)
 ```
 
-**消息大小限制：**
+**消息大小限制:**
 
 ```
-MaxMessageSize 通过 conn.SetReadLimit 在协议层强制：
-  超限时 gorilla 自动关闭连接（发送 Close 帧，code=1009）
+MaxMessageSize 通过 conn.SetReadLimit 在协议层强制:
+  超限时 gorilla 自动关闭连接(发送 Close 帧,code=1009)
   不需要在 Handler 中额外检查消息大小
 
-典型配置：
-  文字聊天：64KB
-  文件传输：4MB（考虑内存占用）
-  IoT 控制：4KB（保持轻量）
+典型配置:
+  文字聊天:64KB
+  文件传输:4MB(考虑内存占用)
+  IoT 控制:4KB(保持轻量)
 ```
 
-# TRANSPORT.md — Part 5/5: 汇总说明
+# TRANSPORT.md - Part 5/5: 汇总说明
 
-> Shark-Socket 传输层：协议汇总、对比与 StagedServer 实现表格  
-> 版本：v0.2.x-alpha  
-> 最后更新：2026-06-01
+> Shark-Socket 传输层:协议汇总,对比与 StagedServer 实现表格  
+> 版本:v0.2.x-alpha  
+> 最后更新:2026-06-01
 
 ---
 
-## 目录（汇总部分）
+## 目录(汇总部分)
 
 1. [协议特性对比](#1-协议特性对比)
 2. [StagedServer 实现汇总](#2-stagedserver-实现汇总)
@@ -3684,37 +3684,37 @@ MaxMessageSize 通过 conn.SetReadLimit 在协议层强制：
 
 | 特性 | TCP | UDP | CoAP | WebSocket |
 |------|-----|-----|------|-----------|
-| 传输层 | TCP 字节流 | UDP 数据报 | UDP 数据报 | TCP（HTTP Upgrade） |
-| 连接模型 | 持久连接 | 无连接（伪会话） | 无连接（伪会话） | 持久连接 |
+| 传输层 | TCP 字节流 | UDP 数据报 | UDP 数据报 | TCP(HTTP Upgrade) |
+| 连接模型 | 持久连接 | 无连接(伪会话) | 无连接(伪会话) | 持久连接 |
 | 消息边界 | Framer 处理 | 数据报天然边界 | 数据报天然边界 | 协议内置帧 |
 | 可靠性 | OS 保证 | 无保证 | CON 类型可靠 | OS 保证 |
-| 顺序性 | 有序 | 无序 | 无序（NON）/ 有序（CON+Token） |有序 |
-| 双向通信 | ✓ | ✓（应用层实现） | ✓（有限） | ✓（全双工） |
-| 心跳机制 | 应用层（HeartbeatPlugin） | TTL 扫描（sweepLoop） | TTL 扫描 | 协议内置 Ping/Pong |
-| 标准端口 | 自定义（18000） | 自定义（18001） | 5683 | 自定义（18700） |
+| 顺序性 | 有序 | 无序 | 无序(NON)/ 有序(CON+Token) |有序 |
+| 双向通信 | [OK] | [OK](应用层实现) | [OK](有限) | [OK](全双工) |
+| 心跳机制 | 应用层(HeartbeatPlugin) | TTL 扫描(sweepLoop) | TTL 扫描 | 协议内置 Ping/Pong |
+| 标准端口 | 自定义(18000) | 自定义(18001) | 5683 | 自定义(18700) |
 
 ### 1.2 框架实现特性
 
 | 特性 | TCP | UDP | CoAP | WebSocket |
 |------|-----|-----|------|-----------|
-| 写队列 | ✓（有界 channel） | ✗（直接写） | ✗（直接写） | ✗（mutex 同步写） |
-| Drain 关闭 | ✓（六步状态机） | ✗（立即关闭） | ✗（立即关闭） | ✗（Close 帧协商） |
-| WorkerPool | ✓ | ✗（同步 Handler） | ✗（同步 Handler） | ✗（handleSession goroutine） |
-| Framer | ✓（4 种） | ✗（数据报边界） | ✗（数据报边界） | ✗（gorilla 内置） |
-| 伪会话 | ✗ | ✓ | ✓ | ✗ |
-| StagedServer | ✓ | ✗ | ✗ | ✓ |
-| retransmitLoop | ✗ | ✗ | ✓（CON 重传） | ✗ |
-| MessageID 去重 | ✗ | ✗ | ✓ | ✗ |
-| Origin 检查 | ✗ | ✗ | ✗ | ✓ |
+| 写队列 | [OK](有界 channel) | [X](直接写) | [X](直接写) | [X](mutex 同步写) |
+| Drain 关闭 | [OK](六步状态机) | [X](立即关闭) | [X](立即关闭) | [X](Close 帧协商) |
+| WorkerPool | [OK] | [X](同步 Handler) | [X](同步 Handler) | [X](handleSession goroutine) |
+| Framer | [OK](4 种) | [X](数据报边界) | [X](数据报边界) | [X](gorilla 内置) |
+| 伪会话 | [X] | [OK] | [OK] | [X] |
+| StagedServer | [OK] | [X] | [X] | [OK] |
+| retransmitLoop | [X] | [X] | [OK](CON 重传) | [X] |
+| MessageID 去重 | [X] | [X] | [OK] | [X] |
+| Origin 检查 | [X] | [X] | [X] | [OK] |
 
 ### 1.3 Goroutine 使用
 
-| 协议 | per-Server Goroutine | per-Session Goroutine | 总计（N 连接） |
+| 协议 | per-Server Goroutine | per-Session Goroutine | 总计(N 连接) |
 |------|---------------------|----------------------|---------------|
-| TCP | 1（acceptLoop） | 2（readLoop + writeLoop） | 1 + 2N |
-| UDP | 2（readLoop + sweepLoop） | 0（复用 Server readLoop） | 2 |
-| CoAP | 2（readLoop + sweepLoop） | 1（retransmitLoop，per 伪会话） | 2 + N |
-| WebSocket | 0（复用 http.Server） | 2（handleSession + pingLoop） | 2N |
+| TCP | 1(acceptLoop) | 2(readLoop + writeLoop) | 1 + 2N |
+| UDP | 2(readLoop + sweepLoop) | 0(复用 Server readLoop) | 2 |
+| CoAP | 2(readLoop + sweepLoop) | 1(retransmitLoop,per 伪会话) | 2 + N |
+| WebSocket | 0(复用 http.Server) | 2(handleSession + pingLoop) | 2N |
 
 ---
 
@@ -3724,99 +3724,99 @@ MaxMessageSize 通过 conn.SetReadLimit 在协议层强制：
 
 | 协议 | 实现 StagedServer | 原因 |
 |------|-----------------|------|
-| TCP | ✓ | 长连接，有写队列需要 drain |
-| WebSocket | ✓ | 长连接，需要发送 Close 帧 |
-| UDP | ✗ | 无 accept，无写队列，直接 Stop |
-| CoAP | ✗ | 基于 UDP，无 accept，直接 Stop |
+| TCP | [OK] | 长连接,有写队列需要 drain |
+| WebSocket | [OK] | 长连接,需要发送 Close 帧 |
+| UDP | [X] | 无 accept,无写队列,直接 Stop |
+| CoAP | [X] | 基于 UDP,无 accept,直接 Stop |
 
 ### 2.2 各阶段执行内容
 
 ```
-StopAccept 阶段（并发执行）：
+StopAccept 阶段(并发执行):
 
-  TCP：
-    listener.Close()          → acceptLoop 收到 net.ErrClosed 退出
-    WorkerPool.Stop()         → 等待所有 Worker 完成当前任务
+  TCP:
+    listener.Close()          -> acceptLoop 收到 net.ErrClosed 退出
+    WorkerPool.Stop()         -> 等待所有 Worker 完成当前任务
 
-  WebSocket：
-    close(acceptStopped)      → 新 Upgrade 请求返回 503
-    （http.Server 暂不关闭，Drain 阶段再关闭）
+  WebSocket:
+    close(acceptStopped)      -> 新 Upgrade 请求返回 503
+    (http.Server 暂不关闭,Drain 阶段再关闭)
 
-  UDP：不参与（非 StagedServer）
-  CoAP：不参与（非 StagedServer）
+  UDP:不参与(非 StagedServer)
+  CoAP:不参与(非 StagedServer)
 
-────────────────────────────────────────────────
+------------------------------------------------
 
-Drain 阶段（并发执行）：
+Drain 阶段(并发执行):
 
-  TCP：
-    wg.Wait()                 → 等待所有 readLoop / writeLoop 退出
-    超时：强制继续，记录 Warn
+  TCP:
+    wg.Wait()                 -> 等待所有 readLoop / writeLoop 退出
+    超时:强制继续,记录 Warn
 
-  WebSocket：
-    httpServer.Shutdown()     → 等待 HTTP Server 处理完在途请求
-    wg.Wait()                 → 等待所有 handleSession / pingLoop 退出
-    超时：强制继续，记录 Warn
+  WebSocket:
+    httpServer.Shutdown()     -> 等待 HTTP Server 处理完在途请求
+    wg.Wait()                 -> 等待所有 handleSession / pingLoop 退出
+    超时:强制继续,记录 Warn
 
-────────────────────────────────────────────────
+------------------------------------------------
 
-CloseSessions 阶段（并发执行）：
+CloseSessions 阶段(并发执行):
 
-  TCP：
-    manager.Range(TCP)        → 遍历 TCP Session
-    sess.Close(ctx)           → 六步状态机关闭（drain + conn.Close）
+  TCP:
+    manager.Range(TCP)        -> 遍历 TCP Session
+    sess.Close(ctx)           -> 六步状态机关闭(drain + conn.Close)
 
-  WebSocket：
-    manager.Range(WebSocket)  → 遍历 WebSocket Session
-    sess.Close(ctx)           → 发送 Close 帧 + conn.Close
+  WebSocket:
+    manager.Range(WebSocket)  -> 遍历 WebSocket Session
+    sess.Close(ctx)           -> 发送 Close 帧 + conn.Close
 
-────────────────────────────────────────────────
+------------------------------------------------
 
-StopNonStaged 阶段（并发执行）：
+StopNonStaged 阶段(并发执行):
 
-  UDP：
-    close(stopCh)             → readLoop / sweepLoop 退出
-    conn.Close()              → ReadFromUDP 返回 net.ErrClosed
-    wg.Wait()                 → 等待退出
+  UDP:
+    close(stopCh)             -> readLoop / sweepLoop 退出
+    conn.Close()              -> ReadFromUDP 返回 net.ErrClosed
+    wg.Wait()                 -> 等待退出
     清理所有伪会话
 
-  CoAP：
-    close(stopCh)             → readLoop / sweepLoop 退出
-    conn.Close()              → ReadFromUDP 返回 net.ErrClosed
-    wg.Wait()                 → 等待所有 retransmitLoop 退出
+  CoAP:
+    close(stopCh)             -> readLoop / sweepLoop 退出
+    conn.Close()              -> ReadFromUDP 返回 net.ErrClosed
+    wg.Wait()                 -> 等待所有 retransmitLoop 退出
     清理所有伪会话
 
-────────────────────────────────────────────────
+------------------------------------------------
 
-CloseAll 阶段（串行，在所有协议阶段完成后执行）：
+CloseAll 阶段(串行,在所有协议阶段完成后执行):
 
   SessionManager.CloseAll(ctx)
-    → 清理 Manager 中可能遗留的 Session（应为空或极少数）
-    → 若有遗留，记录 Warn（说明协议层未正确清理）
+    -> 清理 Manager 中可能遗留的 Session(应为空或极少数)
+    -> 若有遗留,记录 Warn(说明协议层未正确清理)
 ```
 
 ### 2.3 阶段超时分配建议
 
 ```
-总关闭超时（TotalShutdownTimeout）默认 30s，按比例分配：
+总关闭超时(TotalShutdownTimeout)默认 30s,按比例分配:
 
-  StopAccept：   总超时 × 1/6 ≈ 5s
-    → 快速停止 listener，不需要等待业务逻辑
+  StopAccept:   总超时 x 1/6 ~= 5s
+    -> 快速停止 listener,不需要等待业务逻辑
 
-  Drain：        总超时 × 1/2 ≈ 15s
-    → 等待在途请求完成，是最耗时的阶段
+  Drain:        总超时 x 1/2 ~= 15s
+    -> 等待在途请求完成,是最耗时的阶段
 
-  CloseSessions：总超时 × 1/6 ≈ 5s
-    → Session 已完成处理，关闭时间短
+  CloseSessions:总超时 x 1/6 ~= 5s
+    -> Session 已完成处理,关闭时间短
 
-  CloseAll：     总超时 × 1/6 ≈ 5s（含 NonStaged 阶段时间）
-    → 清理残留，通常为空
+  CloseAll:     总超时 x 1/6 ~= 5s(含 NonStaged 阶段时间)
+    -> 清理残留,通常为空
 
-调整建议：
-  高并发场景（100K 连接）：TotalShutdownTimeout = 60s
+调整建议:
+  高并发场景(100K 连接):TotalShutdownTimeout = 60s
     StopAccept 5s / Drain 30s / CloseSessions 15s / CloseAll 10s
 
-  IoT 场景（CoAP/UDP 为主）：TotalShutdownTimeout = 15s
+  IoT 场景(CoAP/UDP 为主):TotalShutdownTimeout = 15s
     StopAccept 2s / Drain 5s / CloseSessions 5s / CloseAll 3s
 ```
 
@@ -3828,15 +3828,15 @@ CloseAll 阶段（串行，在所有协议阶段完成后执行）：
 
 | 字段 | TCP | UDP | CoAP | WebSocket |
 |------|-----|-----|------|-----------|
-| `id` | ✓ | ✓ | ✓ | ✓ |
+| `id` | [OK] | [OK] | [OK] | [OK] |
 | `remoteAddr` | `net.Addr` | `*net.UDPAddr` | `*net.UDPAddr` | `net.Addr` |
-| `conn` | `net.Conn` | `*net.UDPConn`（共享） | `*net.UDPConn`（共享） | `*websocket.Conn` |
-| `writeQueue` | ✓（`chan []byte`） | ✗ | ✗ | ✗ |
-| `writeMu` | ✗ | ✓ | ✓ | ✓ |
-| `draining/drained` | ✓ | ✗ | ✗ | ✗ |
-| `messageCache` | ✗ | ✗ | ✓ | ✗ |
-| `pendingACKs` | ✗ | ✗ | ✓ | ✗ |
-| `closeOnce` | ✓ | ✓ | ✓ | ✓ |
+| `conn` | `net.Conn` | `*net.UDPConn`(共享) | `*net.UDPConn`(共享) | `*websocket.Conn` |
+| `writeQueue` | [OK](`chan []byte`) | [X] | [X] | [X] |
+| `writeMu` | [X] | [OK] | [OK] | [OK] |
+| `draining/drained` | [OK] | [X] | [X] | [X] |
+| `messageCache` | [X] | [X] | [OK] | [X] |
+| `pendingACKs` | [X] | [X] | [OK] | [X] |
+| `closeOnce` | [OK] | [OK] | [OK] | [OK] |
 | `meta` | `sync.Map` | `sync.Map` | `sync.Map` | `sync.Map` |
 
 ### 3.2 Send 行为对比
@@ -3846,16 +3846,16 @@ CloseAll 阶段（串行，在所有协议阶段完成后执行）：
 | 写方式 | 异步写队列 | 同步 WriteToUDP | 同步 WriteToUDP | 同步 WriteMessage |
 | 队列满处理 | `ErrWriteQueueFull` | 不存在 | 不存在 | 不存在 |
 | 并发保护 | writeLoop 单 goroutine | `sync.Mutex` | `sync.Mutex` | `sync.Mutex` |
-| 数据拷贝 | 必须（队列异步） | 不需要（同步发送） | 不需要（同步发送） | 不需要（同步发送） |
-| 阻塞调用方 | 否（非阻塞入队） | 是（WriteToUDP 可阻塞） | 是（WriteToUDP 可阻塞） | 是（WriteMessage 可阻塞） |
+| 数据拷贝 | 必须(队列异步) | 不需要(同步发送) | 不需要(同步发送) | 不需要(同步发送) |
+| 阻塞调用方 | 否(非阻塞入队) | 是(WriteToUDP 可阻塞) | 是(WriteToUDP 可阻塞) | 是(WriteMessage 可阻塞) |
 
 ### 3.3 Close 行为对比
 
 | 行为 | TCP | UDP | CoAP | WebSocket |
 |------|-----|-----|------|-----------|
-| 状态转换 | Active→Draining→Closed | Active→Closed | Active→Closed | Connecting/Active→Closed |
-| Drain | ✓（等待写队列排空） | ✗ | ✗ | ✗ |
-| 发送关闭信号 | 无（连接直接关闭） | 无 | 无 | ✓（Close 帧） |
+| 状态转换 | Active->Draining->Closed | Active->Closed | Active->Closed | Connecting/Active->Closed |
+| Drain | [OK](等待写队列排空) | [X] | [X] | [X] |
+| 发送关闭信号 | 无(连接直接关闭) | 无 | 无 | [OK](Close 帧) |
 | 关闭共享资源 | 关闭独占 conn | 不关闭共享 UDPConn | 不关闭共享 UDPConn | 关闭独占 wsConn |
 | 幂等保证 | `sync.Once` | `sync.Once` | `sync.Once` | `sync.Once` |
 
@@ -3864,8 +3864,8 @@ CloseAll 阶段（串行，在所有协议阶段完成后执行）：
 | 协议 | 创建时状态 | 转为 Active 时机 |
 |------|-----------|----------------|
 | TCP | `Connecting` | `handleConn` 中 `OnAccept` 成功后 |
-| UDP | `Active`（直接） | 创建即 Active（`OnAccept` 在注册前执行） |
-| CoAP | `Active`（直接） | 创建即 Active（同 UDP） |
+| UDP | `Active`(直接) | 创建即 Active(`OnAccept` 在注册前执行) |
+| CoAP | `Active`(直接) | 创建即 Active(同 UDP) |
 | WebSocket | `Connecting` | `handleUpgrade` 中 `OnAccept` 成功后 |
 
 ---
@@ -3878,28 +3878,28 @@ CloseAll 阶段（串行，在所有协议阶段完成后执行）：
 |------|---------|---------|------|
 | TCP | `0.0.0.0:18000` | 自定义 | 框架默认端口 |
 | UDP | `0.0.0.0:18001` | 自定义 | 框架默认端口 |
-| CoAP | `0.0.0.0:5683` | 5683（RFC 7252） | 标准 CoAP 端口 |
+| CoAP | `0.0.0.0:5683` | 5683(RFC 7252) | 标准 CoAP 端口 |
 | WebSocket | `0.0.0.0:18700` | 自定义 | 框架默认端口 |
-| LwM2M | `0.0.0.0:5783` | 5783（LwM2M 标准） | 由 PROTOCOL.md 描述 |
+| LwM2M | `0.0.0.0:5783` | 5783(LwM2M 标准) | 由 PROTOCOL.md 描述 |
 
 ### 4.2 会话限制
 
 | 配置项 | TCP | UDP | CoAP | WebSocket |
 |--------|-----|-----|------|-----------|
 | `MaxSessions` | 100000 | 100000 | 100000 | 100000 |
-| `SessionTTL` | 无（连接关闭决定） | 60s | 5m | 无（Ping/Pong 决定） |
+| `SessionTTL` | 无(连接关闭决定) | 60s | 5m | 无(Ping/Pong 决定) |
 | `SweepInterval` | 无 | 30s | 30s | 无 |
 
 ### 4.3 超时配置
 
 | 配置项 | TCP | UDP | CoAP | WebSocket |
 |--------|-----|-----|------|-----------|
-| `ReadTimeout` | 0（不限） | 1s（stopCh 检测用） | 1s（stopCh 检测用） | `PingInterval + PongTimeout` |
-| `WriteTimeout` | 10s | 无 | 无 | 无（由 OS 决定） |
-| `DrainTimeout` | 5s | 无 | 无 | 5s（Drain 阶段） |
+| `ReadTimeout` | 0(不限) | 1s(stopCh 检测用) | 1s(stopCh 检测用) | `PingInterval + PongTimeout` |
+| `WriteTimeout` | 10s | 无 | 无 | 无(由 OS 决定) |
+| `DrainTimeout` | 5s | 无 | 无 | 5s(Drain 阶段) |
 | `PingInterval` | 无 | 无 | 无 | 30s |
 | `PongTimeout` | 无 | 无 | 无 | 15s |
-| `AckTimeout` | 无 | 无 | 2s（CON 首次超时） | 无 |
+| `AckTimeout` | 无 | 无 | 2s(CON 首次超时) | 无 |
 
 ### 4.4 消息大小限制
 
@@ -3907,7 +3907,7 @@ CloseAll 阶段（串行，在所有协议阶段完成后执行）：
 |--------|-----|-----|------|-----------|
 | `MaxMessageSize` | 1MB | 65535B | 65535B | 1MB |
 | 强制方式 | Framer `MaxFrameSize` | 读缓冲大小 | 读缓冲大小 | `conn.SetReadLimit` |
-| 超限行为 | `ErrFrameTooLarge` | 截断（OS 层） | 丢弃（解析失败） | gorilla 关闭连接（code 1009） |
+| 超限行为 | `ErrFrameTooLarge` | 截断(OS 层) | 丢弃(解析失败) | gorilla 关闭连接(code 1009) |
 
 ---
 
@@ -3917,28 +3917,28 @@ CloseAll 阶段（串行，在所有协议阶段完成后执行）：
 
 | 场景 | 推荐协议 | 原因 |
 |------|---------|------|
-| 设备实时控制命令 | TCP | 可靠有序，自定义帧格式灵活 |
-| 受限 IoT 设备数据上报 | CoAP | 协议开销小，适合低功耗设备，CON 保证可靠 |
-| IoT 设备管理（固件升级、配置下发） | LwM2M（基于 CoAP） | 标准 OMA 设备管理协议 |
-| Web 端实时推送（浏览器客户端） | WebSocket | 浏览器原生支持，全双工 |
-| 高频低延迟日志/指标上报 | UDP | 无连接，低开销，允许丢失 |
-| 内网微服务通信 | TCP | 可靠，支持自定义 Framer |
-| 移动端弱网场景 | WebSocket（带重连） | 应用层心跳，断线重连机制成熟 |
+| 设备实时控制命令 | TCP | 可靠有序,自定义帧格式灵活 |
+| 受限 IoT 设备数据上报 | CoAP | 协议开销小,适合低功耗设备,CON 保证可靠 |
+| IoT 设备管理(固件升级,配置下发) | LwM2M(基于 CoAP) | 标准 OMA 设备管理协议 |
+| Web 端实时推送(浏览器客户端) | WebSocket | 浏览器原生支持,全双工 |
+| 高频低延迟日志/指标上报 | UDP | 无连接,低开销,允许丢失 |
+| 内网微服务通信 | TCP | 可靠,支持自定义 Framer |
+| 移动端弱网场景 | WebSocket(带重连) | 应用层心跳,断线重连机制成熟 |
 
 ### 5.2 协议共存场景
 
 ```
-典型 IoT 平台部署：
+典型 IoT 平台部署:
 
-┌─────────────────────────────────────────────────────────┐
-│                      Gateway                             │
-├──────────────┬──────────────┬──────────────┬────────────┤
-│ TCP :18000   │ WebSocket    │ CoAP :5683   │ UDP :18001 │
-│ 内网设备     │ :18700/ws    │ 受限设备     │ 日志上报   │
-│ 自定义协议   │ Web 客户端   │ LwM2M 接入   │ 高频指标   │
-└──────────────┴──────────────┴──────────────┴────────────┘
-         │              │              │            │
-         └──────────────┴──────────────┴────────────┘
++---------------------------------------------------------+
+|                      Gateway                             |
++--------------+--------------+--------------+------------+
+| TCP :18000   | WebSocket    | CoAP :5683   | UDP :18001 |
+| 内网设备     | :18700/ws    | 受限设备     | 日志上报   |
+| 自定义协议   | Web 客户端   | LwM2M 接入   | 高频指标   |
++--------------+--------------+--------------+------------+
+         |              |              |            |
+         +--------------+--------------+------------+
                     共享 SessionManager
                  跨协议广播 / 跨协议路由
 ```
@@ -3947,10 +3947,10 @@ CloseAll 阶段（串行，在所有协议阶段完成后执行）：
 
 | 场景 | 不适合原因 | 推荐替代 |
 |------|-----------|---------|
-| 纯 HTTP API 服务 | 框架 HTTP 为轻量支持，无路由、中间件生态 | `gin` / `echo` / `chi` |
-| 高性能 HTTP 反代 | 无 L7 负载均衡，无缓存 | Nginx / Caddy |
+| 纯 HTTP API 服务 | 框架 HTTP 为轻量支持,无路由,中间件生态 | `gin` / `echo` / `chi` |
+| 高性能 HTTP 反代 | 无 L7 负载均衡,无缓存 | Nginx / Caddy |
 | 完整 MQTT Broker | 不实现 QoS 状态机 | shark-MQTT / EMQX |
-| 服务网格流量治理 | 无 sidecar 模式，无 xDS | Envoy / Istio |
+| 服务网格流量治理 | 无 sidecar 模式,无 xDS | Envoy / Istio |
 | 完整 gRPC 服务 | 仅 gRPC-Web 子集 | `google.golang.org/grpc` |
 
 ---
@@ -3960,10 +3960,10 @@ CloseAll 阶段（串行，在所有协议阶段完成后执行）：
 ### 6.1 共享 SessionManager 跨协议查询
 
 ```go
-// 业务层 Handler 示例：TCP 设备向 WebSocket 客户端推送消息
+// 业务层 Handler 示例:TCP 设备向 WebSocket 客户端推送消息
 
 func tcpDeviceHandler(sess core.Session, msg core.Message) error {
-    // 解析消息，提取目标 WebSocket Session ID
+    // 解析消息,提取目标 WebSocket Session ID
     targetSessionID := parseTargetID(msg.Payload)
 
     // 通过共享 SessionManager 查找 WebSocket Session
@@ -3973,7 +3973,7 @@ func tcpDeviceHandler(sess core.Session, msg core.Message) error {
         return fmt.Errorf("target session %d not found", targetSessionID)
     }
 
-    // 跨协议发送（TCP → WebSocket）
+    // 跨协议发送(TCP -> WebSocket)
     if err := targetSess.Send(msg.Payload); err != nil {
         if errors.Is(err, core.ErrSessionClosed) {
             return nil // 目标已下线
@@ -4005,21 +4005,21 @@ func broadcastToProtocol(manager core.SessionManager, proto core.Protocol, data 
 }
 ```
 
-### 6.3 跨节点路由（集群模式）
+### 6.3 跨节点路由(集群模式)
 
 ```
-本地节点：
-  manager.Get(targetID) → 未找到
-      ↓
-  Cache.Get("session:route:" + targetID) → nodeID
-      ↓
+本地节点:
+  manager.Get(targetID) -> 未找到
+      v
+  Cache.Get("session:route:" + targetID) -> nodeID
+      v
   PubSub.Publish("node."+nodeID+".route", {targetID, payload})
 
-远端节点（ClusterPlugin 订阅）：
+远端节点(ClusterPlugin 订阅):
   PubSub.Subscribe("node."+nodeID+".route", handler)
-      ↓
-  localManager.Get(targetID) → 找到
-      ↓
+      v
+  localManager.Get(targetID) -> 找到
+      v
   sess.Send(payload)
 ```
 
@@ -4029,34 +4029,34 @@ func broadcastToProtocol(manager core.SessionManager, proto core.Protocol, data 
 
 ### 7.1 最小实现清单
 
-实现一个新协议传输层需要满足以下最小清单：
+实现一个新协议传输层需要满足以下最小清单:
 
 ```
-必须实现：
-  □ Session 结构体（嵌入或实现 core.Session 接口）
-  □ Session.Send([]byte) error
-  □ Session.Close(context.Context) error（幂等）
-  □ Session.State() / IsAlive() / LastActiveAt()
-  □ Session.SetMeta / GetMeta / DelMeta（sync.Map 实现）
-  □ var _ core.Session = (*YourSession)(nil)
+必须实现:
+  [ ] Session 结构体(嵌入或实现 core.Session 接口)
+  [ ] Session.Send([]byte) error
+  [ ] Session.Close(context.Context) error(幂等)
+  [ ] Session.State() / IsAlive() / LastActiveAt()
+  [ ] Session.SetMeta / GetMeta / DelMeta(sync.Map 实现)
+  [ ] var _ core.Session = (*YourSession)(nil)
 
-  □ Server 结构体（实现 core.Server 接口）
-  □ Server.Protocol() core.Protocol
-  □ Server.Start(context.Context) error
-  □ Server.Stop(context.Context) error
-  □ var _ core.Server = (*YourServer)(nil)
+  [ ] Server 结构体(实现 core.Server 接口)
+  [ ] Server.Protocol() core.Protocol
+  [ ] Server.Start(context.Context) error
+  [ ] Server.Stop(context.Context) error
+  [ ] var _ core.Server = (*YourServer)(nil)
 
-  □ RuntimeConfigurable（若需要 Gateway 注入）
-  □ Server.UseRuntime(core.Runtime)
-  □ var _ core.RuntimeConfigurable = (*YourServer)(nil)
+  [ ] RuntimeConfigurable(若需要 Gateway 注入)
+  [ ] Server.UseRuntime(core.Runtime)
+  [ ] var _ core.RuntimeConfigurable = (*YourServer)(nil)
 
-推荐实现（长连接协议）：
-  □ StagedServer 接口（StopAccept / Drain / CloseSessions）
-  □ var _ core.StagedServer = (*YourServer)(nil)
+推荐实现(长连接协议):
+  [ ] StagedServer 接口(StopAccept / Drain / CloseSessions)
+  [ ] var _ core.StagedServer = (*YourServer)(nil)
 
-可选：
-  □ Functional Options（WithAddr / WithTLS 等）
-  □ 自定义 Framer（若基于 TCP）
+可选:
+  [ ] Functional Options(WithAddr / WithTLS 等)
+  [ ] 自定义 Framer(若基于 TCP)
 ```
 
 ### 7.2 Session 实现模板
@@ -4072,7 +4072,7 @@ type YourSession struct {
     // 协议特定字段
     conn YourConn
 
-    // 状态（通用）
+    // 状态(通用)
     state      atomic.Int32
     lastActive atomic.Int64
     ctx        context.Context
@@ -4166,7 +4166,7 @@ func (s *YourServer) Stop(ctx context.Context) error {
     if !s.closed.CompareAndSwap(false, true) {
         return nil // 幂等
     }
-    // 停止监听，等待 goroutine 退出
+    // 停止监听,等待 goroutine 退出
     done := make(chan struct{})
     go func() {
         s.wg.Wait()
@@ -4197,35 +4197,35 @@ if err := gateway.RegisterServer(yourServer); err != nil {
 ### 7.5 新协议检查清单
 
 ```
-功能验证：
-  □ 单连接 Echo 测试通过
-  □ 多连接并发测试通过（go test -race）
-  □ Session.Close() 幂等（多次调用不 panic）
-  □ Server.Stop() 幂等（多次调用不 panic）
-  □ Gateway Start → Stop → Start 可重入
-  □ OnAccept ErrPluginBlock 正确拒绝连接
-  □ OnMessage ErrPluginDrop 正确丢弃消息
+功能验证:
+  [ ] 单连接 Echo 测试通过
+  [ ] 多连接并发测试通过(go test -race)
+  [ ] Session.Close() 幂等(多次调用不 panic)
+  [ ] Server.Stop() 幂等(多次调用不 panic)
+  [ ] Gateway Start -> Stop -> Start 可重入
+  [ ] OnAccept ErrPluginBlock 正确拒绝连接
+  [ ] OnMessage ErrPluginDrop 正确丢弃消息
 
-编译期验证：
-  □ var _ core.Session = (*YourSession)(nil)
-  □ var _ core.Server = (*YourServer)(nil)
-  □ var _ core.RuntimeConfigurable = (*YourServer)(nil)
-  □ var _ core.StagedServer = (*YourServer)(nil)（若实现）
+编译期验证:
+  [ ] var _ core.Session = (*YourSession)(nil)
+  [ ] var _ core.Server = (*YourServer)(nil)
+  [ ] var _ core.RuntimeConfigurable = (*YourServer)(nil)
+  [ ] var _ core.StagedServer = (*YourServer)(nil)(若实现)
 
-指标验证：
-  □ shark_sessions_total{protocol="custom"} 正确递增
-  □ shark_sessions_active{protocol="custom"} 正确增减
-  □ shark_messages_total{protocol="custom", direction="in/out"} 正确
-  □ shark_transport_errors_total{protocol="custom"} 正确
+指标验证:
+  [ ] shark_sessions_total{protocol="custom"} 正确递增
+  [ ] shark_sessions_active{protocol="custom"} 正确增减
+  [ ] shark_messages_total{protocol="custom", direction="in/out"} 正确
+  [ ] shark_transport_errors_total{protocol="custom"} 正确
 
-文档：
-  □ 在 TRANSPORT.md 汇总表格中更新新协议行
-  □ 在 CONFIGURATION.md 中添加配置字段
-  □ 在 examples/ 中添加 basic_{protocol}/main.go
-  □ 在 ROADMAP.md 中标记完成
+文档:
+  [ ] 在 TRANSPORT.md 汇总表格中更新新协议行
+  [ ] 在 CONFIGURATION.md 中添加配置字段
+  [ ] 在 examples/ 中添加 basic_{protocol}/main.go
+  [ ] 在 ROADMAP.md 中标记完成
 ```
 
 ---
 
-**版权声明：** 本文档属于 Shark-Socket 项目，遵循项目许可证。
+**版权声明:** 本文档属于 Shark-Socket 项目,遵循项目许可证.
 

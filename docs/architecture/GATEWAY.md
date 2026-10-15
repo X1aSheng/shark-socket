@@ -1,8 +1,8 @@
 # GATEWAY.md
 
 > Shark-Socket 运行时层详细设计  
-> 版本：v0.2.x-alpha  
-> 最后更新：2026-06-01
+> 版本:v0.2.x-alpha  
+> 最后更新:2026-06-01
 
 ---
 
@@ -20,27 +20,27 @@
 
 ## 1. 概述
 
-`internal/runtime/` 是**运行时层**，负责：
+`internal/runtime/` 是**运行时层**,负责:
 
-- **Gateway**：多协议编排、Runtime 注入、分阶段关闭
-- **SessionManager**：跨协议会话注册、查询、广播
-- **PluginRunner**：插件链排序、执行、panic 隔离
-- **WorkerPool**：消息处理并发控制
-- **DefaultRuntime**：Runtime 接口的默认实现
+- **Gateway**:多协议编排,Runtime 注入,分阶段关闭
+- **SessionManager**:跨协议会话注册,查询,广播
+- **PluginRunner**:插件链排序,执行,panic 隔离
+- **WorkerPool**:消息处理并发控制
+- **DefaultRuntime**:Runtime 接口的默认实现
 
-**所有权原则：**
+**所有权原则:**
 
 ```
-Gateway 创建并持有：
-  ├── DefaultRuntime（组装以下四者）
-  │   ├── SessionManager（跨协议共享）
-  │   ├── PluginRunner（跨协议共享）
-  │   ├── Logger（全局）
-  │   ├── Metrics（全局）
-  │   └── Tracer（全局）
-  └── []Server（各协议实例）
+Gateway 创建并持有:
+  +-- DefaultRuntime(组装以下四者)
+  |   +-- SessionManager(跨协议共享)
+  |   +-- PluginRunner(跨协议共享)
+  |   +-- Logger(全局)
+  |   +-- Metrics(全局)
+  |   +-- Tracer(全局)
+  +-- []Server(各协议实例)
 
-协议 Server 通过 UseRuntime 接收 Runtime，不自行创建全局资源
+协议 Server 通过 UseRuntime 接收 Runtime,不自行创建全局资源
 ```
 
 ---
@@ -53,7 +53,7 @@ Gateway 创建并持有：
 // internal/runtime/gateway.go
 type Gateway struct {
     servers     []core.Server           // 按注册顺序保存
-    serverIndex map[core.Protocol]int   // Protocol → servers 下标，去重用
+    serverIndex map[core.Protocol]int   // Protocol -> servers 下标,去重用
     runtime     core.Runtime            // 共享运行时依赖容器
     options     GatewayOptions
 
@@ -82,7 +82,7 @@ func NewGateway(opts ...GatewayOption) *Gateway {
     }
 }
 
-// RegisterServer 注册协议 Server，重复 Protocol 返回 ErrDuplicateProtocol。
+// RegisterServer 注册协议 Server,重复 Protocol 返回 ErrDuplicateProtocol.
 func (g *Gateway) RegisterServer(srv core.Server) error {
     if g.started.Load() {
         return errors.New("shark: cannot register server after gateway started")
@@ -98,18 +98,18 @@ func (g *Gateway) RegisterServer(srv core.Server) error {
 
 ### 2.3 Start 流程
 
-详见 `LIFECYCLE.md §3.2 启动流程`，关键约束：
+详见 `LIFECYCLE.md sec.3.2 启动流程`,关键约束:
 
 - 注入 Runtime 必须在 `Start()` 之前完成
-- 任一 Server 启动失败，逆序回滚已启动的 Server
+- 任一 Server 启动失败,逆序回滚已启动的 Server
 - 启动成功后 `ready.Store(true)`
 
 ### 2.4 Stop 流程
 
-详见 `LIFECYCLE.md §3.3 停止流程`，关键约束：
+详见 `LIFECYCLE.md sec.3.3 停止流程`,关键约束:
 
-- 5 阶段串行执行，每阶段内并发
-- `Stop()` 幂等，多次调用安全
+- 5 阶段串行执行,每阶段内并发
+- `Stop()` 幂等,多次调用安全
 - Drain 超时不阻塞后续阶段
 
 ### 2.5 GatewayOptions
@@ -117,13 +117,13 @@ func (g *Gateway) RegisterServer(srv core.Server) error {
 ```go
 // internal/runtime/gateway_options.go
 type GatewayOptions struct {
-    // 关闭阶段超时配置（各阶段独立，不共用同一个超时）
+    // 关闭阶段超时配置(各阶段独立,不共用同一个超时)
     StopAcceptTimeout  time.Duration // 默认 5s
     DrainTimeout       time.Duration // 默认 10s
     CloseSessionsTimeout time.Duration // 默认 5s
-    TotalShutdownTimeout time.Duration // 默认 30s，整体上限
+    TotalShutdownTimeout time.Duration // 默认 30s,整体上限
 
-    // 运行时组件（由 application 层注入）
+    // 运行时组件(由 application 层注入)
     runtime core.Runtime
 
     // 可观测
@@ -169,7 +169,7 @@ func WithShutdownTimeout(total time.Duration) GatewayOption {
 ### 2.6 Run 便捷方法
 
 ```go
-// Run 启动 Gateway 并阻塞直到接收到 SIGTERM / SIGINT 信号。
+// Run 启动 Gateway 并阻塞直到接收到 SIGTERM / SIGINT 信号.
 func (g *Gateway) Run() error {
     ctx, stop := signal.NotifyContext(context.Background(),
         syscall.SIGTERM, syscall.SIGINT)
@@ -194,13 +194,13 @@ func (g *Gateway) Run() error {
 ### 2.7 健康与就绪接口
 
 ```go
-// Ready 返回 Gateway 是否成功启动。
-// Ready() == true 只表示 Gateway 启动成功，不代表外部依赖健康。
+// Ready 返回 Gateway 是否成功启动.
+// Ready() == true 只表示 Gateway 启动成功,不代表外部依赖健康.
 func (g *Gateway) Ready() bool {
     return g.ready.Load()
 }
 
-// Health 返回详细健康信息（供 /healthz 端点使用）。
+// Health 返回详细健康信息(供 /healthz 端点使用).
 func (g *Gateway) Health() map[string]any {
     protocols := make(map[string]bool)
     for proto := range g.serverIndex {
@@ -223,7 +223,7 @@ func (g *Gateway) Health() map[string]any {
 
 ## 3. SessionManager 实现
 
-### 3.1 P0 实现（单锁，功能正确优先）
+### 3.1 P0 实现(单锁,功能正确优先)
 
 ```go
 // internal/runtime/session_manager.go
@@ -254,7 +254,7 @@ func (m *manager) NextID() uint64 {
 }
 
 func (m *manager) Register(sess core.Session) error {
-    // 容量检查（无锁快速路径）
+    // 容量检查(无锁快速路径)
     if m.maxCount > 0 && m.total.Load() >= m.maxCount {
         return core.ErrSessionCapacity
     }
@@ -262,7 +262,7 @@ func (m *manager) Register(sess core.Session) error {
     m.mu.Lock()
     defer m.mu.Unlock()
 
-    // 双重检查（加锁后再检查，防止并发 Register 超限）
+    // 双重检查(加锁后再检查,防止并发 Register 超限)
     if m.maxCount > 0 && int64(len(m.sessions)) >= m.maxCount {
         return core.ErrSessionCapacity
     }
@@ -370,9 +370,9 @@ func (m *manager) CloseAll(ctx context.Context) error {
 }
 ```
 
-### 3.4 P2 演进方案（分片锁）
+### 3.4 P2 演进方案(分片锁)
 
-**触发条件：** benchmark 证明 `Register/Unregister/Get` 锁竞争为瓶颈。
+**触发条件:** benchmark 证明 `Register/Unregister/Get` 锁竞争为瓶颈.
 
 ```go
 // P2 实现
@@ -386,10 +386,10 @@ type shardedManager struct {
 type shard struct {
     mu       sync.RWMutex
     sessions map[uint64]core.Session
-    // P2：per-shard LRU 淘汰（benchmark 证明需要后引入）
+    // P2:per-shard LRU 淘汰(benchmark 证明需要后引入)
 }
 
-// 分片函数：位运算替代取模
+// 分片函数:位运算替代取模
 func shardIndex(id uint64) int {
     return int(id & 31)
 }
@@ -403,7 +403,7 @@ func (m *shardedManager) Get(id uint64) (core.Session, bool) {
 }
 ```
 
-**P0 → P2 迁移策略：**
+**P0 -> P2 迁移策略:**
 
 - `core.SessionManager` 接口不变
 - 只替换 `internal/runtime/session_manager.go` 中的实现
@@ -420,8 +420,8 @@ func (m *shardedManager) Get(id uint64) (core.Session, bool) {
 // internal/runtime/plugin_runner.go
 type pluginRunner struct {
     plugins     []core.Plugin        // 按 Priority 升序静态排序
-    nameIndex   map[string]int       // 名称 → plugins 下标，去重用
-    stopOnError bool                 // 普通 error 是否中断链（默认 true）
+    nameIndex   map[string]int       // 名称 -> plugins 下标,去重用
+    stopOnError bool                 // 普通 error 是否中断链(默认 true)
 
     logger  core.Logger
     metrics core.Metrics
@@ -456,12 +456,12 @@ func (r *pluginRunner) Register(p core.Plugin) error {
         r.plugins = append(r.plugins, p)
     }
 
-    // 按 Priority 升序排序（启动时执行，热路径无排序开销）
+    // 按 Priority 升序排序(启动时执行,热路径无排序开销)
     slices.SortFunc(r.plugins, func(a, b core.Plugin) int {
         return a.Priority() - b.Priority()
     })
 
-    // 重建 nameIndex（排序后下标变化）
+    // 重建 nameIndex(排序后下标变化)
     clear(r.nameIndex)
     for i, plugin := range r.plugins {
         r.nameIndex[plugin.Name()] = i
@@ -569,7 +569,7 @@ func (r *pluginRunner) RunMessage(sess core.Session, data []byte) ([]byte, error
 
 ```go
 func (r *pluginRunner) RunClose(sess core.Session) {
-    // 逆序执行，不可中断
+    // 逆序执行,不可中断
     for i := len(r.plugins) - 1; i >= 0; i-- {
         p := r.plugins[i]
         r.safeRun(p.Name(), func() error {
@@ -627,12 +627,12 @@ type WorkerPool struct {
 }
 
 type WorkerPoolOptions struct {
-    WorkerCount     int           // 核心 Worker 数量（默认 NumCPU×2）
-    MaxWorkers      int           // 最大 Worker 数量（含临时，默认 WorkerCount×4）
-    TaskQueueSize   int           // 任务队列容量（默认 WorkerCount×128）
-    QueueFullPolicy QueuePolicy   // 队列满策略（默认 PolicyDrop）
-    HandlerTimeout  time.Duration // Handler 执行超时（默认 0，不限制）
-    OverloadWindow  time.Duration // PolicyClose 的持续过载窗口（默认 30s）
+    WorkerCount     int           // 核心 Worker 数量(默认 NumCPUx2)
+    MaxWorkers      int           // 最大 Worker 数量(含临时,默认 WorkerCountx4)
+    TaskQueueSize   int           // 任务队列容量(默认 WorkerCountx128)
+    QueueFullPolicy QueuePolicy   // 队列满策略(默认 PolicyDrop)
+    HandlerTimeout  time.Duration // Handler 执行超时(默认 0,不限制)
+    OverloadWindow  time.Duration // PolicyClose 的持续过载窗口(默认 30s)
 }
 ```
 
@@ -642,21 +642,21 @@ type WorkerPoolOptions struct {
 type QueuePolicy uint8
 
 const (
-    PolicyDrop      QueuePolicy = 0 // 丢弃消息 + 记录 metrics（默认）
+    PolicyDrop      QueuePolicy = 0 // 丢弃消息 + 记录 metrics(默认)
     PolicyBlock     QueuePolicy = 1 // 阻塞等待队列空间
     PolicySpawnTemp QueuePolicy = 2 // 动态扩容临时 Worker
     PolicyClose     QueuePolicy = 3 // 持续过载后关闭连接
 )
 ```
 
-**策略对比：**
+**策略对比:**
 
 | 策略 | 行为 | 适用场景 | 风险 |
 |------|------|---------|------|
-| PolicyDrop | 丢弃消息，记录 `shark_dropped_messages_total` | 通用场景，防雪崩 | 消息丢失 |
-| PolicyBlock | 阻塞 Send，写满时等待 | 不可丢消息（金融交易） | readLoop 阻塞，影响其他消息 |
-| PolicySpawnTemp | 临时扩容 Worker，处理完退出 | 突发流量缓冲 | Goroutine 数量激增 |
-| PolicyClose | 持续过载 30s 后关闭连接 | 极端情况保护 | 连接中断，客户端感知 |
+| PolicyDrop | 丢弃消息,记录 `shark_dropped_messages_total` | 通用场景,防雪崩 | 消息丢失 |
+| PolicyBlock | 阻塞 Send,写满时等待 | 不可丢消息(金融交易) | readLoop 阻塞,影响其他消息 |
+| PolicySpawnTemp | 临时扩容 Worker,处理完退出 | 突发流量缓冲 | Goroutine 数量激增 |
+| PolicyClose | 持续过载 30s 后关闭连接 | 极端情况保护 | 连接中断,客户端感知 |
 
 ### 5.3 Submit 实现
 
@@ -695,7 +695,7 @@ func (p *WorkerPool) Submit(sess core.Session, msg core.Message, handler core.Ha
     case PolicyClose:
         select {
         case p.taskQueue <- t:
-            p.overloadTracker.Reset() // 成功提交，重置过载计时
+            p.overloadTracker.Reset() // 成功提交,重置过载计时
             return nil
         default:
             if p.overloadTracker.Exceeded(p.options.OverloadWindow) {
@@ -716,7 +716,7 @@ func (p *WorkerPool) Submit(sess core.Session, msg core.Message, handler core.Ha
 func (p *WorkerPool) spawnTemp(t task) error {
     total := int(p.tempCount.Load()) + p.options.WorkerCount
     if total >= p.options.MaxWorkers {
-        // 已达最大 Worker 数，降级为 Drop
+        // 已达最大 Worker 数,降级为 Drop
         p.metrics.Counter("shark_dropped_messages_total",
             "protocol", t.session.Protocol().String(),
             "reason", "max_workers_reached").Inc()
@@ -797,9 +797,9 @@ func (p *WorkerPool) Start() {
 
 func (p *WorkerPool) Stop() {
     if p.closed.CompareAndSwap(false, true) {
-        close(p.taskQueue) // 触发所有 worker 退出（for range 结束）
+        close(p.taskQueue) // 触发所有 worker 退出(for range 结束)
     }
-    p.wg.Wait() // 等待所有 worker（含临时）完成
+    p.wg.Wait() // 等待所有 worker(含临时)完成
 }
 ```
 
@@ -891,7 +891,7 @@ type Config struct {
     ShutdownTimeout time.Duration    `json:"shutdown_timeout"` // 默认 30s
     HealthAddr      string           `json:"health_addr"`      // 默认 ":18081"
     MetricsAddr     string           `json:"metrics_addr"`     // 默认 ":18080"
-    MaxSessions     int64            `json:"max_sessions"`     // 默认 100000（0=不限制）
+    MaxSessions     int64            `json:"max_sessions"`     // 默认 100000(0=不限制)
     Protocols       []ProtocolConfig `json:"protocols"`
 }
 
@@ -900,8 +900,8 @@ type ProtocolConfig struct {
     Enabled        bool   `json:"enabled"`          // 默认 true
     Addr           string `json:"addr"`             // 监听地址
     Path           string `json:"path"`             // WebSocket path
-    Mode           string `json:"mode"`             // CoAP 模式（lwm2m）
-    MaxMessageBytes int   `json:"max_message_bytes"` // 消息大小限制（>= 0）
+    Mode           string `json:"mode"`             // CoAP 模式(lwm2m)
+    MaxMessageBytes int   `json:"max_message_bytes"` // 消息大小限制(>= 0)
     TLSCertFile    string `json:"tls_cert_file"`
     TLSKeyFile     string `json:"tls_key_file"`
     TLSClientCAFile string `json:"tls_client_ca_file"`
@@ -912,7 +912,7 @@ type ProtocolConfig struct {
 ### 7.2 统一配置验证
 
 ```go
-// Validate 统一验证，在 app.Build() 时执行，不在 Start() 中执行。
+// Validate 统一验证,在 app.Build() 时执行,不在 Start() 中执行.
 func (c *Config) Validate() error {
     var errs []string
 
@@ -1035,7 +1035,7 @@ func (a *App) Run(ctx context.Context) error {
         return err
     }
 
-    // 阻塞等待 ctx 取消（信号处理在 cmd/shark-socket/main.go）
+    // 阻塞等待 ctx 取消(信号处理在 cmd/shark-socket/main.go)
     <-ctx.Done()
 
     shutdownCtx, cancel := context.WithTimeout(
@@ -1085,4 +1085,4 @@ func main() {
 
 ---
 
-**版权声明：** 本文档属于 Shark-Socket 项目，遵循项目许可证。
+**版权声明:** 本文档属于 Shark-Socket 项目,遵循项目许可证.

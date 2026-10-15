@@ -12,26 +12,26 @@ chain, and one observability plane.
 
 **Essential properties**
 
-- **Single runtime ownership** — the Gateway creates and injects the shared
+- **Single runtime ownership** - the Gateway creates and injects the shared
   Runtime (SessionManager / PluginRunner / Logger / Metrics / Tracer);
   transports consume it and hold no shared state.
-- **One session model across protocols** — a single `Session` abstraction
+- **One session model across protocols** - a single `Session` abstraction
   enables cross-protocol query, broadcast, and routing.
-- **Deterministic lifecycle** — staged shutdown (StopAccept → Drain →
+- **Deterministic lifecycle** - staged shutdown (StopAccept -> Drain ->
   CloseSessions) drops no connection; every connection carries explicit idle
   and write timeouts, so dead peers are reclaimed in bounded time and the
   reclamation is observable.
-- **Decoupled extension** — plugins execute as one priority-ordered chain
+- **Decoupled extension** - plugins execute as one priority-ordered chain
   with panic isolation; `Codec[M]` layers typed business messages above raw
   transport sessions.
 
 **Target scenarios**
 
-- IoT platform aggregation — devices over CoAP/LwM2M, web clients over
+- IoT platform aggregation - devices over CoAP/LwM2M, web clients over
   WebSocket, administration over HTTP.
-- Real-time messaging gateways — WebSocket long connections, custom TCP
+- Real-time messaging gateways - WebSocket long connections, custom TCP
   protocols, UDP broadcast.
-- Edge computing nodes — constrained devices over CoAP, cross-protocol
+- Edge computing nodes - constrained devices over CoAP, cross-protocol
   routing within one process.
 
 **Boundaries**
@@ -50,9 +50,9 @@ chain, and one observability plane.
   Runtime (SessionManager / PluginRunner / Logger / Metrics / Tracer); transports
   receive runtime dependencies and never create or close shared managers.
 - **One plugin runner**: global plugins execute through a single chain with
-  panic isolation — a plugin failure never leaks into protocol layers.
-- **Staged graceful shutdown**: StagedServer defines StopAccept → Drain →
-  CloseSessions with clear, rollback-safe semantics — no connection is dropped.
+  panic isolation - a plugin failure never leaks into protocol layers.
+- **Staged graceful shutdown**: StagedServer defines StopAccept -> Drain ->
+  CloseSessions with clear, rollback-safe semantics - no connection is dropped.
 - **Typed messages, raw sessions**: Codec[M] layers typed messages while
   transport sessions stay raw bytes, keeping business types out of the runtime
   layer.
@@ -96,9 +96,9 @@ chain, and one observability plane.
 | Infra | Implemented | In-memory cache/store/pubsub/circuitbreaker/observability, Prometheus metrics exporter, OpenTelemetry tracer adapter, TLS cert cache |
 | MQTT | Integrated | External broker adapter (paho client), docker-compose mosquitto for E2E tests |
 | Zombie reclaim | Implemented | Bounded idle timeouts on every transport, counted via `sessions_reclaimed_total` |
-| Fuzz Testing | 8 tests | TCP framers, CoAP message parse, LwM2M TLV codec — all passing |
+| Fuzz Testing | 8 tests | TCP framers, CoAP message parse, LwM2M TLV codec - all passing |
 | Stress Testing | 6 suites | TCP sustained/burst/reconnect + UDP/WebSocket/HTTP with leak detection |
-| Benchmark | 6 protocols | TCP, UDP, HTTP, WebSocket, gRPC-Web, QUIC — all benchmarked |
+| Benchmark | 6 protocols | TCP, UDP, HTTP, WebSocket, gRPC-Web, QUIC - all benchmarked |
 | Deploy | Hardened | Docker (HEALTHCHECK, non-root), K8s (HPA, PDB, NetworkPolicy, ConfigMap), Helm _helpers.tpl |
 
 ## Resource Requirements
@@ -109,10 +109,10 @@ deploys on resource-constrained edge nodes.
 **Measured footprint** (idle, local dev machine)
 
 - Idle process: ~46 MB private / ~10 MB resident
-- Per idle TCP connection: ~24.8 KB (fully released on close — verified with
+- Per idle TCP connection: ~24.8 KB (fully released on close - verified with
   2,000 connections)
 - Per DTLS peer: 16 KiB read buffer by default (was 64 KiB; configurable via
-  `WithDTLSReadBufferBytes`) — 10,000 DTLS peers previously held ~640 MB of
+  `WithDTLSReadBufferBytes`) - 10,000 DTLS peers previously held ~640 MB of
   read buffers alone
 
 **Artifacts**
@@ -128,7 +128,7 @@ deploys on resource-constrained edge nodes.
 | --- | --- |
 | requests | 50m CPU / 64Mi memory |
 | limits | 500m CPU / 256Mi memory |
-| replicas | 2 (HPA 2–10, target 50% average CPU utilization) |
+| replicas | 2 (HPA 2-10, target 50% average CPU utilization) |
 
 **Capacity planning**
 
@@ -152,8 +152,8 @@ deploys on resource-constrained edge nodes.
 
 **Benchmark capacity (Linux 8-core Xeon)**
 
-- TCP throughput: ~316k msg/s (50 connections, 256B payload), P50 ~144µs, P99 ~401µs
-- TCP / UDP / HTTP echo latency: ~19µs / 5µs / 31µs
+- TCP throughput: ~316k msg/s (50 connections, 256B payload), P50 ~144us, P99 ~401us
+- TCP / UDP / HTTP echo latency: ~19us / 5us / 31us
 - Plugin-chain overhead: 4 real plugins add only ~1.7% latency (<5%)
 - Connection churn: 50-way concurrency, 859k connect/disconnect cycles in 10s, 0 errors
 
@@ -187,13 +187,13 @@ docker compose -f deploy/docker/docker-compose.yml --profile test run mqtt-test
 
 | Check | Command | Status |
 |-------|---------|--------|
-| Unit tests (26 suites) | `go test ./...` | ✅ |
-| Race detection | `go test -race ./...` | ✅ |
-| Coverage (70% threshold) | `go run scripts/run_tests.go -mode cover` | ✅ 78.6% |
-| Lint (golangci-lint) | `golangci-lint run` | ✅ |
-| Security (govulncheck) | `govulncheck ./...` | ✅ |
-| Deploy manifests | `go run scripts/run_tests.go -mode deploy` | ✅ |
-| Stress (6 suites incl. leak detection) | `go test ./tests/stress/ -count=1 -p 1` | ✅ |
+| Unit tests (26 suites) | `go test ./...` | [OK] |
+| Race detection | `go test -race ./...` | [OK] |
+| Coverage (70% threshold) | `go run scripts/run_tests.go -mode cover` | [OK] 78.6% |
+| Lint (golangci-lint) | `golangci-lint run` | [OK] |
+| Security (govulncheck) | `govulncheck ./...` | [OK] |
+| Deploy manifests | `go run scripts/run_tests.go -mode deploy` | [OK] |
+| Stress (6 suites incl. leak detection) | `go test ./tests/stress/ -count=1 -p 1` | [OK] |
 
 Fast validation:
 

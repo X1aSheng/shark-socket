@@ -13,7 +13,7 @@
 | shark-socket | `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build ./cmd/shark-socket` | PASS | ELF 64-bit, statically linked |
 | shark-mqtt | `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build ./cmd/` | PASS | ELF 64-bit, statically linked |
 
-`CGO_ENABLED=0` 静态链接, 产物可直接拷入最小化 Linux 容器/服务器运行, 无 glibc 依赖。
+`CGO_ENABLED=0` 静态链接, 产物可直接拷入最小化 Linux 容器/服务器运行, 无 glibc 依赖.
 
 ## 2. Docker 验证 (本地无 docker, 静态审查)
 
@@ -31,9 +31,9 @@
 - 暴露端口 18983/18993/18999
 - `docker-compose.yml` 含 prometheus 与 redis 后端示例
 
-**注**: 本机无 docker 守护进程, `docker build` 未实际执行。上述内容在 CI 的
+**注**: 本机无 docker 守护进程, `docker build` 未实际执行.上述内容在 CI 的
 `docker-build`/`docker` job 中构建验证 (shark-socket `docker-build`, shark-mqtt
-`docker` job 含启动 + healthz + MQTT smoke test)。
+`docker` job 含启动 + healthz + MQTT smoke test).
 
 ## 3. Kubernetes 验证
 
@@ -41,19 +41,19 @@
 对 shark-socket `deploy/k8s/` 与 shark-mqtt `deploy/k8s/app/` 全部 YAML 做语法解析:
 
 - shark-socket: namespace, serviceaccount, configmap, networkpolicy, pdb, hpa,
-  kustomization, deployment, service —— 全部 `OK`
+  kustomization, deployment, service -- 全部 `OK`
 - shark-mqtt: namespace, configmap, deployment, service, hpa, networkpolicy,
-  ingress, kustomization —— 全部 `OK`
+  ingress, kustomization -- 全部 `OK`
 
 ### Helm chart 校验
 shark-socket `deploy/helm/shark-socket/` 与 shark-mqtt `deploy/k8s/helm/shark-mqtt/`
 为标准 Go 模板结构 (`{{ .Values... }}` 占位), 需经 `helm template` 渲染后才是合法
 YAML; 本机无 helm, 已通过结构审查确认模板/values 齐全 (_helpers.tpl, values.yaml,
-values-prod.yaml, deployment/service/configmap/hpa/ingress/networkpolicy/servicemonitor)。
+values-prod.yaml, deployment/service/configmap/hpa/ingress/networkpolicy/servicemonitor).
 
 ## 4. 云服务器部署流程 (待执行清单)
 
-本环境无云服务器访问凭据。以下为在目标云服务器上应执行的完整流程:
+本环境无云服务器访问凭据.以下为在目标云服务器上应执行的完整流程:
 
 ### shark-socket
 ```bash
@@ -93,7 +93,7 @@ helm install shark-socket deploy/helm/shark-socket/
 
 ## 5. 结论
 
-- 两个服务端程序均已通过 Linux 目标编译验证 (静态链接, 可直接部署)。
+- 两个服务端程序均已通过 Linux 目标编译验证 (静态链接, 可直接部署).
 - Dockerfile 与 K8s 清单通过静态审查与 YAML 语法校验; 云服务器上的实际
   docker 构建 / k8s 部署 / 冒烟测试需在有 docker + kubectl + helm 的服务器上
-  按第 4 节流程执行。
+  按第 4 节流程执行.

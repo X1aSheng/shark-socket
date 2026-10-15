@@ -37,14 +37,14 @@
 | P1-3 | gRPC-Web 原始请求体误判为帧, 原始客户端收到帧化响应; trailer 内容丢弃 | grpcweb/framing.go:39-69, server.go:165-171 |
 | P1-4 | Gateway.Start/Stop 无公共锁, 重复/并发调用状态脱节, Stop 后健康服务器仍监听但 started=false | runtime/gateway.go:68-135 |
 | P1-5 | SessionManager.Broadcast/Range 持 RLock 执行用户 Send, 可死锁或全局阻塞 | runtime/session_manager.go:89-107 |
-| P1-6 | TCP 无读超时 + 默认连接数无限 → slowloris 资源耗尽 | tcp/session.go:98-108, options.go |
-| P1-7 | QUIC stream ReadAll 无 deadline + 连接/流数无限 → goroutine 耗尽 | quic/server.go:170-190, options.go |
+| P1-6 | TCP 无读超时 + 默认连接数无限 -> slowloris 资源耗尽 | tcp/session.go:98-108, options.go |
+| P1-7 | QUIC stream ReadAll 无 deadline + 连接/流数无限 -> goroutine 耗尽 | quic/server.go:170-190, options.go |
 
 ### P2 - 边界 / 泄漏 / 协议不符
 
 | # | 缺陷 | 位置 |
 | --- | --- | --- |
-| P2-1 | LwM2M Server.Write 持独占锁调用 OnWrite 回调 → 可重入死锁, 且持锁做网络 I/O | protocol/lwm2m/server.go:124-149 |
+| P2-1 | LwM2M Server.Write 持独占锁调用 OnWrite 回调 -> 可重入死锁, 且持锁做网络 I/O | protocol/lwm2m/server.go:124-149 |
 | P2-2 | LwM2M TLV 整型/浮点静默截断 (数据损坏) | protocol/lwm2m/codec_tlv.go:121-137 |
 | P2-3 | PluginChain.OnAccept 中途失败, 已 accept 插件不收 OnClose (泄漏) | runtime/plugin_chain.go:43-52 |
 | P2-4 | UDP/CoAP getOrCreateSession 发布 id=0 会话后才赋 ID (data race + 已关闭会话注册) | udp/server.go:280-304, coap/server.go:423-446 |
@@ -55,7 +55,7 @@
 | P2-9 | HTTP responseRecorder 每响应整份缓存进内存且永不消费 | http/session.go:79-103 |
 | P2-10 | Framer 零值 = 无长度上限, 恶意长度前缀 OOM; Options.MaxFrameBytes 死配置 | tcp/framer.go:25-75, options.go:22 |
 | P2-11 | CoAP observe 用 payload 当资源名而非 URI-Path option; RST 不清理注册 (RFC 7641 不符) | coap/server.go:303-341 |
-| P2-12 | UDP/CoAP 单 readLoop 同步执行 handler → 队头阻塞, 全 peer 相互拖垮 | udp/server.go:226-257, coap/server.go:229-247 |
+| P2-12 | UDP/CoAP 单 readLoop 同步执行 handler -> 队头阻塞, 全 peer 相互拖垮 | udp/server.go:226-257, coap/server.go:229-247 |
 | P2-13 | MQTT Adapter.Start TOCTOU 并发启动双重连接泄漏 | infra/mqtt/adapter.go:43-80 |
 | P2-14 | Persistence 消息日志无界增长, 从不 Prune | plugin/persistence.go, store/message_log.go |
 | P2-15 | CertCache.Load 热更新非原子, 证书与 CA 池状态不一致 | infra/tlsutil/cert_cache.go:35-56 |
@@ -73,7 +73,7 @@
 | P3-2 | 仅设 SHARK_HTTP_ALLOWED_ORIGINS 时 upsert 空 addr 协议导致启动失败 | app/config.go:159-167 |
 | P3-3 | PluginChain.SetLogger 无锁写, 潜在 data race | runtime/plugin_chain.go:23-27 |
 | P3-4 | CoAP 去重窗口 5 分钟与 16-bit MessageID 回绕冲突; 重复 CON 回空 CodeValid 而非缓存响应 | coap/server.go:255-261, 408-420 |
-| P3-5 | HTTP handler 先写响应后报错 → 200 + 错误正文 | http/server.go:191-204 |
+| P3-5 | HTTP handler 先写响应后报错 -> 200 + 错误正文 | http/server.go:191-204 |
 | P3-6 | 遗留临时复现测试文件可破坏 CI 构建 (zz_/tmp_*.go) | internal/transport/... |
 | P3-7 | 环境无 mosquitto/docker, 集成测试自动跳过 MQTT 依赖用例, 本地验证受限 | - |
 
@@ -93,4 +93,4 @@
 12. **P2-17** AutoBan 接线
 13. **其余 P2/P3** 视复杂度逐个处理
 
-每个缺陷的修复均附回归测试, 修复后全量测试 + race 验证, 逐个提交。
+每个缺陷的修复均附回归测试, 修复后全量测试 + race 验证, 逐个提交.

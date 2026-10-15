@@ -1,7 +1,7 @@
 # DEPLOYMENT.md
 
 > Shark-Socket 部署指南  
-> 版本：v0.2.x-alpha
+> 版本:v0.2.x-alpha
 
 ---
 
@@ -21,7 +21,7 @@
 
 ## 1. 概述
 
-Shark-Socket 提供三种生产部署方式，均为无状态设计（会话仅存在于进程内存）：
+Shark-Socket 提供三种生产部署方式,均为无状态设计(会话仅存在于进程内存):
 
 | 方式 | 适用场景 | 配置位置 |
 |------|---------|---------|
@@ -29,7 +29,7 @@ Shark-Socket 提供三种生产部署方式，均为无状态设计（会话仅�
 | K8s 原生清单 | 已有 Kustomize 工作流 | `deploy/k8s/` |
 | Helm Chart | 标准化 K8s 部署 | `deploy/helm/shark-socket/` |
 
-**所有部署方式均内置：**
+**所有部署方式均内置:**
 - 非 root 用户运行
 - 只读根文件系统
 - Drop ALL capabilities
@@ -43,7 +43,7 @@ Shark-Socket 提供三种生产部署方式，均为无状态设计（会话仅�
 ### 2.1 直接运行
 
 ```bash
-# 使用默认配置（TCP :18000, Health :18081, Metrics :18080）
+# 使用默认配置(TCP :18000, Health :18081, Metrics :18080)
 go run ./cmd/shark-socket
 
 # 指定配置文件
@@ -72,7 +72,7 @@ CGO_ENABLED=0 go build -o shark-socket ./cmd/shark-socket
 ### 3.1 镜像构建
 
 ```bash
-# 默认构建（使用 goproxy.cn 加速）
+# 默认构建(使用 goproxy.cn 加速)
 docker build -f deploy/docker/Dockerfile -t shark-socket:latest .
 
 # 自定义代理
@@ -80,12 +80,12 @@ docker build --build-arg GOPROXY=https://goproxy.io,direct \
   -f deploy/docker/Dockerfile -t shark-socket:latest .
 ```
 
-**Dockerfile 多阶段构建说明：**
+**Dockerfile 多阶段构建说明:**
 
 | 阶段 | 基础镜像 | 作用 |
 |------|---------|------|
-| build | `golang:1.26-alpine` | 编译二进制，`CGO_ENABLED=0` |
-| runtime | `alpine:3.22` | 最小运行时，non-root 用户 `shark` |
+| build | `golang:1.26-alpine` | 编译二进制,`CGO_ENABLED=0` |
+| runtime | `alpine:3.22` | 最小运行时,non-root 用户 `shark` |
 
 ### 3.2 docker-compose 运行
 
@@ -94,7 +94,7 @@ cd deploy/docker
 docker compose up -d
 ```
 
-`docker-compose.yml` 安全配置：
+`docker-compose.yml` 安全配置:
 
 ```yaml
 read_only: true              # 只读文件系统
@@ -130,13 +130,13 @@ kubectl apply -k deploy/k8s/
 
 #### 额外资源
 
-除了 Deployment 和 Service，Kustomize 还部署：
+除了 Deployment 和 Service,Kustomize 还部署:
 - **Namespace**: `shark-socket` 命名空间隔离
 - **ServiceAccount**: 专用服务账号
-- **ConfigMap**: 应用配置（地址、端口）
+- **ConfigMap**: 应用配置(地址,端口)
 - **NetworkPolicy**: 网络隔离策略
 - **PodDisruptionBudget**: 最小可用 1 副本
-- **HorizontalPodAutoscaler**: CPU 50%，2-10 副本
+- **HorizontalPodAutoscaler**: CPU 50%,2-10 副本
 
 #### Deployment
 
@@ -173,7 +173,7 @@ spec:
 
 #### Service
 
-ClusterIP 类型，暴露三个端口：tcp(18000)、metrics(18080)、health(18081)。
+ClusterIP 类型,暴露三个端口:tcp(18000),metrics(18080),health(18081).
 
 ### 4.3 资源规划
 
@@ -241,13 +241,13 @@ resources:
 
 ## 6. 环境变量参考
 
-环境变量优先级高于 JSON 配置文件，前缀为 `SHARK_`。
+环境变量优先级高于 JSON 配置文件,前缀为 `SHARK_`.
 
 ### 6.1 全局
 
 | 变量 | 默认值 | 作用 |
 |------|--------|------|
-| `SHARK_CONFIG` | — | 配置文件路径（`-config` flag 替代） |
+| `SHARK_CONFIG` | - | 配置文件路径(`-config` flag 替代) |
 | `SHARK_SHUTDOWN_TIMEOUT` | `10s` | 优雅关闭超时 |
 | `SHARK_HEALTH_ADDR` | `127.0.0.1:18081` | 健康端点监听地址 |
 | `SHARK_METRICS_ADDR` | `127.0.0.1:18080` | 指标端点监听地址 |
@@ -271,8 +271,8 @@ resources:
 | `SHARK_GRPCWEB_MAX_MESSAGE_BYTES` | gRPC-Web | `4194304` |
 | `SHARK_GRPCWEB_ALLOWED_ORIGINS` | gRPC-Web | `https://app.example.com` |
 | `SHARK_QUIC_ADDR` | QUIC | `0.0.0.0:18443` |
-| `SHARK_QUIC_CERT_FILE` | QUIC TLS（必须） | `/certs/server.crt` |
-| `SHARK_QUIC_KEY_FILE` | QUIC TLS（必须） | `/certs/server.key` |
+| `SHARK_QUIC_CERT_FILE` | QUIC TLS(必须) | `/certs/server.crt` |
+| `SHARK_QUIC_KEY_FILE` | QUIC TLS(必须) | `/certs/server.key` |
 
 ---
 
@@ -280,10 +280,10 @@ resources:
 
 | 端口 | 协议 | 用途 | 暴露策略 |
 |------|------|------|---------|
-| 18000 | TCP | 业务连接（默认） | 对外 / LoadBalancer |
+| 18000 | TCP | 业务连接(默认) | 对外 / LoadBalancer |
 | 18080 | HTTP | Prometheus 指标 | 内部 / ClusterIP |
 | 18081 | HTTP | 健康探针 | 内部 / Pod |
-| 18443 | UDP | QUIC（TLS 必须） | 对外 |
+| 18443 | UDP | QUIC(TLS 必须) | 对外 |
 | 18500 | UDP | CoAP / LwM2M | 对外 |
 | 18700 | HTTP/WS | WebSocket | 对外 |
 | 18900 | HTTP | gRPC-Web | 对外 |
@@ -292,43 +292,43 @@ resources:
 
 ## 8. CI/CD 流水线
 
-CI 配置位于 `.github/workflows/ci.yml`，包含五个 Job。
+CI 配置位于 `.github/workflows/ci.yml`,包含五个 Job.
 
-### 8.1 lint（代码质量检查）
+### 8.1 lint(代码质量检查)
 
-运行于 `ubuntu-latest`：
+运行于 `ubuntu-latest`:
 
 - 使用 `golangci-lint` 进行静态分析
 
-### 8.2 security（安全扫描）
+### 8.2 security(安全扫描)
 
-运行于 `ubuntu-latest`：
+运行于 `ubuntu-latest`:
 
 - 使用 `govulncheck` 扫描已知漏洞
 
-### 8.3 validate（跨平台测试）
+### 8.3 validate(跨平台测试)
 
-运行于 `windows-latest` + `ubuntu-latest` 矩阵：
+运行于 `windows-latest` + `ubuntu-latest` 矩阵:
 
-1. `go run scripts/run_tests.go -mode all` — 单元 + 集成 + 基准测试
-2. `scripts/run_tests.go -mode vet` — `go vet`
-3. `scripts/run_tests.go -mode deploy` — 部署清单静态校验
+1. `go run scripts/run_tests.go -mode all` - 单元 + 集成 + 基准测试
+2. `scripts/run_tests.go -mode vet` - `go vet`
+3. `scripts/run_tests.go -mode deploy` - 部署清单静态校验
 
-### 8.4 race（竞态检测）
+### 8.4 race(竞态检测)
 
-运行于 `ubuntu-latest`：
+运行于 `ubuntu-latest`:
 
-- `go run scripts/run_tests.go -mode race` — 竞态检测
+- `go run scripts/run_tests.go -mode race` - 竞态检测
 
-### 8.5 coverage（覆盖率）
+### 8.5 coverage(覆盖率)
 
-运行于 `ubuntu-latest`：
+运行于 `ubuntu-latest`:
 
-- `go run scripts/run_tests.go -mode cover` — 覆盖率
+- `go run scripts/run_tests.go -mode cover` - 覆盖率
 
 ### 8.6 触发条件
 
-- Push 到 `main`、`shark-socket-main` 或 `shark-socket-new-main` 分支
+- Push 到 `main`,`shark-socket-main` 或 `shark-socket-new-main` 分支
 - Pull Request 到上述分支
 
 ---
@@ -338,31 +338,31 @@ CI 配置位于 `.github/workflows/ci.yml`，包含五个 Job。
 ### 9.1 静态校验脚本
 
 ```bash
-# 全量校验（测试 + vet + 部署清单）
+# 全量校验(测试 + vet + 部署清单)
 go run scripts/run_tests.go -mode vet
 go run scripts/run_tests.go -mode deploy
 ```
 
 ### 9.2 部署清单测试
 
-`tests/deploy/deploy_test.go` 静态验证：
+`tests/deploy/deploy_test.go` 静态验证:
 
 | 资源 | 校验内容 |
 |------|---------|
-| Dockerfile | ENTRYPOINT、GOPROXY ARG、EXPOSE 端口 |
-| docker-compose | 服务结构、端口映射、安全配置 |
-| K8s Deployment | probe 路径、securityContext、resources |
+| Dockerfile | ENTRYPOINT,GOPROXY ARG,EXPOSE 端口 |
+| docker-compose | 服务结构,端口映射,安全配置 |
+| K8s Deployment | probe 路径,securityContext,resources |
 | K8s Service | 端口名称和映射 |
 | Kustomization | resources 列表 |
-| Helm Chart | Chart.yaml 字段、values.yaml 模板 |
+| Helm Chart | Chart.yaml 字段,values.yaml 模板 |
 | CI Workflow | jobs 结构 |
 
 ### 9.3 运行时校验
 
 ```bash
 # 健康检查
-curl http://localhost:18081/healthz   # → ok
-curl http://localhost:18081/readyz   # → ready
+curl http://localhost:18081/healthz   # -> ok
+curl http://localhost:18081/readyz   # -> ready
 
 # Prometheus 指标
 curl http://localhost:18080/metrics
@@ -370,4 +370,4 @@ curl http://localhost:18080/metrics
 
 ---
 
-**文档职责边界：** 本文档描述部署方式和配置。应用配置字段完整参考见 CONFIGURATION（如有），安全加固详见 SECURITY.md，传输层细节详见 TRANSPORT.md。
+**文档职责边界:** 本文档描述部署方式和配置.应用配置字段完整参考见 CONFIGURATION(如有),安全加固详见 SECURITY.md,传输层细节详见 TRANSPORT.md.

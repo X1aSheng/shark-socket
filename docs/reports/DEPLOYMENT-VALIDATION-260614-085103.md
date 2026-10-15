@@ -1,6 +1,6 @@
 # Deployment Validation 2026-06-14 08:51
 
-## Server 1 — Client Role (`120.76.44.233`)
+## Server 1 - Client Role (`120.76.44.233`)
 
 | Item | Value |
 |---|---|
@@ -15,7 +15,7 @@
 | Check | Result |
 |---|---|
 | `git clone && git checkout shark-socket-new-main` | PASS |
-| `go test ./... -count=1 -timeout 300s` | PASS — all 20 packages |
+| `go test ./... -count=1 -timeout 300s` | PASS - all 20 packages |
 
 ### Docker Build & Run
 
@@ -29,7 +29,7 @@
 
 ---
 
-## Server 2 — Server Role (`47.110.42.28`)
+## Server 2 - Server Role (`47.110.42.28`)
 
 | Item | Value |
 |---|---|
@@ -57,7 +57,7 @@
 | Check | Result |
 |---|---|
 | `go build ./...` | PASS |
-| `go test ./... -count=1 -timeout 300s` | PASS — all 20 packages |
+| `go test ./... -count=1 -timeout 300s` | PASS - all 20 packages |
 
 ### Docker Build & Run
 

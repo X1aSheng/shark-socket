@@ -95,7 +95,7 @@
 | C-9 | P2 | SPI1 预分频 2 = 42MHz, SD 卡 SPI 模式通常限 25MHz | Core\Src\spi.c:49 |
 | C-10 | P3 | main.c 全部测试函数被注释, 构建成功不证明功能 | Core\Src\main.c:161-170 |
 
-**注**: C 项目附加目录的 build.bat 仅对 spi_flash 做 clang 语法检查 (无 STM32 SDK), 不生成日志文件; 完整构建需 Keil MDK-ARM (f407ve-spitf.uvprojx), 因 FatFs/elog 源码丢失当前不可构建。
+**注**: C 项目附加目录的 build.bat 仅对 spi_flash 做 clang 语法检查 (无 STM32 SDK), 不生成日志文件; 完整构建需 Keil MDK-ARM (f407ve-spitf.uvprojx), 因 FatFs/elog 源码丢失当前不可构建.
 
 ## 4. 改进计划 (优先级排序)
 
@@ -136,4 +136,4 @@
 ### 阶段 F: 云服务器部署验证
 25. 清理服务器残留 -> Linux 编译 -> docker 构建/部署 -> k8s/helm 部署 -> 记录验证报告
 
-每个缺陷修复附回归测试, 修复后全量测试 + race 验证, 逐个提交。
+每个缺陷修复附回归测试, 修复后全量测试 + race 验证, 逐个提交.

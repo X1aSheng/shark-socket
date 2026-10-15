@@ -4,90 +4,90 @@
 
 ## 项目概述
 
-`shark-socket` 是基于 Go 的多协议网关运行时，面向 IoT、实时通信与边缘计算。单进程内承载面向连接的（TCP、WebSocket、QUIC）、数据报的（UDP、CoAP）与应用层的（LwM2M、gRPC-Web、HTTP）传输，统一于一套会话索引、一条插件链与一个可观测平面。
+`shark-socket` 是基于 Go 的多协议网关运行时,面向 IoT,实时通信与边缘计算.单进程内承载面向连接的(TCP,WebSocket,QUIC),数据报的(UDP,CoAP)与应用层的(LwM2M,gRPC-Web,HTTP)传输,统一于一套会话索引,一条插件链与一个可观测平面.
 
 **本质属性**
 
-- **运行时单一归属**：Gateway 创建并注入共享 Runtime（SessionManager / PluginRunner / Logger / Metrics / Tracer），传输层只消费、不持有共享状态。
-- **跨协议统一会话模型**：单一 `Session` 抽象支撑跨协议查询、广播与路由。
-- **生命周期确定**：分阶段关闭（StopAccept → Drain → CloseSessions）不丢连接；每个连接携带显式空闲/写超时，死对端有界回收且可观测。
-- **解耦扩展**：插件以优先级有序的单一链执行并做 panic 隔离；`Codec[M]` 将类型化业务消息分层于原始传输会话之上。
+- **运行时单一归属**:Gateway 创建并注入共享 Runtime(SessionManager / PluginRunner / Logger / Metrics / Tracer),传输层只消费,不持有共享状态.
+- **跨协议统一会话模型**:单一 `Session` 抽象支撑跨协议查询,广播与路由.
+- **生命周期确定**:分阶段关闭(StopAccept -> Drain -> CloseSessions)不丢连接;每个连接携带显式空闲/写超时,死对端有界回收且可观测.
+- **解耦扩展**:插件以优先级有序的单一链执行并做 panic 隔离;`Codec[M]` 将类型化业务消息分层于原始传输会话之上.
 
 **目标场景**
 
-- IoT 平台汇聚：设备经 CoAP/LwM2M 接入、Web 端经 WebSocket、管理经 HTTP。
-- 实时通信网关：WebSocket 长连接、自定义 TCP 协议、UDP 广播。
-- 边缘计算节点：受限设备经 CoAP 接入，单进程内跨协议路由。
+- IoT 平台汇聚:设备经 CoAP/LwM2M 接入,Web 端经 WebSocket,管理经 HTTP.
+- 实时通信网关:WebSocket 长连接,自定义 TCP 协议,UDP 广播.
+- 边缘计算节点:受限设备经 CoAP 接入,单进程内跨协议路由.
 
 **边界**
 
-- HTTP 仅作轻量选项，不竞争 Nginx/Envoy 的反向代理。
-- 不内置 MQTT Broker：外部 [shark-MQTT](https://gitee.com/X1aSheng/shark-mqtt) 经数据契约互通，网关以 MQTT 客户端身份接入（paho 适配器）。
-- gRPC-Web 仅支持 Unary 与 Server Streaming，不替代 `google.golang.org/grpc`。
+- HTTP 仅作轻量选项,不竞争 Nginx/Envoy 的反向代理.
+- 不内置 MQTT Broker:外部 [shark-MQTT](https://gitee.com/X1aSheng/shark-mqtt) 经数据契约互通,网关以 MQTT 客户端身份接入(paho 适配器).
+- gRPC-Web 仅支持 Unary 与 Server Streaming,不替代 `google.golang.org/grpc`.
 
 ## 设计特点
 
-- **网关拥有运行时**：Gateway 显式创建并注入 Runtime（SessionManager / PluginRunner / Logger / Metrics / Tracer）；传输层接收运行时依赖，不自行创建、也不关闭共享管理器。
-- **统一插件执行**：全局插件通过单个 PluginRunner 链式执行，panic 在链内隔离，不传播到协议层。
-- **分阶段优雅关闭**：StagedServer 定义 StopAccept → Drain → CloseSessions 三阶段，语义清晰、可回滚，连接不丢失。
-- **类型化消息分层**：Codec[M] 承载类型化消息，传输会话保持原始字节，业务类型不污染运行时层。
-- **接口契约优先**：所有模块通过 interface 交互、依赖倒置；`core/` 只定义契约，不依赖具体实现，层间依赖单向。
-- **零值可用**：Functional Options 模式，全部配置项有合理默认值，开箱即用。
-- **失败隔离**：单连接 / 单协程 panic 不影响整体；插件 panic 由 PluginRunner 捕获并返回控制错误。
-- **僵尸连接回收、可观测**：每个空闲/死对端回收路径都有超时边界（TCP 读超时、UDP/CoAP TTL 清扫、DTLS 读超时、WebSocket/gRPC-Web PongTimeout、可配置的 QUIC idle 超时），并经 `sessions_reclaimed_total` 计数——幽灵连接不可能永远存活，回收可监控。
-- **可观测优先**：关键路径内置 metrics / trace / log；Prometheus 指标采用固定键集合（无基数爆炸）；提供 `/healthz`、`/readyz` 端点及 `sessions_active`、`sessions_reclaimed_total` 等会话指标。
-- **benchmark 驱动**：性能优化以基准测试与 pprof 热点证据为前提，禁止凭直觉改结构。
-- **编译期验证**：`var _ Interface = (*Impl)(nil)` 接口满足检查，关键约束用类型系统表达。
-- **安全内建**：TLS 证书热加载、mTLS、DTLS、接受速率限制、连接上限、写超时、非 root 容器、只读根文件系统、Drop ALL capabilities。
+- **网关拥有运行时**:Gateway 显式创建并注入 Runtime(SessionManager / PluginRunner / Logger / Metrics / Tracer);传输层接收运行时依赖,不自行创建,也不关闭共享管理器.
+- **统一插件执行**:全局插件通过单个 PluginRunner 链式执行,panic 在链内隔离,不传播到协议层.
+- **分阶段优雅关闭**:StagedServer 定义 StopAccept -> Drain -> CloseSessions 三阶段,语义清晰,可回滚,连接不丢失.
+- **类型化消息分层**:Codec[M] 承载类型化消息,传输会话保持原始字节,业务类型不污染运行时层.
+- **接口契约优先**:所有模块通过 interface 交互,依赖倒置;`core/` 只定义契约,不依赖具体实现,层间依赖单向.
+- **零值可用**:Functional Options 模式,全部配置项有合理默认值,开箱即用.
+- **失败隔离**:单连接 / 单协程 panic 不影响整体;插件 panic 由 PluginRunner 捕获并返回控制错误.
+- **僵尸连接回收,可观测**:每个空闲/死对端回收路径都有超时边界(TCP 读超时,UDP/CoAP TTL 清扫,DTLS 读超时,WebSocket/gRPC-Web PongTimeout,可配置的 QUIC idle 超时),并经 `sessions_reclaimed_total` 计数--幽灵连接不可能永远存活,回收可监控.
+- **可观测优先**:关键路径内置 metrics / trace / log;Prometheus 指标采用固定键集合(无基数爆炸);提供 `/healthz`,`/readyz` 端点及 `sessions_active`,`sessions_reclaimed_total` 等会话指标.
+- **benchmark 驱动**:性能优化以基准测试与 pprof 热点证据为前提,禁止凭直觉改结构.
+- **编译期验证**:`var _ Interface = (*Impl)(nil)` 接口满足检查,关键约束用类型系统表达.
+- **安全内建**:TLS 证书热加载,mTLS,DTLS,接受速率限制,连接上限,写超时,非 root 容器,只读根文件系统,Drop ALL capabilities.
 
 ## 功能矩阵
 
 | 领域 | 状态 | 说明 |
 | --- | --- | --- |
-| 运行时/网关 | 已实现 | 运行时注入、共享 SessionManager、插件链、分阶段停止 |
-| TCP | 已实现 | 长度前缀、行、定长、原始帧，TLS 服务端/客户端，工作池，接受速率限制，连接上限，写超时，空闲读超时 |
-| UDP | 已实现 | 伪会话、TTL 清扫、DTLS 支持（读缓冲可配置）、插件路径 |
+| 运行时/网关 | 已实现 | 运行时注入,共享 SessionManager,插件链,分阶段停止 |
+| TCP | 已实现 | 长度前缀,行,定长,原始帧,TLS 服务端/客户端,工作池,接受速率限制,连接上限,写超时,空闲读超时 |
+| UDP | 已实现 | 伪会话,TTL 清扫,DTLS 支持(读缓冲可配置),插件路径 |
 | HTTP | 已实现 | Mode A 路由器与 Mode B 会话/插件/处理器流程 |
-| WebSocket | 已实现 | 二进制消息路径、Origin 校验、心跳循环、写超时、接受速率限制、连接上限 |
-| CoAP | 已实现 | 消息解析/编码、CON ACK、伪会话、DTLS（读缓冲可配置）、选项编码（RFC 7252）、Observe（RFC 7641） |
-| LwM2M | 已实现 | 带操作掩码的对象/资源模型、TLV 二进制编解码、discover/register/update/deregister/write/read、Observer 通知 |
-| QUIC | 已实现 | 基于 quic-go 的 TLS 必需流传输，写超时、接受速率限制、连接上限、idle 超时可配置 |
-| gRPC-Web | 已实现 | 直连 HTTP 模式、二进制帧/trailer、WebSocket 模式、连接上限 |
-| 插件 | 已实现 | Blacklist（精确 + CIDR）、RateLimit（32 分片滑动窗口）、Heartbeat、Persistence（Store+MessageLog）、AutoBan、SlowHandler、Cluster |
-| 安全 | 已实现 | 文件监听 TLS 证书热加载、mTLS 客户端认证、UDP/CoAP 的 DTLS |
-| 持久化 | 已实现 | Store 接口（返回错误）、BoltDB 后端、带序列号的持久消息日志、会话快照 |
-| 基础设施 | 已实现 | 内存缓存/存储/发布订阅/熔断器/可观测性、Prometheus 指标导出器、OpenTelemetry tracer 适配、TLS 证书缓存 |
-| MQTT | 已集成 | 外部 broker 适配（paho 客户端）、docker-compose mosquitto 用于 E2E 测试 |
-| 僵尸回收 | 已实现 | 各传输皆有界空闲超时，经 `sessions_reclaimed_total` 计数 |
-| 模糊测试 | 8 个测试 | TCP 帧、CoAP 消息解析、LwM2M TLV 编解码 —— 全部通过 |
+| WebSocket | 已实现 | 二进制消息路径,Origin 校验,心跳循环,写超时,接受速率限制,连接上限 |
+| CoAP | 已实现 | 消息解析/编码,CON ACK,伪会话,DTLS(读缓冲可配置),选项编码(RFC 7252),Observe(RFC 7641) |
+| LwM2M | 已实现 | 带操作掩码的对象/资源模型,TLV 二进制编解码,discover/register/update/deregister/write/read,Observer 通知 |
+| QUIC | 已实现 | 基于 quic-go 的 TLS 必需流传输,写超时,接受速率限制,连接上限,idle 超时可配置 |
+| gRPC-Web | 已实现 | 直连 HTTP 模式,二进制帧/trailer,WebSocket 模式,连接上限 |
+| 插件 | 已实现 | Blacklist(精确 + CIDR),RateLimit(32 分片滑动窗口),Heartbeat,Persistence(Store+MessageLog),AutoBan,SlowHandler,Cluster |
+| 安全 | 已实现 | 文件监听 TLS 证书热加载,mTLS 客户端认证,UDP/CoAP 的 DTLS |
+| 持久化 | 已实现 | Store 接口(返回错误),BoltDB 后端,带序列号的持久消息日志,会话快照 |
+| 基础设施 | 已实现 | 内存缓存/存储/发布订阅/熔断器/可观测性,Prometheus 指标导出器,OpenTelemetry tracer 适配,TLS 证书缓存 |
+| MQTT | 已集成 | 外部 broker 适配(paho 客户端),docker-compose mosquitto 用于 E2E 测试 |
+| 僵尸回收 | 已实现 | 各传输皆有界空闲超时,经 `sessions_reclaimed_total` 计数 |
+| 模糊测试 | 8 个测试 | TCP 帧,CoAP 消息解析,LwM2M TLV 编解码 -- 全部通过 |
 | 压力测试 | 6 套件 | TCP 持续/突发/重连 + UDP/WebSocket/HTTP 含泄漏检测 |
-| 基准测试 | 6 种协议 | TCP、UDP、HTTP、WebSocket、gRPC-Web、QUIC —— 全部已基准化 |
-| 部署 | 已加固 | Docker（HEALTHCHECK、非 root）、K8s（HPA、PDB、NetworkPolicy、ConfigMap）、Helm _helpers.tpl |
+| 基准测试 | 6 种协议 | TCP,UDP,HTTP,WebSocket,gRPC-Web,QUIC -- 全部已基准化 |
+| 部署 | 已加固 | Docker(HEALTHCHECK,非 root),K8s(HPA,PDB,NetworkPolicy,ConfigMap),Helm _helpers.tpl |
 
 ## 资源需求
 
-`shark-socket` 静态链接、无外部运行时依赖，可部署于资源受限的边缘节点。
+`shark-socket` 静态链接,无外部运行时依赖,可部署于资源受限的边缘节点.
 
-**实测占用**（空闲，本地开发机）
+**实测占用**(空闲,本地开发机)
 
-- 空闲进程：私有 ~46 MB / 常驻 ~10 MB
-- 每空闲 TCP 连接：~24.8 KB（关闭后完全释放——已用 2000 连接实测验证）
-- 每 DTLS 对端：默认 16 KiB 读缓冲（原 64 KiB，`WithDTLSReadBufferBytes` 可配）——1 万 DTLS 对端此前仅读缓冲即占 ~640 MB
+- 空闲进程:私有 ~46 MB / 常驻 ~10 MB
+- 每空闲 TCP 连接:~24.8 KB(关闭后完全释放--已用 2000 连接实测验证)
+- 每 DTLS 对端:默认 16 KiB 读缓冲(原 64 KiB,`WithDTLSReadBufferBytes` 可配)--1 万 DTLS 对端此前仅读缓冲即占 ~640 MB
 
 **制品大小**
 
 | 制品 | 大小 | 说明 |
 | --- | --- | --- |
-| Docker 镜像 | ~40 MB | 多阶段构建，`alpine:3.22` 运行时，`CGO_ENABLED=0` 静态编译 |
-| 可执行文件 | 单个二进制 | 无运行时依赖，可独立部署 |
+| Docker 镜像 | ~40 MB | 多阶段构建,`alpine:3.22` 运行时,`CGO_ENABLED=0` 静态编译 |
+| 可执行文件 | 单个二进制 | 无运行时依赖,可独立部署 |
 
-**Kubernetes 默认资源规格（随附清单）**
+**Kubernetes 默认资源规格(随附清单)**
 
 | 项 | 值 |
 | --- | --- |
 | requests | CPU 50m / 内存 64Mi |
 | limits | CPU 500m / 内存 256Mi |
-| 副本 | 2（HPA 2–10，CPU 平均利用率 50% 触发扩容） |
+| 副本 | 2(HPA 2-10,CPU 平均利用率 50% 触发扩容) |
 
 **容量规划**
 
@@ -101,20 +101,20 @@
 
 | 端口 | 协议 | 用途 |
 | --- | --- | --- |
-| 18000 | TCP | 业务连接（默认） |
+| 18000 | TCP | 业务连接(默认) |
 | 18080 | HTTP | Prometheus 指标 |
 | 18081 | HTTP | 健康 / 就绪探针 |
-| 18443 | UDP | QUIC（TLS 必需） |
+| 18443 | UDP | QUIC(TLS 必需) |
 | 18500 | UDP | CoAP / LwM2M |
 | 18700 | HTTP/WS | WebSocket |
 | 18900 | HTTP | gRPC-Web |
 
-**基准容量（Linux 8 核 Xeon）**
+**基准容量(Linux 8 核 Xeon)**
 
-- TCP 吞吐：约 31.6 万 msg/s（50 连接，256B payload），P50 ~144µs、P99 ~401µs
-- TCP / UDP / HTTP 回显延迟：约 19µs / 5µs / 31µs
-- 插件链开销：4 个真实插件仅增加 ~1.7% 延迟（<5%）
-- 连接抖动：50 路并发，10s 内 85.9 万次连接/断开循环零错误
+- TCP 吞吐:约 31.6 万 msg/s(50 连接,256B payload),P50 ~144us,P99 ~401us
+- TCP / UDP / HTTP 回显延迟:约 19us / 5us / 31us
+- 插件链开销:4 个真实插件仅增加 ~1.7% 延迟(<5%)
+- 连接抖动:50 路并发,10s 内 85.9 万次连接/断开循环零错误
 
 ## 运行
 
@@ -122,15 +122,15 @@
 go run ./cmd/shark-socket
 ```
 
-该示例在 `127.0.0.1:18000` 启动一个 TCP echo 服务器。
+该示例在 `127.0.0.1:18000` 启动一个 TCP echo 服务器.
 
-使用配置文件运行：
+使用配置文件运行:
 
 ```powershell
 go run ./cmd/shark-socket -config .\examples\config\multi-protocol.json
 ```
 
-配置 `health_addr` 后可用的健康与就绪端点：
+配置 `health_addr` 后可用的健康与就绪端点:
 
 - `GET /healthz`
 - `GET /readyz`
@@ -138,7 +138,7 @@ go run ./cmd/shark-socket -config .\examples\config\multi-protocol.json
 ### MQTT 集成测试
 
 ```bash
-# 启动 mosquitto broker + 运行 E2E 测试（需要 Docker）
+# 启动 mosquitto broker + 运行 E2E 测试(需要 Docker)
 docker compose -f deploy/docker/docker-compose.yml --profile test run mqtt-test
 ```
 
@@ -146,34 +146,34 @@ docker compose -f deploy/docker/docker-compose.yml --profile test run mqtt-test
 
 | 检查项 | 命令 | 状态 |
 |-------|---------|--------|
-| 单元测试（26 套件） | `go test ./...` | ✅ |
-| 竞态检测 | `go test -race ./...` | ✅ |
-| 覆盖率（70% 门槛） | `go run scripts/run_tests.go -mode cover` | ✅ 78.6% |
-| 静态检查（golangci-lint） | `golangci-lint run` | ✅ |
-| 安全扫描（govulncheck） | `govulncheck ./...` | ✅ |
-| 部署清单 | `go run scripts/run_tests.go -mode deploy` | ✅ |
-| 压力测试（6 套件含泄漏检测） | `go test ./tests/stress/ -count=1 -p 1` | ✅ |
+| 单元测试(26 套件) | `go test ./...` | [OK] |
+| 竞态检测 | `go test -race ./...` | [OK] |
+| 覆盖率(70% 门槛) | `go run scripts/run_tests.go -mode cover` | [OK] 78.6% |
+| 静态检查(golangci-lint) | `golangci-lint run` | [OK] |
+| 安全扫描(govulncheck) | `govulncheck ./...` | [OK] |
+| 部署清单 | `go run scripts/run_tests.go -mode deploy` | [OK] |
+| 压力测试(6 套件含泄漏检测) | `go test ./tests/stress/ -count=1 -p 1` | [OK] |
 
-快速验证：
+快速验证:
 
 ```bash
 go run scripts/run_tests.go -mode vet
 ```
 
-竞态验证：
+竞态验证:
 
 ```bash
 go run scripts/run_tests.go -mode race
 ```
 
-竞态模式需要以下编译器工具链：
+竞态模式需要以下编译器工具链:
 
 - `D:\Programs\w64devkit\bin`
 - `D:\Programs\LLVM\bin`
 
-在 Linux runner 上，竞态验证直接使用 runner 的 C 工具链。
+在 Linux runner 上,竞态验证直接使用 runner 的 C 工具链.
 
-等价的手动命令：
+等价的手动命令:
 
 ```powershell
 go test ./... -count=1
@@ -183,7 +183,7 @@ $env:CGO_ENABLED='1'
 go test -race ./... -count=1
 ```
 
-发布加固命令：
+发布加固命令:
 
 ```powershell
 go test ./internal/transport/tcp -run='^$' -fuzz=FuzzLengthPrefixFramer -fuzztime=2s
@@ -192,7 +192,7 @@ go test ./internal/transport/coap -run='^$' -fuzz=FuzzParseMessage -fuzztime=2s
 go test './internal/transport/tcp' './internal/transport/coap' '-run=^$' '-bench=.' '-benchmem'
 ```
 
-脚本化测试报告：
+脚本化测试报告:
 
 ```powershell
 go run scripts/run_tests.go -mode all
@@ -203,14 +203,14 @@ go run scripts/run_benchmarks.go -profile local -stage light
 go run scripts/run_tests.go -mode deploy
 ```
 
-Docker 构建支持可配置的模块代理：
+Docker 构建支持可配置的模块代理:
 
 ```powershell
 $env:GOPROXY='https://goproxy.cn,direct'
 docker compose -f deploy/docker/docker-compose.yml up -d --build
 ```
 
-原始 JSON 与可读报告写入 `logs/` 目录。
+原始 JSON 与可读报告写入 `logs/` 目录.
 
 ## 文档
 
