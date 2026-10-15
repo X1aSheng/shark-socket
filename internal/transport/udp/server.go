@@ -213,6 +213,13 @@ func (s *Server) handleDTLSConn(ctx context.Context, conn net.Conn) {
 	// or OnAccept failure the plugin chain already rolled back partial accepts.
 	accepted := false
 	defer func() {
+		// Release the DTLS socket. The read loop returns on any read error
+		// (peer disconnect, read deadline, transport failure), and deleting
+		// the entry from dtlsConns below also hides it from StopAccept - so
+		// without this close every departing DTLS peer would leak its socket
+		// until the finalizer happened to run. Close is idempotent
+		// (closeOnce), so a concurrent CloseSessions/closeSession is safe.
+		_ = sess.Close(context.Background())
 		s.dtlsConns.Delete(id)
 		// Guarded by LoadAndDelete so OnClose fires exactly once even when
 		// CloseSessions already removed this session via closeSession.
