@@ -92,6 +92,76 @@ func main() {
 			fmt.Printf("\nlog: %s\n", fname)
 		}
 	}
+
+	// Reflect the outcome in the exit status: a scripted or CI invocation must
+	// be able to gate on the run instead of having to parse the summary. A run
+	// that moved no traffic, received no replies, or exceeded the error-rate
+	// ceiling is a failure.
+	if failed := stressFailures(results); len(failed) > 0 {
+		fmt.Fprintln(os.Stderr, "\nSTRESS FAILED:")
+		for _, reason := range failed {
+			fmt.Fprintf(os.Stderr, "  - %s\n", reason)
+		}
+		os.Exit(1)
+	}
+	fmt.Println("\nSTRESS PASSED")
+}
+
+// maxStressErrorRate is the tolerated fraction of failed sends or receives
+// before a stress run is reported as failed.
+const maxStressErrorRate = 0.05
+
+// stressFailures returns one human-readable reason per mode whose results do
+// not meet the pass criteria. Modes are reported in sorted order so the output
+// is stable across runs (results is a map).
+func stressFailures(results map[string]map[string]any) []string {
+	modes := make([]string, 0, len(results))
+	for mode := range results {
+		modes = append(modes, mode)
+	}
+	sort.Strings(modes)
+
+	var failed []string
+	for _, mode := range modes {
+		r := results[mode]
+		sent := stressInt(r["sent"])
+		sendFail := stressInt(r["send_fail"])
+		recvOK := stressInt(r["recv_ok"])
+		recvFail := stressInt(r["recv_fail"])
+
+		switch {
+		case sent == 0:
+			failed = append(failed, fmt.Sprintf("%s: no messages were sent (server unreachable or refused every connection)", mode))
+			continue
+		case recvOK == 0:
+			failed = append(failed, fmt.Sprintf("%s: sent %d messages but received no replies", mode, sent))
+			continue
+		}
+		if rate := float64(sendFail) / float64(sent); rate > maxStressErrorRate {
+			failed = append(failed, fmt.Sprintf("%s: send error rate %.1f%% exceeds %.0f%%", mode, rate*100, maxStressErrorRate*100))
+		}
+		if total := recvOK + recvFail; total > 0 {
+			if rate := float64(recvFail) / float64(total); rate > maxStressErrorRate {
+				failed = append(failed, fmt.Sprintf("%s: receive error rate %.1f%% exceeds %.0f%%", mode, rate*100, maxStressErrorRate*100))
+			}
+		}
+	}
+	return failed
+}
+
+// stressInt converts a counter stored in a result map to int64, tolerating the
+// int and float64 forms a marshal/unmarshal round trip could produce.
+func stressInt(v any) int64 {
+	switch n := v.(type) {
+	case int64:
+		return n
+	case int:
+		return int64(n)
+	case float64:
+		return int64(n)
+	default:
+		return 0
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -419,12 +489,25 @@ func printSummary(results map[string]map[string]any) {
 	fmt.Println("\n========================================")
 	fmt.Println("  STRESS TEST SUMMARY")
 	fmt.Println("========================================")
-	for mode, r := range results {
+	modes := make([]string, 0, len(results))
+	for mode := range results {
+		modes = append(modes, mode)
+	}
+	sort.Strings(modes)
+	for _, mode := range modes {
+		r := results[mode]
+		// throughput is only set when at least one reply arrived, so fall back
+		// to a placeholder - printing the missing value with %s produced
+		// "throughput=%!s(<nil>)" on exactly the failed runs that matter most.
+		throughput, _ := r["throughput"].(string)
+		if throughput == "" {
+			throughput = "n/a"
+		}
 		fmt.Printf("  %-10s : sent=%-6d recv=%-6d throughput=%-12s p50=%-8s p99=%-8s\n",
 			mode,
-			r["sent"],
-			r["recv_ok"],
-			r["throughput"],
+			stressInt(r["sent"]),
+			stressInt(r["recv_ok"]),
+			throughput,
 			r["p50"],
 			r["p99"],
 		)
