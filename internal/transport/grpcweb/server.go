@@ -167,16 +167,17 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	strictFraming := r.Header.Get("x-grpc-web") == "1"
 	grpcWeb := isGRPCWebRequest(r)
-	var framed bool
-	if grpcWeb || strictFraming {
-		// The request declares gRPC-Web (content-type or x-grpc-web header):
-		// parse the body as a frame sequence and frame the response. A raw
-		// request body with neither header is passed through untouched so it
-		// cannot be misdetected as a frame.
+	// Whether the response is framed follows the request declaration, not
+	// whether the request body happened to parse as a frame sequence. A
+	// declared gRPC-Web request with an empty or unparsable body still needs
+	// a framed response with a grpc-status trailer, otherwise the client
+	// cannot determine the call outcome.
+	framed := grpcWeb || strictFraming
+	if framed {
 		var parseErr error
-		body, framed, parseErr = parseRequestPayload(body, strictFraming)
+		body, _, parseErr = parseRequestPayload(body, strictFraming)
 		if parseErr != nil {
-			http.Error(w, parseErr.Error(), http.StatusBadRequest)
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
 	}
@@ -215,7 +216,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.opts.Handler != nil {
 		msg := core.Message{SessionID: id, Protocol: core.ProtocolGRPCWeb, Payload: body}
-		if err := s.opts.Handler(sess, msg); err != nil {
+		// Run the handler through CallHandler so a panic is isolated and
+		// reported as a gRPC-Web error trailer instead of tearing the
+		// connection down with no status (the WebSocket path does the same).
+		if err := shared.CallHandler(func() error { return s.opts.Handler(sess, msg) }, s.rt.Logger()); err != nil {
 			if s.rt != nil {
 				s.rt.Logger().Error("grpc-web handler error", "session", id, "error", err)
 			}
@@ -256,7 +260,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	id := s.rt.Sessions().NextID()
-	sess := newWebSocketSession(id, conn)
+	sess := newWebSocketSession(id, conn, s.opts.WriteTimeout)
 	s.sessions.Store(id, sess)
 	if err := s.rt.Sessions().Register(sess); err != nil {
 		// Never accepted: discard without OnClose.

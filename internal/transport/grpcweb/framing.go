@@ -81,11 +81,45 @@ func appendTrailerFrame(dst []byte, status int, message string) []byte {
 	trailers.WriteString("\r\n")
 	if message != "" {
 		trailers.WriteString("grpc-message: ")
-		trailers.WriteString(message)
+		trailers.WriteString(encodeGRPCMessage(message))
 		trailers.WriteString("\r\n")
 	}
 	payload := []byte(trailers.String())
 	dst = append(dst, trailerFrameFlag)
 	dst = binary.BigEndian.AppendUint32(dst, uint32(len(payload)))
 	return append(dst, payload...)
+}
+
+const upperHex = "0123456789ABCDEF"
+
+// encodeGRPCMessage percent-encodes a grpc-message value as required by the
+// gRPC wire specification: only bytes in %x20-%x24 and %x26-%x7E may appear
+// unencoded, everything else (including the percent sign itself) is written
+// as "%XX". Without this, a message containing CR, LF or non-ASCII bytes
+// would corrupt the trailer block (header injection) and could not be decoded
+// by the client.
+func encodeGRPCMessage(s string) string {
+	needsEscape := false
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; !(c >= 0x20 && c <= 0x24) && !(c >= 0x26 && c <= 0x7e) {
+			needsEscape = true
+			break
+		}
+	}
+	if !needsEscape {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) * 3)
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 0x20 && c <= 0x24) || (c >= 0x26 && c <= 0x7e) {
+			b.WriteByte(c)
+			continue
+		}
+		b.WriteByte('%')
+		b.WriteByte(upperHex[c>>4])
+		b.WriteByte(upperHex[c&0x0f])
+	}
+	return b.String()
 }

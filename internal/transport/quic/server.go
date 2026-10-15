@@ -17,14 +17,16 @@ import (
 )
 
 type Server struct {
-	opts     Options
-	rt       core.Runtime
-	listener *quicgo.Listener
-	acceptor *shared.Acceptor
-	closed   atomic.Bool
-	started  atomic.Bool
-	wg       sync.WaitGroup
-	sessions sync.Map
+	opts       Options
+	rt         core.Runtime
+	listener   *quicgo.Listener
+	acceptor   *shared.Acceptor
+	closed     atomic.Bool
+	started    atomic.Bool
+	stopCtx    context.Context
+	stopCancel context.CancelFunc
+	wg         sync.WaitGroup
+	sessions   sync.Map
 }
 
 func NewServer(opts ...Option) *Server {
@@ -54,14 +56,22 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 	s.closed.Store(false)
 	s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate)
+	// stopCtx is the server's shared cancellation signal. StopAccept cancels
+	// it so every per-connection goroutine blocked in AcceptStream returns.
+	// Without it, handleConn would only exit once CloseSessions closed the
+	// connection — but CloseSessions runs after Drain, so Drain's wg.Wait
+	// could never complete (quic-go's Listener.Close leaves already-accepted
+	// connections open).
+	s.stopCtx, s.stopCancel = context.WithCancel(ctx)
 	ln, err := quicgo.ListenAddr(s.opts.Addr, s.opts.TLSConfig, quicConfig(s.opts))
 	if err != nil {
+		s.stopCancel()
 		s.started.Store(false)
 		return fmt.Errorf("quic listen %s: %w", s.opts.Addr, err)
 	}
 	s.listener = ln
 	s.wg.Add(1)
-	go s.acceptLoop(ctx)
+	go s.acceptLoop(s.stopCtx)
 	return nil
 }
 
@@ -76,6 +86,12 @@ func (s *Server) StopAccept(context.Context) error {
 		return nil
 	}
 	s.started.Store(false)
+	// Unblock every per-connection goroutine waiting in AcceptStream before
+	// Drain waits on them; closing the listener alone leaves accepted
+	// connections (and their goroutines) alive.
+	if s.stopCancel != nil {
+		s.stopCancel()
+	}
 	if s.listener != nil {
 		return s.listener.Close()
 	}
@@ -84,8 +100,8 @@ func (s *Server) StopAccept(context.Context) error {
 
 func (s *Server) Drain(ctx context.Context) error {
 	// Wait for accept/handle/write goroutines to finish. The drain goroutine
-	// is fire-and-forget: StopAccept already closed the listener, so all
-	// tracked goroutines exit promptly.
+	// is fire-and-forget: StopAccept has cancelled stopCtx and closed the
+	// listener, so all tracked goroutines exit promptly.
 	done := make(chan struct{})
 	go func() {
 		s.wg.Wait()
@@ -132,12 +148,12 @@ func (s *Server) acceptLoop(ctx context.Context) {
 		go func(conn *quicgo.Conn) {
 			defer s.wg.Done()
 			defer s.acceptor.Done()
-			s.handleConn(conn)
+			s.handleConn(s.stopCtx, conn)
 		}(conn)
 	}
 }
 
-func (s *Server) handleConn(conn *quicgo.Conn) {
+func (s *Server) handleConn(ctx context.Context, conn *quicgo.Conn) {
 	id := s.rt.Sessions().NextID()
 	sess := newSession(id, conn, s.opts.WriteQueueSize, s.opts.WriteTimeout)
 	s.sessions.Store(id, sess)
@@ -164,7 +180,9 @@ func (s *Server) handleConn(conn *quicgo.Conn) {
 		}
 	}()
 	for {
-		stream, err := conn.AcceptStream(sess.Context())
+		// AcceptStream is bounded by the server's stop context (cancelled by
+		// StopAccept), so the loop exits promptly during a staged shutdown.
+		stream, err := conn.AcceptStream(ctx)
 		if err != nil {
 			return
 		}

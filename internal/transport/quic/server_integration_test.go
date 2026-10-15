@@ -402,5 +402,9 @@ func stopGateway(tb testing.TB, gateway *runtime.Gateway) {
 	tb.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	_ = gateway.Stop(ctx)
+	// Do not swallow the error: a stage timeout here means the shutdown path
+	// is deadlocked, and discarding it would hide exactly that regression.
+	if err := gateway.Stop(ctx); err != nil {
+		tb.Fatalf("gateway.Stop: %v", err)
+	}
 }

@@ -65,6 +65,14 @@ func (s *session) Send(payload []byte) error {
 		return core.ErrSessionClosed
 	}
 	copied := append([]byte(nil), payload...)
+	// Check for a closed session before the queue select: when both the write
+	// queue and ctx.Done() are ready, select would choose randomly and could
+	// report success for a message writeLoop is about to drop.
+	select {
+	case <-s.ctx.Done():
+		return core.ErrSessionClosed
+	default:
+	}
 	select {
 	case s.writeCh <- copied:
 		return nil

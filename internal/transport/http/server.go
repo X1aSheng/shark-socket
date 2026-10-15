@@ -13,6 +13,7 @@ import (
 
 	"github.com/X1aSheng/shark-socket/internal/core"
 	"github.com/X1aSheng/shark-socket/internal/runtime"
+	"github.com/X1aSheng/shark-socket/internal/transport/shared"
 )
 
 type Server struct {
@@ -207,7 +208,10 @@ func (s *Server) handleWithSession(w stdhttp.ResponseWriter, r *stdhttp.Request)
 		return
 	}
 	msg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolHTTP, Payload: body}
-	if err := s.opts.Handler(sess, msg); err != nil {
+	// Isolate handler panics like every other transport: a panicking handler
+	// must not propagate out of the request goroutine (net/http would then
+	// abort the connection with no controlled response).
+	if err := shared.CallHandler(func() error { return s.opts.Handler(sess, msg) }, s.rt.Logger()); err != nil {
 		s.rt.Logger().Error("http handler error", "session", sess.ID(), "error", err)
 		stdhttp.Error(w, stdhttp.StatusText(stdhttp.StatusInternalServerError), stdhttp.StatusInternalServerError)
 		return

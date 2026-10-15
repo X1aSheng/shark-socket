@@ -94,6 +94,17 @@ func WithTLSConfig(cfg *tls.Config) Option {
 	return func(o *Options) { o.TLSConfig = cfg }
 }
 
+// WithWriteTimeout bounds each write to a client, both for the HTTP server and
+// for individual WebSocket sessions. A dead or zero-window peer must not be
+// able to block a write (and therefore session close) indefinitely.
+func WithWriteTimeout(timeout time.Duration) Option {
+	return func(o *Options) {
+		if timeout > 0 {
+			o.WriteTimeout = timeout
+		}
+	}
+}
+
 func WithCheckOrigin(fn func(*http.Request) bool) Option {
 	return func(o *Options) {
 		if fn != nil {

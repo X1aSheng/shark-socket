@@ -49,8 +49,12 @@ func (s *session) Send(payload []byte) error {
 	if s.State() != core.StateActive {
 		return core.ErrSessionClosed
 	}
-	s.response.Header().Set("content-type", "application/grpc-web+proto")
 	if s.framed {
+		// Only a framed (gRPC-Web) response may advertise the gRPC-Web
+		// content type. A passthrough response carries raw bytes, so
+		// labelling it application/grpc-web+proto would make conformant
+		// clients parse plain data as frame headers.
+		s.response.Header().Set("content-type", "application/grpc-web+proto")
 		payload = appendDataFrame(nil, payload)
 	}
 	_, err := s.response.Write(payload)

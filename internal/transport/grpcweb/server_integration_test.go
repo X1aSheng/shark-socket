@@ -47,7 +47,9 @@ func TestGRPCWebDirectEchoAndCleanup(t *testing.T) {
 	}
 	defer stopGateway(t, gateway)
 
-	resp, err := http.Post("http://"+server.Addr().String()+"/grpc", "application/grpc-web+proto", bytes.NewReader([]byte("hello")))
+	// A request that does not declare gRPC-Web is passed through (raw bytes in,
+	// raw bytes out); the response must not be framed or relabelled.
+	resp, err := http.Post("http://"+server.Addr().String()+"/grpc", "application/octet-stream", bytes.NewReader([]byte("hello")))
 	if err != nil {
 		t.Fatal(err)
 	}
