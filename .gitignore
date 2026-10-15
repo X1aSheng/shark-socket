@@ -33,3 +33,6 @@ __pycache__/
 # Project-specific
 .skills/
 .claude/
+
+# Local tooling state (assistant workspace memory, per-machine, not source)
+.workbuddy/
