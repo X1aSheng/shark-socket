@@ -346,19 +346,13 @@ func TestTCPIdleReadTimeoutReclaimsSilentPeer(t *testing.T) {
 	// Wait for the session to register (dial returns before the accept
 	// goroutine registers it), then for the read deadline to reclaim it.
 	deadline := time.Now().Add(3 * time.Second)
-	for {
-		if gateway.Runtime().Sessions().Count() >= 1 {
-			break
-		}
+	for gateway.Runtime().Sessions().Count() < 1 {
 		if time.Now().After(deadline) {
 			t.Fatal("session not registered after connect")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	for {
-		if gateway.Runtime().Sessions().Count() == 0 {
-			break
-		}
+	for gateway.Runtime().Sessions().Count() != 0 {
 		if time.Now().After(deadline) {
 			t.Fatal("silent peer not reclaimed after read timeout")
 		}

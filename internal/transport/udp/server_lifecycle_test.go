@@ -305,20 +305,14 @@ func TestUDPServerDTLSIdleTimeout(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	// First wait for the server-side handler goroutine to register the
 	// session after the handshake completes.
-	for {
-		if server.SessionCount() == 1 {
-			break
-		}
+	for server.SessionCount() != 1 {
 		if time.Now().After(deadline) {
 			t.Fatalf("DTLS session not registered after handshake: count=%d", server.SessionCount())
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	// Then wait for the idle timeout (SessionTTL=50ms) to reclaim it.
-	for {
-		if server.SessionCount() == 0 {
-			return
-		}
+	for server.SessionCount() != 0 {
 		if time.Now().After(deadline) {
 			t.Fatalf("DTLS session not reclaimed after idle timeout: count=%d", server.SessionCount())
 		}

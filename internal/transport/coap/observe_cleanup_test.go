@@ -59,10 +59,7 @@ func TestCoAPRSTCancelsObserver(t *testing.T) {
 	}
 
 	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if len(server.observers.Notify("/sensor/humidity")) == 0 {
-			break
-		}
+	for len(server.observers.Notify("/sensor/humidity")) != 0 {
 		if time.Now().After(deadline) {
 			t.Fatal("observer still registered after RST")
 		}

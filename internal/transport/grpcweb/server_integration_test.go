@@ -379,19 +379,13 @@ func TestGRPCWebWSDeadPeerReclaimed(t *testing.T) {
 	// server-side session is stored), then never read: the peer never answers
 	// the server's pings, so the read deadline expires after PongTimeout.
 	deadline := time.Now().Add(3 * time.Second)
-	for {
-		if gateway.Runtime().Sessions().Count() >= 1 {
-			break
-		}
+	for gateway.Runtime().Sessions().Count() < 1 {
 		if time.Now().After(deadline) {
 			t.Fatal("session not registered after upgrade")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	for {
-		if gateway.Runtime().Sessions().Count() == 0 {
-			break
-		}
+	for gateway.Runtime().Sessions().Count() != 0 {
 		if time.Now().After(deadline) {
 			t.Fatal("dead gRPC-Web WebSocket peer not reclaimed after PongTimeout")
 		}

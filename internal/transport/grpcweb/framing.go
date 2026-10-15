@@ -92,6 +92,13 @@ func appendTrailerFrame(dst []byte, status int, message string) []byte {
 
 const upperHex = "0123456789ABCDEF"
 
+// grpcWebSafeByte reports whether c may appear literally in a grpc-message
+// value: the gRPC-Web wire specification passes through %x20-%x24 and %x26-%x7E
+// and requires percent-encoding for everything else.
+func grpcWebSafeByte(c byte) bool {
+	return (c >= 0x20 && c <= 0x24) || (c >= 0x26 && c <= 0x7e)
+}
+
 // encodeGRPCMessage percent-encodes a grpc-message value as required by the
 // gRPC wire specification: only bytes in %x20-%x24 and %x26-%x7E may appear
 // unencoded, everything else (including the percent sign itself) is written
@@ -101,7 +108,7 @@ const upperHex = "0123456789ABCDEF"
 func encodeGRPCMessage(s string) string {
 	needsEscape := false
 	for i := 0; i < len(s); i++ {
-		if c := s[i]; !(c >= 0x20 && c <= 0x24) && !(c >= 0x26 && c <= 0x7e) {
+		if !grpcWebSafeByte(s[i]) {
 			needsEscape = true
 			break
 		}
@@ -113,7 +120,7 @@ func encodeGRPCMessage(s string) string {
 	b.Grow(len(s) * 3)
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if (c >= 0x20 && c <= 0x24) || (c >= 0x26 && c <= 0x7e) {
+		if grpcWebSafeByte(c) {
 			b.WriteByte(c)
 			continue
 		}
