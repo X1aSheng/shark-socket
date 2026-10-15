@@ -2,8 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"log"
+	"math/big"
+	"net"
 	"os/signal"
 	"syscall"
 	"time"
@@ -46,25 +53,37 @@ func echoHandler(sess api.Session, msg api.Message) error {
 	return sess.Send(msg.Payload)
 }
 
+// generateSelfSignedCert creates a throwaway certificate valid for localhost and
+// 127.0.0.1 for the lifetime of the example.
+//
+// Generating it keeps the function true to its name and keeps a private key out
+// of the repository: the previous version embedded a hand-edited PEM pair that
+// did not parse, so the example failed at startup with
+// "x509: malformed certificate" and could never have worked.
 func generateSelfSignedCert() (tls.Certificate, error) {
-	return tls.X509KeyPair(localhostCert, localhostKey)
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	tmpl := x509.Certificate{
+		SerialNumber:          serial,
+		Subject:               pkix.Name{Organization: []string{"shark-socket tls_server example"}},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		DNSNames:              []string{"localhost"},
+		IPAddresses:           []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}, nil
 }
-
-var localhostCert = []byte(`-----BEGIN CERTIFICATE-----
-MIICEzCCAXygAwIBAgIQMIMChMLGrR+QvmQvpwAU6zANBgkqhkiG9w0BAQsF
-AASAMQswCQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UE
-BwwNU2FuIEZyYW5jaXNjbzENMAsGA1UECgwEVGVzdDAeFw0yNTAxMDEwMDAw
-MDBaFw0zNTAxMDEwMDAwMDBaMAAwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNC
-AATtUJmNA+2FAQFxOFTfQx8f4GwmARlNO7N/GbJQr5j2o1bJ4pEdk1g5oIhY
-syC5oRMfN9O+qy5F+BP2N5LHVgpHo0IwQDAOBgNVHQ8BAf8EBAMCBaAwHQYD
-VR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwM CMAkGA1UdEwQCMAAwDQYJKoZI
-hvcNAQELBQADggEBAHrBEN7QfYTQb0BqH4FJ6cG+4MAsL6E5V7HRLsFq3F6Z
-8Qm2bG8kC5Y5J8zM8Y1K5oQFZyL8XZp0Yx2IW+XKxP5nXJ1z5H7Jk5m8
------END CERTIFICATE-----`)
-
-var localhostKey = []byte(`-----BEGIN PRIVATE KEY-----
-MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgVnBkR+6R7qJj
-gV5p5z5Z5Q5Z5Q5Z5Q5Z5Q5Z5Q5Z5QChRANCAATtUJmNA+2FAQFxOFTfQx8f
-4GwmARlNO7N/GbJQr5j2o1bJ4pEdk1g5oIhYsyC5oRMfN9O+qy5F+BP2N5LH
-VgpH
------END PRIVATE KEY-----`)
