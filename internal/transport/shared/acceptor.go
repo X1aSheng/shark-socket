@@ -26,11 +26,32 @@ func NewAcceptor(maxConns int64, acceptRate float64) *Acceptor {
 // TryAccept returns true if a new connection is allowed under both the
 // concurrent connection cap and the accept rate limit.
 func (a *Acceptor) TryAccept() bool {
+	// Capacity is checked first so a connection rejected by the cap does not
+	// consume a rate-limit token: consuming one would pollute the limiter's
+	// accounting and throttle the next legitimate connection for no reason.
+	// Atomic capacity check + increment: a plain Load-then-Add lets concurrent
+	// callers (e.g. simultaneous WebSocket upgrades) exceed maxConns by the
+	// number of in-flight callers.
+	for {
+		cur := a.active.Load()
+		if a.maxConns > 0 && cur >= a.maxConns {
+			return false
+		}
+		if a.active.CompareAndSwap(cur, cur+1) {
+			break
+		}
+	}
 	if a.rate > 0 {
 		a.mu.Lock()
 		now := time.Now().UnixNano()
 		last := a.lastCheck.Swap(now)
 		elapsed := float64(now-last) / float64(time.Second)
+		// A backwards clock step (NTP correction) must not drain the bucket:
+		// a negative elapsed would leave the allowance negative and stall
+		// acceptance until it recovered.
+		if elapsed < 0 {
+			elapsed = 0
+		}
 		// The bucket must be able to hold at least one token, otherwise a rate
 		// below 1/s (e.g. 0.5 = one connection every two seconds) could never
 		// reach the >= 1 token threshold below and would reject every connection.
@@ -48,21 +69,12 @@ func (a *Acceptor) TryAccept() bool {
 		}
 		a.mu.Unlock()
 		if !ok {
+			// Release the capacity slot taken above.
+			a.active.Add(-1)
 			return false
 		}
 	}
-	// Atomic capacity check + increment: a plain Load-then-Add lets concurrent
-	// callers (e.g. simultaneous WebSocket upgrades) exceed maxConns by the
-	// number of in-flight callers.
-	for {
-		cur := a.active.Load()
-		if a.maxConns > 0 && cur >= a.maxConns {
-			return false
-		}
-		if a.active.CompareAndSwap(cur, cur+1) {
-			return true
-		}
-	}
+	return true
 }
 
 // Done decrements the active connection count.

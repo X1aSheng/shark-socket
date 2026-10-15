@@ -197,7 +197,7 @@ func (s *Server) handleWithSession(w stdhttp.ResponseWriter, r *stdhttp.Request)
 	accepted = true
 	body, err = s.rt.Plugins().OnMessage(sess, body)
 	if err != nil {
-		if err == core.ErrPluginDrop {
+		if errors.Is(err, core.ErrPluginDrop) {
 			w.WriteHeader(stdhttp.StatusNoContent)
 			return
 		}

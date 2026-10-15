@@ -219,7 +219,7 @@ func (s *Server) readLoop(sess *session) {
 		sess.touch()
 		payload, err = s.rt.Plugins().OnMessage(sess, payload)
 		if err != nil {
-			if err == core.ErrPluginDrop {
+			if errors.Is(err, core.ErrPluginDrop) {
 				continue
 			}
 			return

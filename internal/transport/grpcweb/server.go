@@ -204,7 +204,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	accepted = true
 	body, err = s.rt.Plugins().OnMessage(sess, body)
 	if err != nil {
-		if err == core.ErrPluginDrop {
+		if errors.Is(err, core.ErrPluginDrop) {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -315,7 +315,7 @@ func (s *Server) readWebSocketLoop(sess *webSocketSession) {
 		sess.touch()
 		payload, err = s.rt.Plugins().OnMessage(sess, payload)
 		if err != nil {
-			if err == core.ErrPluginDrop {
+			if errors.Is(err, core.ErrPluginDrop) {
 				continue
 			}
 			return

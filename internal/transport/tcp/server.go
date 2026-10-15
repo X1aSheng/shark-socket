@@ -3,6 +3,7 @@ package tcp
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -201,14 +202,14 @@ func (s *Server) handleConn(conn net.Conn) {
 	sess.readLoop(func(payload []byte) {
 		payload, err := s.rt.Plugins().OnMessage(sess, payload)
 		if err != nil {
-			if err == core.ErrPluginDrop {
+			if errors.Is(err, core.ErrPluginDrop) {
 				return
 			}
 			_ = sess.Close(context.Background())
 			return
 		}
 		if s.pool != nil {
-			if err := s.pool.submit(sess, payload); err != nil && err == core.ErrWriteQueueFull {
+			if err := s.pool.submit(sess, payload); err != nil && errors.Is(err, core.ErrWriteQueueFull) {
 				s.rt.Metrics().IncCounter("tcp_task_queue_full_total")
 			}
 		}

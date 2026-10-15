@@ -2,6 +2,7 @@ package udp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -167,14 +168,24 @@ func (s *Server) SessionCount() int {
 
 func (s *Server) dtlsAcceptLoop(ctx context.Context) {
 	defer s.wg.Done()
+	// A listener that keeps failing immediately (EMFILE, a listener left in a
+	// bad state, a peer flooding malformed handshakes) would spin this loop at
+	// 100% CPU. Back off between consecutive failures.
+	backoff := shared.NewBackoff(shared.DefaultBackoffMin, shared.DefaultBackoffMax)
 	for {
 		conn, err := s.dtlsLn.Accept()
 		if err != nil {
-			if s.closed.Load() || ctx.Err() != nil {
+			// A closed listener (including one closed behind our back) is
+			// terminal: retrying can never succeed.
+			if s.closed.Load() || ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
+				return
+			}
+			if !backoff.Wait(ctx) {
 				return
 			}
 			continue
 		}
+		backoff.Reset()
 		// Enforce the configured client-authentication policy ourselves:
 		// pion/dtls v3 does not reliably apply it on every handshake path.
 		// The peer cannot exchange application data before Accept returns, so
@@ -250,7 +261,7 @@ func (s *Server) handleDTLSConn(ctx context.Context, conn net.Conn) {
 		payload := append([]byte(nil), buf[:n]...)
 		payload, err = s.rt.Plugins().OnMessage(sess, payload)
 		if err != nil {
-			if err != core.ErrPluginDrop {
+			if !errors.Is(err, core.ErrPluginDrop) {
 				_ = sess.Close(context.Background())
 			}
 			continue
@@ -267,14 +278,24 @@ func (s *Server) handleDTLSConn(ctx context.Context, conn net.Conn) {
 func (s *Server) readLoop(ctx context.Context) {
 	defer s.wg.Done()
 	buf := make([]byte, s.opts.MaxDatagram)
+	// A socket that returns an error without the server being closed (e.g. an
+	// out-of-band close, a transient OS-level failure) must not be retried in a
+	// tight loop; back off like the accept loops do.
+	backoff := shared.NewBackoff(shared.DefaultBackoffMin, shared.DefaultBackoffMax)
 	for {
 		n, addr, err := s.conn.ReadFromUDP(buf)
 		if err != nil {
-			if s.closed.Load() || ctx.Err() != nil {
+			// A closed socket (including one closed behind our back) is
+			// terminal: retrying can never succeed.
+			if s.closed.Load() || ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
+				return
+			}
+			if !backoff.Wait(ctx) {
 				return
 			}
 			continue
 		}
+		backoff.Reset()
 		payload := append([]byte(nil), buf[:n]...)
 		sess := s.getOrCreateSession(addr)
 		if sess == nil {
@@ -283,7 +304,7 @@ func (s *Server) readLoop(ctx context.Context) {
 		sess.touch()
 		payload, err = s.rt.Plugins().OnMessage(sess, payload)
 		if err != nil {
-			if err != core.ErrPluginDrop {
+			if !errors.Is(err, core.ErrPluginDrop) {
 				// Remove the session so the peer is not wedged to a closed
 				// session. Plain UDP has no per-peer conn whose close would
 				// unblock a read loop, so cleanup must happen here.
