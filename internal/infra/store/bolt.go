@@ -1,14 +1,23 @@
 package store
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
 	bolt "go.etcd.io/bbolt"
 )
+
+// defaultBoltOpenTimeout bounds how long NewBoltStore waits for the database
+// file lock. bbolt's zero-value Options.Timeout means "wait forever", so a
+// rolling restart that briefly overlaps two processes (or an accidentally
+// started second instance) would hang the new process before it can log or
+// report itself unhealthy.
+const defaultBoltOpenTimeout = 3 * time.Second
 
 // BoltStore implements Store backed by a BoltDB file.
 type BoltStore struct {
@@ -17,13 +26,28 @@ type BoltStore struct {
 	closed bool
 }
 
-// NewBoltStore opens or creates a BoltDB database at the given path.
+// NewBoltStore opens or creates a BoltDB database at the given path. It fails
+// with bolt.ErrTimeout instead of blocking if another process holds the file
+// lock.
 func NewBoltStore(path string) (*BoltStore, error) {
+	return NewBoltStoreWithTimeout(path, defaultBoltOpenTimeout)
+}
+
+// NewBoltStoreWithTimeout is NewBoltStore with an explicit lock-acquisition
+// timeout. A timeout <= 0 selects defaultBoltOpenTimeout; the lock is never
+// waited for without a bound.
+func NewBoltStoreWithTimeout(path string, openTimeout time.Duration) (*BoltStore, error) {
+	if openTimeout <= 0 {
+		openTimeout = defaultBoltOpenTimeout
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("bolt: mkdir: %w", err)
 	}
-	db, err := bolt.Open(path, 0o600, nil)
+	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: openTimeout})
 	if err != nil {
+		if errors.Is(err, bolt.ErrTimeout) {
+			return nil, fmt.Errorf("bolt: open %s: database locked by another process: %w", path, err)
+		}
 		return nil, fmt.Errorf("bolt: open: %w", err)
 	}
 	return &BoltStore{db: db}, nil

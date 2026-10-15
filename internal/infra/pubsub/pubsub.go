@@ -51,10 +51,13 @@ func (p *PubSub) Publish(topic string, data []byte) int {
 	p.mu.RLock()
 	// Hold the read lock during iteration + send to prevent cancel()
 	// from closing a channel while we're sending to it.
-	msg := Message{Topic: topic, Data: append([]byte(nil), data...)}
 	delivered := 0
 	dropped := 0
 	for _, sub := range p.subs[topic] {
+		// Each subscriber receives its own copy. Sharing one backing array
+		// would let a subscriber that mutates the message it received corrupt
+		// what every other subscriber (and the original caller) observes.
+		msg := Message{Topic: topic, Data: append([]byte(nil), data...)}
 		select {
 		case sub <- msg:
 			delivered++

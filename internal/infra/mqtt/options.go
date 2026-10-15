@@ -94,6 +94,12 @@ func pahoOptions(opts Options) *paho.ClientOptions {
 	po.SetConnectTimeout(opts.ConnectTimeout)
 	po.SetAutoReconnect(true)
 	po.SetCleanSession(true)
+	// Start subscribes exactly once, so without ResumeSubs a broker restart or
+	// network blip leaves the adapter reporting "connected" while no
+	// subscription exists any more: messages are dropped silently. ResumeSubs
+	// makes paho re-establish the subscriptions registered through this client
+	// on every reconnect.
+	po.SetResumeSubs(true)
 	if opts.Username != "" {
 		po.SetUsername(opts.Username)
 	}

@@ -311,8 +311,19 @@ func loadServerTLSConfig(proto ProtocolConfig, nextProtos ...string) (*tls.Confi
 		}
 		cfg.ClientAuth = clientAuth
 	}
-	if pool := cache.GetClientCAPool(); pool != nil {
-		cfg.ClientCAs = pool
+	if cache.GetClientCAPool() != nil {
+		// Resolve the client CA pool on every handshake. tls.Config.ClientCAs
+		// is read once at handshake time from the config value captured here,
+		// so assigning the pool directly would pin the CA loaded at startup
+		// and a rotated CA file (the watcher calls cache.Load()) would have no
+		// effect until the process restarted.
+		cfg.GetConfigForClient = func(*tls.ClientHelloInfo) (*tls.Config, error) {
+			next := cfg.Clone()
+			// The clone must not re-enter this hook.
+			next.GetConfigForClient = nil
+			next.ClientCAs = cache.GetClientCAPool()
+			return next, nil
+		}
 	}
 	return cfg, cache, nil
 }

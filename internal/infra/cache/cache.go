@@ -64,6 +64,14 @@ func (m *Memory) StartSweeper(ctx context.Context, interval time.Duration) {
 }
 
 func (m *Memory) Set(key string, value []byte, ttl time.Duration) {
+	if ttl < 0 {
+		// A negative TTL means the deadline has already passed (callers derive
+		// TTLs from deadlines via time.Until). Storing it as a never-expiring
+		// entry would both leak memory and serve stale data, so drop any
+		// existing value instead.
+		m.Delete(key)
+		return
+	}
 	item := entry{value: append([]byte(nil), value...)}
 	if ttl > 0 {
 		item.expiresAt = time.Now().Add(ttl)

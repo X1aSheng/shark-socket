@@ -60,7 +60,9 @@ func (a *Adapter) Start(ctx context.Context) error {
 	if opts.Topic != "" && opts.Handler != nil {
 		h := opts.Handler
 		token := client.Subscribe(opts.Topic, opts.QoS, func(_ paho.Client, msg paho.Message) {
-			h(msg.Topic(), msg.Payload())
+			// paho recycles the buffer backing msg.Payload() once this
+			// callback returns, so hand the user a copy that stays valid.
+			h(msg.Topic(), append([]byte(nil), msg.Payload()...))
 		})
 		if err := waitToken(ctx, token, opts.ConnectTimeout); err != nil {
 			client.Disconnect(100)
@@ -114,12 +116,20 @@ func (a *Adapter) Stop(ctx context.Context) error {
 // hard timeout, so an already-cancelled Start aborts the dial instead of
 // blocking until the connect timeout elapses.
 func waitToken(ctx context.Context, token paho.Token, timeout time.Duration) error {
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	// time.After would keep its timer alive until it fires even when the token
+	// completes first; with frequent Start/Stop churn that accumulates orphan
+	// runtime timers, so stop it explicitly.
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	select {
 	case <-token.Done():
 		return token.Error()
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(timeout):
+	case <-timer.C:
 		return fmt.Errorf("operation timed out")
 	}
 }
@@ -143,6 +153,15 @@ func (a *Adapter) Publish(topic string, qos byte, payload []byte) error {
 }
 
 func (a *Adapter) Subscribe(topic string, qos byte, handler MessageHandler) error {
+	// Validate before touching the client: a nil handler would panic inside
+	// paho's own delivery goroutine, which no recover in this package covers,
+	// and an empty topic can never match a broker subscription.
+	if handler == nil {
+		return fmt.Errorf("mqtt subscribe: handler is required")
+	}
+	if topic == "" {
+		return fmt.Errorf("mqtt subscribe: topic is required")
+	}
 	a.mu.Lock()
 	client := a.client
 	a.mu.Unlock()
@@ -150,7 +169,7 @@ func (a *Adapter) Subscribe(topic string, qos byte, handler MessageHandler) erro
 		return fmt.Errorf("mqtt not connected")
 	}
 	token := client.Subscribe(topic, qos, func(_ paho.Client, msg paho.Message) {
-		handler(msg.Topic(), msg.Payload())
+		handler(msg.Topic(), append([]byte(nil), msg.Payload()...))
 	})
 	if !token.WaitTimeout(a.opts.ConnectTimeout) {
 		return fmt.Errorf("mqtt subscribe timeout")

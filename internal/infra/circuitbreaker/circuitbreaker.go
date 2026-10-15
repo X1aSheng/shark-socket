@@ -65,10 +65,17 @@ func (b *Breaker) Allow() error {
 
 func (b *Breaker) Success() {
 	b.mu.Lock()
+	defer b.mu.Unlock()
+	// A success reported while Open is stale: the request was admitted before
+	// the breaker tripped. Honouring it would close the breaker immediately
+	// and skip the whole open window, so any in-flight request could defeat
+	// the protection. Only a probe admitted through HalfOpen closes it.
+	if b.state == Open {
+		return
+	}
 	b.failures = 0
 	b.state = Closed
 	b.halfOpenActive = false
-	b.mu.Unlock()
 }
 
 func (b *Breaker) Failure() {
