@@ -60,13 +60,13 @@
 | Layer 0: api/                                                        |
 |   对外门面层.导出类型别名,工厂函数,Option 透传,Codec 接口定义   |
 +---------------------------------------------------------------------+
-| Layer 1: cmd/ + internal/application/                                |
+| Layer 1: cmd/ + internal/app/                                        |
 |   可运行入口 + 应用装配层                                           |
 |   配置加载(JSON + env)-> Gateway 装配 -> 健康 / 指标服务 -> 信号处理 |
-|   配置验证在 application 层统一执行,不在 Start() 中执行            |
+|   配置验证在 app 层统一执行,不在 Start() 中执行                     |
 +---------------------------------------------------------------------+
 | Layer 2: internal/runtime/                                           |
-|   运行时层:Gateway,SessionManager,PluginRunner,Runtime 容器     |
+|   运行时层:Gateway,SessionManager,PluginChain,Runtime 容器       |
 +---------------------------------------------------------------------+
 | Layer 3: internal/transport/ + internal/plugin/ + internal/protocol/ |
 |   传输协议层:TCP,UDP,HTTP,WebSocket,CoAP,QUIC,gRPC-Web       |
@@ -76,11 +76,11 @@
 | Layer 4: internal/core/                                              |
 |   稳定契约层:Protocol,Session,Server,Runtime,Plugin,Codec      |
 |   可观测接口:Logger,Metrics,Tracer                               |
-|   错误体系:完整错误变量 + 分类判断函数                             |
+|   错误体系:失败信号哨兵(13 个)+ 插件控制错误(2 个)                |
 +---------------------------------------------------------------------+
-| Layer 5: internal/infrastructure/                                    |
-|   基础设施层:cache,store,pubsub,circuitbreaker,observability   |
-|   P2 引入:bufferpool,timewheel,logsampler                        |
+| Layer 5: internal/infra/                                             |
+|   基础设施层:cache,store,pubsub,circuitbreaker,mqtt,tlsutil        |
+|   observability:logger,metrics,prometheus,otel                 |
 +---------------------------------------------------------------------+
 ```
 
@@ -126,185 +126,111 @@ core + infrastructure
 ```
 shark-socket/
 +-- api/
-|   +-- api.go                          # 统一对外门面:类型别名,工厂函数,Codec 接口
+|   +-- api.go                          # 统一对外门面:类型别名,工厂函数,Option 透传
 |
 +-- cmd/
-|   +-- server/
+|   +-- shark-socket/
 |       +-- main.go                     # 可运行入口:加载配置,启动 App,处理信号
 |
 +-- internal/
-|   +-- core/
-|   |   +-- protocol.go                 # Protocol 类型 + 内置常量
-|   |   +-- session.go                  # Session 接口 + SessionState + SessionManager 接口
+|   +-- core/                           # 稳定契约层
+|   |   +-- types.go                    # Protocol 类型 + 常量 + SessionState
+|   |   +-- session.go                  # Session 接口 + SessionManager 接口
 |   |   +-- server.go                   # Server 接口 + RuntimeConfigurable + StagedServer
-|   |   +-- runtime.go                  # Runtime 接口(Sessions/Plugins/Logger/Metrics/Tracer)
-|   |   +-- message.go                  # Message 结构体(SessionID/Protocol/Payload/Meta)
-|   |   +-- handler.go                  # Handler 函数类型 + TypedHandler + AdaptTyped
+|   |   +-- message.go                  # Message + Handler / TypedHandler / AdaptTyped
 |   |   +-- plugin.go                   # Plugin 接口 + PluginRunner 接口 + 控制错误
-|   |   +-- codec.go                    # Codec[M] 泛型接口 + 内置 RawCodec / JSONCodec
-|   |   +-- errors.go                   # 完整错误体系 + 分类判断函数
-|   |   +-- observability.go            # Logger / Metrics / Tracer 接口定义
+|   |   +-- errors.go                   # 失败信号哨兵(13 个)
+|   |   +-- observability.go            # Logger / Metrics / Tracer / Span + StageTimeouts
 |   |
-|   +-- runtime/
-|   |   +-- gateway.go                  # Gateway:多协议编排,分阶段关闭,Runtime 注入
-|   |   +-- gateway_options.go          # GatewayOption Functional Options
-|   |   +-- session_manager.go          # SessionManager 实现:单锁(P0)-> 分片锁(P2)
-|   |   +-- plugin_runner.go            # PluginRunner:排序,执行,panic 隔离,指标
-|   |   +-- runtime_impl.go             # DefaultRuntime 实现 Runtime 接口
-|   |   +-- worker_pool.go              # WorkerPool:固定 + 弹性临时 Worker,四种队列策略
+|   +-- runtime/                        # 运行时层
+|   |   +-- gateway.go                  # Gateway:多协议编排,三阶段关闭,插件启停编排
+|   |   +-- options.go                  # GatewayOption + gatewayConfig + 阶段超时默认值
+|   |   +-- session_manager.go          # SessionManager 实现(单锁)
+|   |   +-- session_metrics.go          # metricSessionManager:会话指标装饰器
+|   |   +-- plugin_chain.go             # PluginChain:copy-on-write 排序,执行,panic 隔离,启停
+|   |   +-- runtime.go                  # Runtime:core.Runtime 的实现
+|   |   +-- runtime_options.go          # RuntimeOption(非导出,Gateway 内部使用)
 |   |
-|   +-- transport/
-|   |   +-- tcp/
-|   |   |   +-- server.go               # TCP Server:accept + Framer + WorkerPool + StagedServer
-|   |   |   +-- session.go              # TCPSession:写队列 + drain + 6 步 Close
-|   |   |   +-- client.go               # TCP Client:自动重连 + 指数退避
-|   |   |   +-- framer.go               # Framer 接口 + 4 种内置实现
-|   |   |   +-- options.go              # TCPOption Functional Options
-|   |   +-- udp/
-|   |   |   +-- server.go               # UDP Server:单 conn + 伪会话 + sweep
-|   |   |   +-- session.go              # UDPSession:伪会话,直接 WriteToUDP
-|   |   |   +-- options.go
-|   |   +-- http/
-|   |   |   +-- server.go               # HTTP Server:Mode A(轻量)+ Mode B(Session+Plugin)
-|   |   |   +-- session.go              # HTTPSession:per-request 临时会话
-|   |   |   +-- options.go
-|   |   +-- websocket/
-|   |   |   +-- server.go               # WS Server:Upgrade + pingLoop + StagedServer
-|   |   |   +-- session.go              # WSSession:writeMutex + Ping/Pong
-|   |   |   +-- options.go
-|   |   +-- coap/
-|   |   |   +-- server.go               # CoAP Server:UDP 基础 + ACK + 去重
-|   |   |   +-- session.go              # CoAP Session:伪会话 + pendingACK + msgCache
-|   |   |   +-- message.go              # CoAP 帧解析 + marshal
-|   |   |   +-- framer.go               # CoAP Framer(UDP 数据报边界)
-|   |   |   +-- options.go
-|   |   +-- quic/
-|   |   |   +-- server.go               # QUIC Server:强制 TLS + stream 映射 Session
-|   |   |   +-- session.go              # QUICSession:写队列 + stream 生命周期
-|   |   |   +-- options.go
-|   |   +-- grpcweb/
-|   |       +-- server.go               # gRPC-Web:Direct HTTP + WebSocket 双模式
-|   |       +-- session.go              # gRPC-Web Session(WebSocket 模式)
-|   |       +-- frame.go                # gRPC-Web 数据帧解析与序列化
-|   |       +-- options.go
+|   +-- transport/                      # 传输层,每协议一个包
+|   |   +-- tcp/                        # server / session / client / framer / policy / options
+|   |   +-- udp/                        # server / session / options
+|   |   +-- http/                       # server / session / options
+|   |   +-- websocket/                  # server / session / options
+|   |   +-- coap/                       # server / session / message / observe / options
+|   |   +-- quic/                       # server / session / options
+|   |   +-- grpcweb/                    # server / session / websocket_session / framing / options
+|   |   +-- shared/                     # 传输层共享组件(不被 runtime 反向依赖)
+|   |       +-- worker_pool.go          # WorkerPool:固定 worker + 三种队列满策略(仅 TCP 使用)
+|   |       +-- acceptor.go             # Acceptor:并发上限 + 接受速率令牌桶
+|   |       +-- backoff.go              # Backoff:accept / read 循环失败退避
+|   |       +-- handler.go              # CallHandler:handler panic 隔离
+|   |       +-- timeout.go              # IsTimeout:net.Error 超时判定
+|   |       +-- dtls.go                 # DTLS 配置桥接 + 客户端证书强制校验
 |   |
 |   +-- protocol/
-|   |   +-- lwm2m/
-|   |       +-- server.go               # LwM2M Server:注册表 + Read/Write/Execute
-|   |       +-- client.go               # LwM2M Client:Register/Update/Deregister
-|   |       +-- model.go                # ObjectPath / ObjectLink / Resource / Registration
-|   |       +-- responder.go            # CoAP 文本命令 responder(CoAP 模式接入)
-|   |       +-- constants.go            # Content-Format 常量
-|   |       +-- options.go
+|   |   +-- lwm2m/                      # server / client / model / coap / codec_tlv
 |   |
 |   +-- plugin/
-|   |   +-- blacklist.go                # IP/CIDR 黑名单(精确 O(1) + CIDR + Cache 双查)
-|   |   +-- ratelimit.go                # 令牌桶限流(per-IP + 全局双层)
-|   |   +-- heartbeat.go                # 心跳超时清理(P0:ticker 扫描;P2:时间轮)
-|   |   +-- persistence.go              # 异步持久化(Channel 缓冲 + 批量写入 + CircuitBreaker)
-|   |   +-- autoban.go                  # 自动封禁(触发限流/协议错误 -> 加入黑名单)
-|   |   +-- slowhandler.go              # 慢处理日志(记录超时 Handler 调用)
-|   |   +-- cluster.go                  # 跨节点路由(PubSub 广播 + Cache 会话目录)
-|   |   +-- options.go                  # 插件通用 Options
+|   |   +-- blacklist.go                # IP/CIDR 黑名单
+|   |   +-- ratelimit.go                # 令牌桶限流
+|   |   +-- heartbeat.go                # 心跳超时清理
+|   |   +-- autoban.go                  # 自动封禁
+|   |   +-- persistence.go              # 异步持久化
+|   |   +-- cluster.go                  # 跨节点路由
+|   |   +-- slow_handler.go             # 慢处理日志
+|   |   +-- lifecycle.go                # lifecycle:插件 Start/Stop 周期的可重入串行器
 |   |
-|   +-- application/
-|   |   +-- app.go                      # App:配置 -> Gateway + Server 装配 + 健康 / 指标服务
-|   |   +-- config.go                   # Config 结构体:JSON 反序列化 + env 覆盖 + 统一验证
-|   |   +-- options.go                  # AppOption Functional Options
+|   +-- app/                            # 应用装配层
+|   |   +-- app.go                      # App:装配 Gateway + Server + 健康 / 指标服务
+|   |   +-- config.go                   # Config:JSON + env 覆盖 + 统一验证 + TLS 构造
 |   |
-|   +-- infrastructure/
-|       +-- cache/
-|       |   +-- cache.go                # Cache 接口 + MemoryCache(TTL 惰性过期)
-|       +-- store/
-|       |   +-- store.go                # Store 接口 + MemoryStore(bucket/key)
-|       +-- pubsub/
-|       |   +-- pubsub.go               # PubSub 接口 + Subscription + ChannelPubSub
-|       +-- circuitbreaker/
-|       |   +-- circuitbreaker.go       # CircuitBreaker:Closed / Open / HalfOpen
-|       +-- observability/
-|       |   +-- logger.go               # slogLogger(JSON)+ MemoryLogger + NopLogger
-|       |   +-- metrics.go              # PrometheusMetrics(静态预注册)+ MemoryMetrics
-|       |   +-- tracer.go               # OpenTelemetryTracer adapter + NoopTracer
-|       +-- bufferpool/
-|       |   +-- pool.go                 # 六级 BufferPool(P2 启用)
-|       +-- timewheel/
-|       |   +-- timewheel.go            # 时间轮(P2 启用,替换 heartbeat ticker 扫描)
-|       +-- logsampler/
-|           +-- sampler.go              # 高频日志采样器(P2 启用)
+|   +-- infra/                          # 基础设施层
+|       +-- cache/                      # cache.go:Cache 接口 + MemoryCache
+|       +-- store/                      # store / bolt / message_log / session_store
+|       +-- pubsub/                     # pubsub.go:PubSub 接口 + ChannelPubSub
+|       +-- circuitbreaker/             # circuitbreaker.go:Closed / Open / HalfOpen
+|       +-- mqtt/                       # adapter / options:MQTT 3.1.1 / 5.0 客户端适配
+|       +-- tlsutil/                    # cert_cache / watcher:证书与客户端 CA 热加载
+|       +-- observability/              # logger / metrics / prometheus / otel
 |
 +-- tests/
-|   +-- unit/                           # 包级单元测试(补充 internal 包内测试)
-|   +-- integration/                    # 跨包端到端集成测试
-|   +-- defects/                        # 已修复缺陷的最小复现回归测试
-|   +-- benchmark/                      # 吞吐,延迟,内存基准测试
+|   +-- cross_protocol_test.go          # 跨协议端到端测试
+|   +-- benchmark/                      # 吞吐 / 延迟 / 内存基准
+|   +-- deploy/                         # 部署资产语义验证
+|   +-- stress/                         # 多协议压测
 |
-+-- examples/
-|   +-- basic_tcp/main.go
-|   +-- basic_udp/main.go
-|   +-- basic_http/main.go
-|   +-- basic_websocket/main.go
-|   +-- basic_coap/main.go
-|   +-- basic_lwm2m/main.go
-|   +-- basic_quic/main.go
-|   +-- multi_protocol/main.go
-|   +-- tls_server/main.go
-|   +-- typed_handler/main.go           # Codec + AdaptTyped 类型化 Handler 示例
-|   +-- custom_plugin/main.go
-|   +-- graceful_shutdown/main.go
++-- examples/                           # basic_tcp / basic_udp / basic_coap / basic_lwm2m
+|                                       # basic_websocket / tls_server / typed_handler
+|                                       # config / custom_plugin / graceful_shutdown
+|                                       # multi-protocol / mqtt-bridge
 |
-+-- scripts/
-|   +-- run_tests.go                    # 跨平台脚本化测试入口(unit/race/cover/all 模式)
-|   +-- run_tests.go (via -mode deploy)              # 部署资产语义验证
-|   +-- build.sh
++-- scripts/                            # run_tests / run_stress / run_benchmarks
+|                                       # parse_test_log
 |
 +-- deploy/
-|   +-- docker/
-|   |   +-- Dockerfile                  # 多阶段构建,支持 GOPROXY build arg
-|   |   +-- docker-compose.yml
-|   |   +-- .dockerignore
-|   +-- kubernetes/
-|   |   +-- application/
-|   |   |   +-- deployment.yaml
-|   |   |   +-- service.yaml
-|   |   |   +-- kustomization.yaml
-|   |   +-- monitoring/
-|   |   |   +-- servicemonitor.yaml
-|   |   |   +-- kustomization.yaml
-|   |   +-- kustomization.yaml          # 根聚合入口
-|   +-- helm/
-|       +-- shark-socket/
-|           +-- Chart.yaml
-|           +-- values.yaml
-|           +-- templates/
-|               +-- deployment.yaml
-|               +-- service.yaml
-|               +-- configmap.yaml
-|               +-- serviceaccount.yaml
-|               +-- _helpers.tpl
+|   +-- docker/                         # Dockerfile / docker-compose.yml / mosquitto.conf
+|   +-- k8s/                            # namespace / deployment / service / configmap / hpa
+|   |                                   # pdb / networkpolicy / serviceaccount / kustomization
+|   +-- helm/shark-socket/              # Chart.yaml / values.yaml / templates/
 |
 +-- docs/
-|   +-- ARCHITECTURE.md                 # 本文档
-|   +-- CONFIGURATION.md                # 配置字段完整参考
-|   +-- TEST-STRATEGY.md                # 测试层次,回归原则,覆盖目标
-|   +-- PROTOCOL-GUIDE.md               # 各协议接入指南
-|   +-- adr/
-|   |   +-- ADR-001-session-raw-bytes.md
-|   |   +-- ADR-002-gateway-owns-runtime.md
-|   |   +-- ADR-003-staged-shutdown.md
-|   |   +-- ADR-004-plugin-panic-isolation.md
-|   |   +-- ADR-005-codec-adaptation-layer.md
-|   |   +-- ADR-006-benchmark-driven-optimization.md
-|   |   +-- ADR-007-build-proxy-configurable.md
-|   +-- PROJECT-REVIEW-*.md             # 云端实测验证记录
+|   +-- architecture/                   # ARCHITECTURE / CONTRACTS / GATEWAY / LIFECYCLE
+|   |                                   # PLUGIN / TRANSPORT / PROTOCOL / ERRORS / SECURITY
+|   |                                   # OBSERVABILITY / DEPLOYMENT / TROUBLESHOOTING
+|   +-- guides/                         # Architecture.md / EXAMPLES.md / MQTT-INTEGRATION.md
+|   |                                   # CONFIGURATION-*.md / TEST-STRATEGY-*.md
+|   +-- decisions/                      # ADR-001 .. ADR-011
+|   +-- planning/                       # PROJECT-PLAN-*.md / IMPLEMENTATION-GOALS-*.md
+|   +-- reports/                        # PROJECT-REVIEW-*.md / DEPLOYMENT-VALIDATION-*.md
 |
++-- .github/workflows/ci.yml            # 单一 CI 工作流(Ubuntu / Windows 双矩阵)
 +-- go.mod                              # module shark-socket, go 1.26
 +-- go.sum
-+-- .github/
-|   +-- workflows/
-|       +-- ci-ubuntu.yml
-|       +-- ci-windows.yml
 +-- README.md
++-- README.zh-CN.md
++-- CHANGELOG.md
 ```
+
 
 ---
 
@@ -521,7 +447,8 @@ type Runtime interface {
 **使用规则:**
 
 - 协议层只依赖 `Runtime` 接口,不依赖具体实现.
-- 单独启动协议服务时(测试场景),可使用 `DefaultRuntime`(空实现).
+- 单独启动协议服务时(测试场景),`runtime.NewRuntime(nil, nil)` 即可:两个参数为 nil 时
+  分别退化为 `NewSessionManager()` 与 `NewPluginChain()`,可观测组件退化为 Nop 实现.
 - 通过 Gateway 启动时,必须接收 Gateway 注入的 Runtime.
 - 各协议实际使用的 Runtime 子集应在实现注释中标注(便于评估后续拆分需要).
 
@@ -549,15 +476,20 @@ type Plugin interface {
 // BasePlugin 提供空实现,自定义插件只需覆盖关心的方法.
 type BasePlugin struct{}
 
-// PluginRunner 是插件链运行器接口.
+// PluginRunner 是插件链执行契约(不含注册:注册属于具体实现的装配职责).
 type PluginRunner interface {
-    // 注册插件,重复 Name 后注册覆盖(记录 Warn 日志).
-    Register(Plugin) error
-
     // 执行入口:以下方法在热路径调用,panic 必须隔离.
-    RunAccept(Session) error
-    RunMessage(Session, []byte) ([]byte, error)
-    RunClose(Session)
+    OnAccept(Session) error
+    OnMessage(Session, []byte) ([]byte, error)
+    OnClose(Session)
+
+    // StartAll 按优先级正序启动所有 LifecyclePlugin,失败时回滚已启动者.
+    // Gateway.Start 在任何 Server 启动之前调用.
+    StartAll() error
+
+    // StopAll 按优先级逆序停止所有 LifecyclePlugin,汇总各自失败.
+    // Gateway.Stop 在全部会话关闭之后调用.重复或未配对调用是 no-op.
+    StopAll() error
 }
 
 // 特殊控制错误(非业务错误,控制插件链行为)
@@ -567,30 +499,35 @@ var (
 )
 ```
 
+注册由具体类型 `internal/runtime.PluginChain` 的 `Append(plugins ...Plugin)` 完成,
+不在接口内:接口描述"如何执行",注册是装配阶段细节.
+
 **PluginRunner 执行规则:**
 
 ```
-RunAccept(按 Priority 升序):
-  -> ErrPluginBlock:中断 + Close(sess) + 记录 metrics
-  -> 普通 error + stopOnError=true:中断 + Close(sess)
-  -> 普通 error + stopOnError=false:记录日志 + 继续
-  -> panic:recover + 记录 error + 继续或中断(可配置)
+OnAccept(按 Priority 升序):
+  -> nil:继续下一个插件
+  -> ErrPluginBlock / 普通 error:立即返回,链不继续(关闭动作由传输层执行)
+  -> panic:recover + 记录 error + 返回 ErrPluginPanic
+  任一插件返回错误时,序号在它之前且已成功执行的插件按逆序收到 OnClose
 
-RunMessage(按 Priority 升序,支持 payload 改写):
+OnMessage(按 Priority 升序,支持 payload 改写):
   data = originalPayload
   for each plugin:
     out, err = plugin.OnMessage(sess, data)
-    -> ErrPluginDrop:停止链,不调用 Handler,返回 nil
-    -> ErrPluginBlock:停止链,Close(sess),返回 error
-    -> 普通 error:按策略处理
-    -> nil:data = out(允许 plugin 改写 payload)
+    -> nil:data = out(允许 plugin 改写 payload),继续
+    -> ErrPluginDrop:停止链,不调用 Handler,返回 nil + err
+    -> ErrPluginBlock / 普通 error:停止链,返回 nil + err
+    -> panic:返回 nil + ErrPluginPanic
   return data, nil
 
-RunClose(按 Priority 逆序,不可中断):
+OnClose(按 Priority 逆序,不可中断):
   for each plugin(逆序):
-    defer-style:即使 panic 也继续执行后续插件
-    plugin.OnClose(sess)
+    即使 panic 也继续执行后续插件(safeClose 只记日志,不改控制流)
 ```
+
+**没有 `stopOnError` 开关:** 错误一律终止链并上抛,由传输层决定关闭会话还是只记录.
+行为只有一种,便于推理与测试.
 
 ### 4.8 Codec 接口(codec.go)
 
@@ -608,12 +545,12 @@ type Handler func(Session, Message) error
 // TypedHandler 函数类型(类型化层,通过 AdaptTyped 适配为 Handler)
 type TypedHandler[M any] func(Session, M) error
 
-// AdaptTyped 将 TypedHandler[M] 包装为 Handler,解码失败返回 ErrDecodeFailure.
+// AdaptTyped 将 TypedHandler[M] 包装为 Handler;codec.Decode 的错误原样返回.
 func AdaptTyped[M any](h TypedHandler[M], codec Codec[M]) Handler {
     return func(s Session, msg Message) error {
         typed, err := codec.Decode(msg.Payload)
         if err != nil {
-            return fmt.Errorf("%w: %v", ErrDecodeFailure, err)
+            return err
         }
         return h(s, typed)
     }
@@ -626,124 +563,62 @@ type JSONCodec[M any] struct{} // encoding/json
 
 ### 4.9 错误体系(errors.go)
 
-**完整错误变量:**
+**设计取向:** 错误变量只是"失败信号"哨兵,供调用方用 `errors.Is` 判定;框架不提供
+`IsRetryable` / `IsFatal` 之类的分类包装函数.能否重试由调用场景决定,不由错误类型决定.
+完整说明见 `docs/architecture/ERRORS.md`.
+
+**失败信号哨兵(13 个):**
 
 ```go
-// 会话错误
+// 关闭与生命周期
 var (
-    ErrSessionNotFound  = errors.New("shark: session not found")
-    ErrSessionClosed    = errors.New("shark: session closed")
-    ErrSessionCapacity  = errors.New("shark: session manager at capacity")
+    ErrClosed        = errors.New("shark: closed")
+    ErrServerClosed  = errors.New("shark: server closed")
+    ErrSessionClosed = errors.New("shark: session closed")
 )
 
-// 消息错误
+// 参数与注册
 var (
-    ErrMessageTooLarge  = errors.New("shark: message too large")
-    ErrFrameTooLarge    = errors.New("shark: frame too large")
-    ErrInvalidFrame     = errors.New("shark: invalid frame")
-    ErrWriteQueueFull   = errors.New("shark: write queue full")
-    ErrInvalidMessage   = errors.New("shark: invalid message")
+    ErrInvalidArgument   = errors.New("shark: invalid argument")
+    ErrDuplicateProtocol = errors.New("shark: duplicate protocol")
+    ErrDuplicateSession  = errors.New("shark: duplicate session")
+    ErrNoServers         = errors.New("shark: no servers registered")
+    ErrSessionCapacity   = errors.New("shark: session manager at capacity")
 )
 
-// 编解码错误
+// 消息与背压
 var (
-    ErrEncodeFailure    = errors.New("shark: encode failure")
-    ErrDecodeFailure    = errors.New("shark: decode failure")
+    ErrWriteQueueFull = errors.New("shark: write queue full")
+    ErrFrameTooLarge  = errors.New("shark: frame too large")
 )
 
-// 超时错误
+// 能力与 panic
 var (
-    ErrReadTimeout      = errors.New("shark: read timeout")
-    ErrWriteTimeout     = errors.New("shark: write timeout")
-    ErrIdleTimeout      = errors.New("shark: idle timeout")
-    ErrHeartbeatTimeout = errors.New("shark: heartbeat timeout")
-    ErrDrainTimeout     = errors.New("shark: drain timeout")
-)
-
-// 服务错误
-var (
-    ErrServerClosed     = errors.New("shark: server closed")
-    ErrServerNotStarted = errors.New("shark: server not started")
-    ErrListenFailed     = errors.New("shark: listen failed")
-)
-
-// 插件控制(非业务错误)
-var (
-    ErrPluginDrop       = errors.New("shark: plugin drop message")
-    ErrPluginBlock      = errors.New("shark: plugin block session")
-    ErrPluginDuplicate  = errors.New("shark: plugin duplicate name")
-)
-
-// 安全错误
-var (
-    ErrRateLimited      = errors.New("shark: rate limited")
-    ErrBlacklisted      = errors.New("shark: ip blacklisted")
-    ErrAutoBanned       = errors.New("shark: auto banned")
-)
-
-// 协议错误
-var (
-    ErrCoAPInvalidMessage   = errors.New("shark: coap invalid message")
-    ErrGRPCWebMalformedFrame = errors.New("shark: grpc-web malformed frame")
-)
-
-// 网关错误
-var (
-    ErrNoServerRegistered   = errors.New("shark: no server registered")
-    ErrDuplicateProtocol    = errors.New("shark: duplicate protocol")
-    ErrGatewayNotStarted    = errors.New("shark: gateway not started")
-)
-
-// 基础设施错误
-var (
-    ErrCacheMiss        = errors.New("shark: cache miss")
-    ErrStoreNotFound    = errors.New("shark: store key not found")
-    ErrCircuitOpen      = errors.New("shark: circuit breaker open")
-    ErrPubSubClosed     = errors.New("shark: pubsub closed")
-)
-
-// 配置错误
-var (
-    ErrInvalidConfig    = errors.New("shark: invalid configuration")
+    ErrUnsupportedFeature = errors.New("shark: unsupported feature")
+    ErrHandlerPanic       = errors.New("shark: handler panic")
+    ErrPluginPanic        = errors.New("shark: plugin panic")
 )
 ```
 
-**分类判断函数:**
+**插件控制错误(定义在 `plugin.go`,是控制流而非失败信号):**
 
 ```go
-// IsRetryable:调用方可安全重试
-func IsRetryable(err error) bool {
-    return errors.Is(err, ErrWriteQueueFull) ||
-           errors.Is(err, ErrCircuitOpen) ||
-           errors.Is(err, ErrRateLimited)
-}
+var (
+    ErrPluginDrop  = errors.New("shark: plugin drop message")
+    ErrPluginBlock = errors.New("shark: plugin block session")
+)
+```
 
-// IsFatal:连接或服务不可继续
-func IsFatal(err error) bool {
-    return errors.Is(err, ErrSessionClosed) ||
-           errors.Is(err, ErrServerClosed) ||
-           errors.Is(err, ErrFrameTooLarge)
-}
+`ErrPluginDrop` 表示"消息已被插件消费,不要再交给 handler";`ErrPluginBlock` 表示"该会话
+应被拒绝或关闭".二者是插件链与传输层之间的约定.
 
-// IsSecurityRejection:安全策略拒绝
-func IsSecurityRejection(err error) bool {
-    return errors.Is(err, ErrBlacklisted) ||
-           errors.Is(err, ErrAutoBanned) ||
-           errors.Is(err, ErrRateLimited)
-}
+**判定方式:**
 
-// IsPluginControl:插件控制流(非业务错误)
-func IsPluginControl(err error) bool {
-    return errors.Is(err, ErrPluginDrop) ||
-           errors.Is(err, ErrPluginBlock)
-}
-
-// IsTransient:临时故障,可降级处理
-func IsTransient(err error) bool {
-    return errors.Is(err, ErrCircuitOpen) ||
-           errors.Is(err, ErrCacheMiss) ||
-           errors.Is(err, ErrPubSubClosed)
-}
+```go
+if errors.Is(err, core.ErrSessionClosed) { ... }   // 哨兵判定
+if shared.IsTimeout(err) { ... }                    // net.Error 超时判定(shared/timeout.go)
+var ne net.Error
+if errors.As(err, &ne) { ... }                      // 提取具体错误类型
 ```
 
 ### 4.10 可观测接口(observability.go)
@@ -751,30 +626,46 @@ func IsTransient(err error) bool {
 ```go
 // Logger 结构化日志接口.
 type Logger interface {
-    Debug(msg string, args ...any)
-    Info(msg string, args ...any)
-    Warn(msg string, args ...any)
-    Error(msg string, args ...any)
-    With(args ...any) Logger
-    WithContext(ctx context.Context) Logger // 提取 trace_id / request_id
+    Debug(msg string, attrs ...any)
+    Info(msg string, attrs ...any)
+    Warn(msg string, attrs ...any)
+    Error(msg string, attrs ...any)
 }
 
-// Metrics 指标抽象.
+// Metrics 指标抽象:调用方给出指标名与标签串,后端自行决定聚合方式.
 type Metrics interface {
-    Counter(name string, labels ...string) Counter
-    Gauge(name string, labels ...string) Gauge
-    Histogram(name string, labels ...string) Histogram
+    IncCounter(name string, labels ...string)
+    SetGauge(name string, value float64, labels ...string)
+    ObserveHistogram(name string, value float64, labels ...string)
 }
 
 // Tracer 追踪抽象(兼容 OpenTelemetry).
 type Tracer interface {
-    Start(ctx context.Context, name string) (context.Context, Span)
+    Start(ctx context.Context, name string, attrs ...any) (context.Context, Span)
 }
 
 type Span interface {
     End()
-    RecordError(err error)
-    SetAttribute(key string, val any)
+    RecordError(error)
+}
+```
+
+**接口比常见设计更窄,这是有意的:**
+
+- `Logger` 只有四个方法,没有 `With(args...)`,也没有 `WithContext(ctx)`.需要附加字段时把
+  键值对直接传给 `Info` / `Error` 的 `attrs`,或在业务侧自行包装一层子 logger.
+- `Metrics` 只有三个"记录"方法,没有 `Counter()/Gauge()/Histogram()` 工厂方法;后端
+  (MemoryMetrics / PrometheusMetrics)在首次写入时按 `name+labels` 建条目.
+- `Span` 只有 `End` 与 `RecordError`,没有 `SetAttribute`.
+
+**StageTimeouts(同文件):**
+
+```go
+type StageTimeouts struct {
+    StopAccept    time.Duration
+    Drain         time.Duration
+    CloseSessions time.Duration
+    Finalize      time.Duration
 }
 ```
 
@@ -792,8 +683,9 @@ msg_size, queue_depth, state, reason
 | --- | --- |
 | Debug | 帧解析细节,插件执行过程(生产关闭) |
 | Info | 连接建立/断开,Server 启动/停止 |
-| Warn | 限流触发,LRU 淘汰,重传,降级,Drain 超时 |
+| Warn | 限流触发,重传,降级,Drain 超时 |
 | Error | 异常断连,panic recover,基础设施错误 |
+
 
 ---
 
@@ -801,176 +693,165 @@ msg_size, queue_depth, state, reason
 
 ### 5.1 Gateway(gateway.go)
 
+**结构:**
+
+```go
+type Gateway struct {
+    mu        sync.RWMutex
+    startMu   sync.Mutex                   // 串行化 Start / Stop / Register
+    servers   map[core.Protocol]core.Server
+    order     []core.Protocol              // 注册顺序
+    rt        *Runtime
+    timeouts  core.StageTimeouts
+    startedAt atomic.Pointer[time.Time]
+    started   atomic.Bool
+}
+```
+
 **职责:**
 
-1. 注册多个协议 Server,拒绝重复协议注册.
-2. 在启动前向支持 `RuntimeConfigurable` 的协议注入 Runtime.
-3. 顺序启动协议,任一失败时逆序回滚已启动协议.
-4. 暴露 `Ready()` 状态和健康快照.
-5. 按阶段停止所有协议(StagedServer 三阶段 + 非 StagedServer 直接 Stop).
-6. 最后调用 `Runtime.Sessions().CloseAll` 清理残留会话.
+1. `Register` 注册协议 Server;同一协议重复注册返回 `ErrDuplicateProtocol`,`Start` 之后再
+   注册直接报错(必须先注册再启动).
+2. `Start` 前向实现 `RuntimeConfigurable` 的 Server 注入 Runtime.
+3. 先启动插件生命周期(`Runtime.Plugins().StartAll`),再按注册顺序启动各协议.
+4. 任一 `srv.Start` 失败:逆序回滚已启动的 Server,再 `Plugins().StopAll()`,返回原始错误.
+5. `Ready()` 直接读 `started`;`Health()` 返回 started / sessions / started_at / uptime /
+   protocols.
 
 **启动流程:**
 
 ```
 Gateway.Start(ctx)
-  -> 检查 servers 非空(ErrNoServerRegistered)
-  -> 向 RuntimeConfigurable server 注入 Runtime
-  -> 按注册顺序启动 servers
-    -> 若某 server.Start() 失败:
-        逆序停止已启动的 server
-        ready = false
-        return 聚合错误
-  -> startedAt = now
-  -> ready = true
-  -> return nil
+  -> startMu 加锁(与 Stop / Register 互斥)
+  -> started 已为 true -> 返回 "gateway: already started"
+  -> servers 为空 -> 返回 ErrNoServers
+  -> 对 RuntimeConfigurable server 调 UseRuntime(g.rt)
+  -> Runtime.Plugins().StartAll()(失败即返回,此时尚未启动任何 server)
+  -> 按注册顺序 srv.Start(ctx)
+       失败 -> 用 timeouts.Finalize 建独立 context,逆序 Stop 已启动 server
+              再 Plugins().StopAll(),返回该错误
+  -> startedAt = now;started = true
 ```
 
-**停止流程(5 阶段):**
+**停止流程(三阶段 + 收尾):**
 
 ```
 Gateway.Stop(ctx)
-  -> 阶段1 StopAccept:StagedServer.StopAccept(停止新连接入口)
-  -> 阶段2 Drain:StagedServer.Drain(等待读写 goroutine 收敛)
-  -> 阶段3 CloseSessions:StagedServer.CloseSessions(关闭协议会话)
-  -> 阶段4 StopNonStaged:非 StagedServer 的 Stop(HTTP Mode A 等)
-  -> 阶段5 CloseAll:Runtime.Sessions().CloseAll(清理 Manager 残留会话)
-  -> ready = false
+  -> startMu 加锁;started 先置 false(整个关闭窗口内 Ready / readyz 都报未就绪)
+  -> 阶段 1 StopAccept:  对每个 StagedServer 调 StopAccept
+  -> 阶段 2 Drain:       对每个 StagedServer 调 Drain
+  -> 阶段 3 CloseSessions:
+       StagedServer    -> CloseSessions
+       非 StagedServer -> Stop(ctx),共用 CloseSessions 超时
+       最后 Runtime.Sessions().CloseAll(ctx)
+  -> 收尾:Runtime.Plugins().StopAll()(错误记录日志并并入返回错误)
+  -> startedAt = nil;返回首个错误(其余错误只记日志)
 
-各阶段并发执行(所有相同阶段的 server 并发执行,阶段间串行)
-各阶段使用独立的 context,支持分阶段超时配置
+同一阶段内按注册顺序串行执行,阶段之间严格串行.runStage 为每个阶段派生子 context;
+对应的超时字段 <= 0 时直接使用父 context.
 ```
 
 **生命周期不变量:**
 
 - `Start` 失败必须回滚,不留半启动状态.
-- `Stop` 必须可重复调用(幂等).
-- `Start -> Stop -> Start` 保持可用(Manager 不永久关闭).
+- `Stop` 可重复调用;`Start -> Stop -> Start` 保持可用(共享 SessionManager 不永久关闭).
 - `Ready()` 只表示 Gateway 成功启动,不代表外部依赖健康.
-- 协议停止不能永久关闭共享 SessionManager.
-- `CloseAll` 执行前必须确保所有 StopAccept 完成(防止新 session 逃脱清理).
-
-**CloseAll 并发安全保证:**
-
-```
-阶段顺序保证了 CloseAll 的安全性:
-  StopAccept 完成后:所有新连接入口已关闭,不会产生新 session
-  Drain 完成后:所有 readLoop goroutine 已退出,不会注册新 session
-  CloseSessions 完成后:协议层 session 已关闭
-  CloseAll:清理 Manager 中可能遗留的 session(应为空或极少数)
-```
+- 插件 `StopAll` 必须在所有会话关闭之后执行,避免后台循环与传输层拆除竞争.
+- `CloseAll` 在 StopAccept / Drain / CloseSessions 之后执行,保证不会有新 session 逃逸清理.
 
 ### 5.2 SessionManager 实现(session_manager.go)
 
-**P0 实现(功能正确优先):**
+**当前实现(单锁,功能正确优先):**
 
 ```go
-type manager struct {
+type SessionManager struct {
     mu       sync.RWMutex
-    sessions map[uint64]Session
+    sessions map[uint64]core.Session
     idGen    atomic.Uint64
     total    atomic.Int64
-    maxCount int64           // 0 = 不限制
+    maxCount int64            // 0 = 不限制
 }
 ```
 
-**P2 演进(benchmark 证明锁竞争为瓶颈后引入):**
+`NewSessionManager(opts ...SessionManagerOption)`,目前只有一个选项
+`WithMaxSessions(max int64)`(默认 1000000).`Register` 在超容时返回 `ErrSessionCapacity`,
+重复 ID 返回 `ErrDuplicateSession`,参数非法返回 `ErrInvalidArgument`.
+
+`Broadcast` 先持读锁做快照,释放锁后再逐个 `Send`,**只保留第一个错误返回**:广播是尽力
+而为语义,单条会话失败不应掩盖其余会话的结果.
+
+`CloseAll` 循环执行"快照 -> 关闭 -> 注销"直到集合为空或 ctx 取消,因此可以在 `Stop` 之后
+再次调用而不报错,满足 `Start -> Stop -> Start` 的可重入约束.
+
+**规划中(P2,尚未实现):** 分片锁 + per-shard LRU 的 `shardedManager` 只在 benchmark 证明
+锁竞争成为瓶颈后才引入,当前代码中不存在该类型.
+
+### 5.3 PluginChain 实现(plugin_chain.go)
 
 ```go
-type shardedManager struct {
-    shards  [32]shard       // 分片锁
-    idGen   atomic.Uint64
-    total   atomic.Int64
-    maxCount int64
+type PluginChain struct {
+    mu      sync.RWMutex
+    plugins []Plugin  // 按 Priority 稳定升序
+    logger  Logger
 }
 
-type shard struct {
-    mu       sync.RWMutex
-    sessions map[uint64]Session
-    lru      *LRUList        // per-shard LRU,超容时淘汰最旧会话
-}
-
-// 分片函数:位运算,比取模快
-func shardIndex(id uint64) int { return int(id & 31) }
+func NewPluginChain(plugins ...Plugin) *PluginChain
+func (c *PluginChain) Append(plugins ...Plugin)     // copy-on-write
+func (c *PluginChain) SetLogger(logger Logger)       // 加锁写
+func (c *PluginChain) snapshot() ([]Plugin, Logger)  // 取切片后在锁外执行回调
 ```
 
-**Broadcast 实现(快照发送,不持锁):**
+**注册阶段(Append 时,一次性排序):**
 
-```go
-func (m *manager) Broadcast(data []byte) error {
-    // 1. 快照:持锁收集所有 session 引用
-    m.mu.RLock()
-    snapshot := make([]Session, 0, len(m.sessions))
-    for _, s := range m.sessions { snapshot = append(snapshot, s) }
-    m.mu.RUnlock()
+1. 复制现有切片,追加非 nil 插件,整体换入(copy-on-write,`c.plugins` 从不原地修改).
+2. `slices.SortStableFunc` 按 `Priority()` 升序;同优先级保持 Append 顺序,跨运行可复现.
+3. **不去重**:同名插件共存并都被执行,名称唯一性由调用方保证.
 
-    // 2. 释放锁后发送,避免持锁 Send 阻塞
-    var errs []error
-    for _, s := range snapshot {
-        if err := s.Send(data); err != nil {
-            errs = append(errs, err)
-        }
-    }
-    return errors.Join(errs...)
-}
-```
+**copy-on-write 的三个收益:**
 
-### 5.3 PluginRunner 实现(plugin_runner.go)
+- `snapshot()` 可以直接交出切片引用,`OnMessage` 热路径零分配.
+- 插件在回调内调用 `SetLogger` / `Append` 不会死锁(RWMutex 不可重入).
+- 回调全程在锁外执行,只有取切片与 logger 时持锁.
 
-```go
-type runner struct {
-    plugins   []Plugin        // 按 Priority 升序静态排序(启动时排序,热路径直接索引)
-    nameIndex map[string]int  // 去重索引
-    stopOnError bool          // 普通 error 是否中断链
-    logger    Logger
-    metrics   Metrics
-}
-```
+**panic 隔离(五个钩子各一个包装):**
 
-**注册阶段(Server 启动时,一次性操作):**
+| 包装 | 钩子 | panic 后 |
+|------|------|----------|
+| `safeAccept` | `OnAccept` | 返回 `ErrPluginPanic`,链逆序回滚 |
+| `safeMessage` | `OnMessage` | 返回 `ErrPluginPanic`,链终止 |
+| `safeClose` | `OnClose` | 记录日志,继续下一个插件 |
+| `safeStart` | `Start` | 返回 `ErrPluginPanic`,`StartAll` 回滚 |
+| `safeStop` | `Stop` | 返回 `ErrPluginPanic`,`StopAll` 继续 |
 
-1. 按 `Priority()` 升序排列(`slices.SortFunc`,Go 1.26 标准库).
-2. 同名插件后注册覆盖,记录 Warn 日志.
-3. 预构建 `[]Plugin` 切片,热路径直接索引,无排序开销.
+`Start` / `Stop` 的包装是 V9 修复项:此前它们没有 recover,插件后台循环的启动 panic 会绕过
+网关错误路径直接终止进程.
 
-**panic 隔离:**
+### 5.4 WorkerPool(transport/shared/worker_pool.go)
 
-```go
-func safeRunPlugin(name string, fn func()) (panicked bool) {
-    defer func() {
-        if r := recover(); r != nil {
-            panicked = true
-            // 记录 panic 堆栈 + plugin_name 指标
-        }
-    }()
-    fn()
-    return false
-}
-```
+**位于 transport 层而非 runtime 层:** 池是传输层的背压设施,只在 shared 包中实现一次,
+供任意传输层复用.**当前只有 TCP Server 实例化它**;UDP / CoAP / WebSocket 直接在各自
+的 readLoop 上经 `shared.CallHandler` 内联调用 handler.
 
-### 5.4 WorkerPool(worker_pool.go)
+**三种队列满策略(`FullPolicy`):**
 
-**四种队列满策略:**
+| 策略 | 行为 | 适用场景 | 风险 |
+| --- | --- | --- | --- |
+| `PolicyDrop` | 返回 `ErrWriteQueueFull`,消息丢弃(默认) | 通用场景,防雪崩 | 消息丢失 |
+| `PolicyBlock` | 提交方阻塞,同时监听池停止与会话 Context | 不可丢消息场景 | readLoop 队首延迟 |
+| `PolicyClose` | 返回 `ErrWriteQueueFull` 并关闭会话 | 极端过载保护 | 连接中断 |
 
-| 策略 | 行为 | 适用场景 |
-| --- | --- | --- |
-| PolicyDrop | 丢弃消息 + metrics(默认) | 通用场景,防雪崩 |
-| PolicyBlock | 阻塞等待队列空间 | 不可丢消息场景(金融) |
-| PolicySpawnTemp | 动态扩容临时 Worker | 突发流量缓冲 |
-| PolicyClose | 持续过载 30s 后关闭连接 | 极端情况保护 |
-
-**SpawnTemp 约束:**
-
-```
-core workers + temp workers <= MaxWorkers(严格约束,非各自独立计数)
-temp worker 处理完当前任务后自动退出(不归还到 core pool)
-atomic.Int32 tempCount 计数,SpawnTemp 前检查 total < MaxWorkers
-```
+设计草案中的 `PolicySpawnTemp`、`HandlerTimeout`、`OverloadWindow` 均**未实现**:
+前者在雪崩时会让 goroutine 数量失控;后两者改由会话 Context 与调用方超时表达,
+池不引入第二套并发语义.
 
 **安全保证:**
 
-- 每个 worker 执行 `safeRun`,内置 `recover(panic)`.
-- worker panic 后记录指标 `shark_worker_panics_total`,worker 继续运行.
+- `Stop` 先 `CompareAndSwap` 置位并 `close(done)`,再取写锁等待全部 worker 退出,
+  最后兜底排空.不关闭 `queue` channel,避免阻塞发送与 `Stop` 竞争时 panic.
+- `PolicyBlock` 同时 select 队列、`done`、`sess.Context().Done()`:对端断连时提交方立即
+  返回 `ErrSessionClosed`,不会为每条卡住的连接泄漏 goroutine.
+- handler panic 由 `shared.CallHandler` 捕获,记录日志并返回 `ErrHandlerPanic`,
+  随后关闭该会话,worker 继续消费队列.
 
 ---
 
@@ -1007,7 +888,7 @@ type Framer interface {
 ```
 步骤1:CAS Active -> Draining(失败说明已在关闭或已关闭,直接返回)
 步骤2:若 writeLoop 已启动:close(draining) 信号触发排空
-步骤3:等待 writeQueue 排空(DrainTimeout 超时后强制继续,记录 ErrDrainTimeout)
+步骤3:等待 writeQueue 排空(等待受 ctx 约束,ctx 到期返回其 Err() 并强制继续)
 步骤4:CAS Draining -> Closed
 步骤5:CancelContext() -> 通知所有 <-ctx.Done() 的 goroutine 退出
 步骤6:conn.Close()
@@ -1042,22 +923,26 @@ func (s *TCPSession) Send(data []byte) error {
 | --- | --- | --- |
 | Addr | `"0.0.0.0:18000"` | 监听地址 |
 | WorkerCount | `NumCPUx2` | 核心 Worker 数量 |
-| MaxWorkers | `WorkerCountx4` | 最大 Worker(含临时扩容) |
-| TaskQueueSize | `WorkerCountx128` | 任务队列容量 |
-| QueueFullPolicy | `PolicyDrop` | 队列满策略 |
-| WriteQueueSize | `128` | 每连接写队列容量 |
-| WriteFullPolicy | `PolicyBlock` | 写队列满策略 |
-| MaxSessions | `100,000` | 最大会话数(0=不限制) |
-| MaxMessageSize | `1MB` | 单消息最大字节 |
-| ReadTimeout | `0`(不限) | 读超时 |
-| WriteTimeout | `10s` | 写超时 |
-| IdleTimeout | `0`(不限) | 空闲超时 |
-| HandlerTimeout | `0`(不限) | Handler 执行超时 |
+| Addr | `127.0.0.1:18000` | 监听地址 |
+| WorkerCount | `4` | 固定 worker 数 |
+| TaskQueueSize | `512` | 任务队列容量 |
+| FullPolicy | `PolicyDrop` | 队列满策略 |
+| WriteQueue | `128` | 每连接写队列容量 |
+| WriteQueueHighWater | `0.8` | 写队列高水位比例 |
+| MaxConnections | `0`(不限制) | 并发连接上限 |
+| AcceptRate | `0`(不限制) | 接受速率(连接/秒) |
+| MaxFrameBytes | `1MB` | 单帧最大字节 |
+| ReadTimeout | `5m` | 每帧读超时(0 关闭) |
+| WriteTimeout | `30s` | 写超时 |
 | DrainTimeout | `5s` | 关闭时写队列 drain 超时 |
-| ShutdownTimeout | `10s` | 服务关闭超时 |
 | Framer | `LengthPrefixFramer` | 帧解析器 |
-| MaxConsecutiveErrors | `100` | 连续错误上限(超限断连) |
 | TLSConfig | `nil` | TLS 配置(nil=不启用) |
+
+`MaxSessions` / `MaxMessageSize` / `IdleTimeout` / `HandlerTimeout` /
+`MaxConsecutiveErrors` / `ShutdownTimeout` 不在 TCP 选项里:会话上限由 `SessionManager`
+统一持有,消息上限与帧解析合并为 `MaxFrameBytes` + `Framer`,空闲回收由 `ReadTimeout`
+与 `HeartbeatPlugin` 表达,handler 超时由 handler 自身观察会话 Context,
+关停超时由 `Gateway` 的 `core.StageTimeouts` 下发.
 
 ### 6.2 UDP 协议(transport/udp/)
 
@@ -1069,7 +954,7 @@ remote UDPAddr -> 伪会话 -> 共享 SessionManager
 伪会话创建时机(推荐方案B):
   1. 收到 datagram,提取 remote UDPAddr
   2. 构造轻量临时 session(仅含必要字段)
-  3. RunAccept(tempSess):
+  3. OnAccept(tempSess):
      -> ErrPluginBlock:丢弃 datagram,不注册 session(不留计数)
      -> nil:Register(sess) -> 正式伪会话
   4. 后续 datagram 复用已注册的伪会话
@@ -1110,10 +995,10 @@ MaxBytesReader 限制请求体大小(超限 -> 413)
 -> 创建 HTTPSession
 -> Register(sess)
 -> defer Unregister(sess.ID())
--> defer RunClose(sess)      <- 所有退出路径都触发 OnClose
--> RunAccept(sess)           -> ErrPluginBlock -> 403 + return
+-> defer OnClose(sess)      <- 所有退出路径都触发 OnClose
+-> OnAccept(sess)           -> ErrPluginBlock -> 403 + return
 -> 读 Body
--> RunMessage(sess, body)    -> ErrPluginDrop -> 200 空响应
+-> OnMessage(sess, body)    -> ErrPluginDrop -> 200 空响应
 -> Handler(sess, msg)        -> error -> 500
 -> (响应已在 Handler 中写入)
 ```
@@ -1133,7 +1018,7 @@ MaxBytesReader 限制请求体大小(超限 -> 413)
 ```
 OnClose 在 Close 内部通过 sync.Once 调用:
   closeOnce.Do(func() {
-      RunClose(sess)          <- 在 Once 内部,天然保证单次执行
+      OnClose(sess)          <- 在 Once 内部,天然保证单次执行
       manager.Unregister(id)
       cancelContext()
       conn.Close()
@@ -1191,7 +1076,7 @@ type Message struct {
 收到 CON:
   CheckAndRecord(msgID) 去重:
     -> 重复:GetCachedResponse -> 重发缓存 ACK(避免重复执行 Handler)
-    -> 首次:RunMessage -> Handler -> 选择 ACK Code -> Send ACK -> CacheResponse(msgID, ack)
+    -> 首次:OnMessage -> Handler -> 选择 ACK Code -> Send ACK -> CacheResponse(msgID, ack)
 
 收到 RST:
   ResetCON(msgID) 取消对应重传
@@ -1261,10 +1146,10 @@ read <endpoint> <resource-path>
 连接建立 -> 注册 QUICSession(连接维度)
 Stream 到达 -> handleStream:
   读取 stream payload(MaxMessageSize 限制)
-  超限:不调用 Handler,关闭 stream,记录 ErrMessageTooLarge
-  正常:RunMessage -> Handler(Handler 可写回 stream)
+  超限:不调用 Handler,关闭 stream,返回 core.ErrFrameTooLarge
+  正常:OnMessage -> Handler(Handler 可写回 stream)
   Stream 关闭 -> 不注销 QUICSession(连接仍存在)
-连接断开 -> 注销 QUICSession,RunClose
+连接断开 -> 注销 QUICSession,OnClose
 
 stream 尾块处理:
   Read 可能同时返回 n>0 和 io.EOF(尾块场景)
@@ -1305,7 +1190,7 @@ WebSocket 模式:超限 -> 在进入 Handler 前关闭连接,记录错误
 Direct 模式:所有返回路径(正常/超限/插件错误/Handler 错误)必须触发 OnClose
   使用 defer 保证:
     defer func() {
-        RunClose(sess)
+        OnClose(sess)
         Unregister(sess.ID())
     }()
 
@@ -1418,122 +1303,123 @@ CircuitBreaker 包裹 PubSub 和 Cache 调用(不可用时静默丢弃)
 
 ---
 
-## 8. 应用装配层(internal/application/)
+## 8. 应用装配层(internal/app/)
 
 ### 8.1 配置结构(config.go)
 
-**加载顺序:** 默认值 -> JSON 配置文件 -> 环境变量覆盖(优先级从低到高).
+**加载顺序:** 内置默认值 -> JSON 配置文件 -> 环境变量覆盖(优先级从低到高)-> `Validate()`。
 
-**顶层配置:**
+**顶层 Config:**
 
-| 字段 | 类型 | 默认值 | 说明 |
+| 字段 | JSON 键 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `ShutdownTimeout` | `shutdown_timeout` | string(duration) | `10s` | 优雅关闭总超时,必须为正 |
+| `HealthAddr` | `health_addr` | string | `127.0.0.1:18081` | 健康检查 HTTP 地址 |
+| `MetricsAddr` | `metrics_addr` | string | `127.0.0.1:18080` | Prometheus metrics 地址 |
+| `Protocols` | `protocols` | []ProtocolConfig | 一个默认 tcp | 协议监听列表 |
+
+**ProtocolConfig:**
+
+| 字段 | JSON 键 | 类型 | 说明 |
 | --- | --- | --- | --- |
-| `shutdown_timeout` | duration | `15s` | 优雅关闭总超时 |
-| `health_addr` | string | `":18081"` | 健康检查 HTTP 地址 |
-| `metrics_addr` | string | `":18080"` | Prometheus metrics 地址 |
-| `max_sessions` | int | `100000` | SessionManager 全局上限(0=不限制) |
-| `protocols` | []ProtocolConfig | - | 协议监听列表 |
+| `Name` | `name` | string | `tcp/udp/http/websocket/coap/quic/grpc-web` |
+| `Enabled` | `enabled` | *bool | nil 视为 true(`IsEnabled()`) |
+| `Addr` | `addr` | string | 监听地址 |
+| `Path` | `path` | string | WebSocket / gRPC-Web 的 HTTP path |
+| `Mode` | `mode` | string | CoAP 传 `lwm2m` 时接入 LwM2M responder |
+| `MaxMessageBytes` | `max_message_bytes` | int64 | 消息大小上限,不得为负 |
+| `TLSCertFile` | `tls_cert_file` | string | 服务端证书;与 key 必须成对 |
+| `TLSKeyFile` | `tls_key_file` | string | 服务端私钥 |
+| `TLSClientCAFile` | `tls_client_ca_file` | string | mTLS 客户端 CA bundle |
+| `TLSClientAuth` | `tls_client_auth` | string | `none/request/require_any/verify_if_given/require_and_verify` |
+| `TLSMinVersion` | `tls_min_version` | string | `1.2`(默认)/ `1.3` |
+| `AllowedOrigins` | `allowed_origins` | []string | WebSocket / gRPC-Web 的 Origin 白名单 |
 
-**协议配置:**
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `name` | string | `tcp/udp/http/websocket/coap/quic/grpc-web` |
-| `enabled` | bool | 默认 true |
-| `addr` | string | 监听地址(host:port) |
-| `path` | string | WebSocket 或 gRPC-Web WebSocket path |
-| `mode` | string | CoAP 使用 `lwm2m` 时接入 LwM2M responder |
-| `max_message_bytes` | int | 消息大小限制(必须 >= 0) |
-| `tls_cert_file` | string | 服务端证书路径 |
-| `tls_key_file` | string | 服务端私钥路径 |
-| `tls_client_ca_file` | string | mTLS 客户端 CA bundle |
-| `tls_client_auth` | string | 客户端证书校验策略 |
-
-**统一配置验证规则(app 层统一执行,不在 Start() 中执行):**
+**`Validate()` 规则(app 层统一执行,不在 Server.Start 里执行):**
 
 ```
-必须在 app.Build() 时验证:
-  max_message_bytes >= 0
-  addr 格式合法(host:port,空 host 允许)
-  tls_cert_file 和 tls_key_file 必须同时存在或同时缺失
-  shutdown_timeout > 0
-  protocol name 在已知列表中
-  enabled=true 的协议 addr 非空
-  max_sessions >= 0
-
-验证失败返回 ErrInvalidConfig,包含具体字段和原因
+shutdown_timeout 可解析且 > 0
+至少有一个 enabled 协议;protocol name 非空且在已知集合内且不重复
+enabled 协议 addr 非空
+max_message_bytes >= 0
+tls_cert_file 与 tls_key_file 必须同时给或同时不给
+tls_client_ca_file / tls_client_auth 需要 cert+key;tls_client_auth 取值必须合法
+tls_cert_file / tls_client_ca_file / tls_client_auth 仅支持 tcp / quic / coap / udp
+quic 强制要求 tls_cert_file + tls_key_file
 ```
+
+环境变量覆盖:`SHARK_CONFIG`(配置路径)、`SHARK_SHUTDOWN_TIMEOUT`、`SHARK_HEALTH_ADDR`、
+`SHARK_METRICS_ADDR`,以及按协议的 `SHARK_TCP_*` / `SHARK_WS_*` / `SHARK_HTTP_*` /
+`SHARK_GRPCWEB_*` / `SHARK_QUIC_*`。环境变量通过 `upsertProtocol` 与 JSON 中的同名协议
+按字段合并.
 
 ### 8.2 App 装配(app.go)
 
-```
-App.Build(config) 流程:
-  1. 验证配置(统一,单次)
-  2. 创建基础设施:Logger / Metrics / Tracer
-  3. 创建 SessionManager
-  4. 创建 PluginRunner + 注册插件
-  5. 创建 DefaultRuntime(组装1-4)
-  6. 按配置创建各协议 Server(传入 Options)
-  7. 创建 Gateway(注册 Server + Runtime)
-  8. 创建健康 / 指标 HTTP 服务
-  9. return App(持有 Gateway + 健康服务引用)
+```go
+type App struct { /* 未导出字段 */ }
 
-App.Run(ctx) 流程:
-  1. 启动健康 / 指标服务
-  2. gateway.Start(ctx)
-  3. 阻塞等待 ctx.Done()(信号处理在 cmd/server/main.go)
-  4. gateway.Stop(shutdownCtx)
-  5. 关闭健康 / 指标服务
+func New(cfg Config) (*App, error)     // 装配,不启动
+func (a *App) Start(ctx context.Context) error
+func (a *App) ServeErrors() []error    // 健康 / 指标服务的异步错误
+func (a *App) Stop(ctx context.Context) error
 ```
+
+**装配流程(`New`):**
+
+```
+app.New(cfg)
+  1. cfg.Validate()(统一校验,单次)
+  2. api.NewGateway(注入 plugins / logger / metrics / tracer)
+  3. 逐个 enabled 协议 registerProtocols:
+       构造 Server Options
+       需要 TLS 时用 loadServerTLSConfig 建 CertCache(证书 + 客户端 CA 池)
+       调 gateway.Register(server)
+  4. 起证书热加载 watcher(tlsutil.WatchFilesWithWG)
+  5. 建健康 / 指标 http.Server(healthHandler + PrometheusMetrics)
+```
+
+**运行流程(`cmd/shark-socket/main.go`):**
+
+```
+flag -config / env SHARK_CONFIG -> app.LoadConfig
+app.New(cfg)
+ctx, stop := signal.NotifyContext(SIGINT, SIGTERM)
+app.Start(ctx)
+<-ctx.Done()
+shutdownCtx := WithTimeout(cfg.ShutdownDuration())
+app.Stop(shutdownCtx)
+```
+
+关闭顺序是"先停止接客再清理":`App.Stop` 调 `Gateway.Stop`(三阶段 + 插件收尾),
+随后关闭健康 / 指标 HTTP 服务.
+
 
 ---
 
 ## 9. 可观测设计
 
-### 9.1 Prometheus 指标(静态预注册)
+### 9.1 Prometheus 指标
 
-**静态预注册原因:** 防止运行时动态 label 导致 Prometheus cardinality 爆炸,所有指标在启动时一次性注册.
+**注册模型:按需首写注册,不是静态预注册.** `PrometheusMetrics` 与 `MemoryMetrics` 共用
+`core.Metrics` 的三方法契约,首次以某个 `name+labels` 写入时建立条目,之后按 key 自增;
+没有启动期预注册的指标名单,也没有"锁定标签集合"的机制(这是早先草案的描述,与实现不符).
 
-**锁定的指标集合(P1 必须完成):**
+**当前代码实际写入的指标名(全部来自调用点):**
 
-```
-连接与会话:
-  shark_sessions_total{protocol}               Counter  连接建立总数
-  shark_sessions_active{protocol}              Gauge    当前活跃会话数
-  shark_session_errors_total{protocol,reason}  Counter  连接错误总数
-  shark_session_rejected_total{protocol,reason} Counter 被拒绝连接总数
+| 指标 | 类型 | 写入点 | 说明 |
+| --- | --- | --- | --- |
+| `sessions_accepted_total` | Counter | `runtime/session_metrics.go` | 会话注册总数 |
+| `sessions_closed_total` | Counter | `runtime/session_metrics.go` | 会话注销总数 |
+| `sessions_active` | Gauge | `runtime/session_metrics.go` | 当前活跃会话数 |
+| `sessions_reclaimed_total` | Counter | TCP / UDP / CoAP / WS / gRPC-Web server | 伪会话/空闲会话回收数 |
+| `tcp_task_queue_full_total` | Counter | `transport/tcp/server.go` | TCP 任务队列满次数 |
 
-消息:
-  shark_messages_total{protocol,direction}     Counter  消息总数(in/out)
-  shark_message_bytes_total{protocol,direction} Counter 消息字节总数
-  shark_dropped_messages_total{protocol,reason} Counter 丢弃消息总数
+**导出:** `PrometheusMetrics` 自身实现 `http.Handler`(`ServeHTTP`),输出 Prometheus 文本
+格式;`ExportText()` 返回同样的字符串,便于测试断言.`/metrics` 端点即挂载该 handler.
 
-Handler 与插件:
-  shark_handler_duration_seconds{protocol}     Histogram Handler 执行耗时
-  shark_plugin_duration_seconds{plugin}        Histogram 插件执行耗时
-  shark_plugin_errors_total{plugin,error_type} Counter   插件错误总数
-  shark_plugin_panics_total{plugin}            Counter   插件 panic 总数
-
-传输层:
-  shark_transport_errors_total{protocol,type}  Counter  传输错误总数
-  shark_write_queue_full_total{protocol}        Counter  写队列满次数
-  shark_worker_panics_total{protocol}           Counter  Worker panic 总数
-
-资源(P2 引入 BufferPool 后补充):
-  shark_bufferpool_hits_total{level}            Counter  各级 pool 命中次数
-  shark_bufferpool_misses_total{level}          Counter  各级 pool 未命中次数
-
-网关:
-  shark_gateway_start_duration_seconds         Histogram 启动耗时
-  shark_gateway_stop_duration_seconds          Histogram 停止耗时
-
-指标标签约束(防 cardinality 爆炸):
-  protocol:固定 8 个值(tcp/udp/http/websocket/coap/quic/grpc-web/custom)
-  direction:固定 2 个值(in/out)
-  reason:固定枚举(blacklisted/rate_limited/capacity/malformed/...)
-  level:固定 5 个值(micro/tiny/small/medium/large)
-  error_type:固定枚举(timeout/closed/frame_too_large/...)
-```
+**标签约定:** 标签以 `labels ...string` 传入,键值交替;`metricKey` 把
+`name + 标签串`拼成 map key,标签名经 `sanitizeLabelName` 规范化.当前调用点基本只传
+指标名、不传标签,因此实际的标签维度远小于早期草案设想的规模.
 
 ### 9.2 健康检查端点
 
@@ -1559,7 +1445,7 @@ GET /metrics -> Prometheus text format(包含全部 shark_* 指标)
 
 ```
 context.Context 贯穿全链路:
-  Accept -> RunAccept -> RunMessage -> Handler -> sess.Send
+  Accept -> OnAccept -> OnMessage -> Handler -> sess.Send
 
 Span 注入点(兼容 OpenTelemetry):
   transport.accept     -> 连接建立
@@ -1574,109 +1460,100 @@ Span 注入点(兼容 OpenTelemetry):
 
 ---
 
-## 10. 基础设施层(internal/infrastructure/)
+## 10. 基础设施层(internal/infra/)
 
-### 10.1 Cache(cache/cache.go)
+实现直接暴露具体类型(`*MemoryCache`、`*PubSub`、`*Breaker`),只对需要替换的部分抽接口.
+
+### 10.1 Cache(internal/infra/cache/cache.go)
 
 ```go
 type Cache interface {
-    Get(ctx context.Context, key string) ([]byte, error)  // Miss -> ErrCacheMiss
-    Set(ctx context.Context, key string, val []byte, ttl time.Duration) error
-    Del(ctx context.Context, key string) error
-    Has(ctx context.Context, key string) (bool, error)
-    TTL(ctx context.Context, key string) (time.Duration, error)
-    MGet(ctx context.Context, keys []string) (map[string][]byte, error)
-    Sweep() int  // 清理过期条目,返回清理数量
-    Len() int
-    Clear()
+    Get(string) ([]byte, bool)
+    Set(string, []byte, time.Duration)
+    Delete(string)
+    Has(string) bool
 }
 ```
 
-**MemoryCache 实现要求:**
+**MemoryCache:** `Set` 深拷贝调用方 `[]byte`,`Get` 返回副本;TTL 惰性过期 + 后台清理.
+接口刻意不带 `context` 与 `error`:未命中是正常分支(`bool` 返回),缓存故障不该逼调用方
+多写一层错误处理.
 
-- `Set` 写入时深拷贝调用方 `[]byte`,防止外部切片复用污染缓存.
-- `Get/MGet` 返回副本,防止调用方修改影响缓存内容.
-- TTL 惰性过期(读取时检查),后台 `cleanupLoop` 定期主动清理.
-
-### 10.2 Store(store/store.go)
+### 10.2 Store(internal/infra/store/)
 
 ```go
 type Store interface {
-    Save(ctx context.Context, key string, val []byte) error
-    Load(ctx context.Context, key string) ([]byte, error)  // 未找到 -> ErrStoreNotFound
-    Delete(ctx context.Context, key string) error
-    Query(ctx context.Context, prefix string) ([][]byte, error)
-    Keys(ctx context.Context, prefix string) ([]string, error)
-}
-```
-
-### 10.3 PubSub(pubsub/pubsub.go)
-
-```go
-type PubSub interface {
-    Publish(ctx context.Context, topic string, data []byte) error
-    Subscribe(ctx context.Context, topic string, handler func([]byte)) (Subscription, error)
+    Save(bucket, key string, value []byte) error
+    Load(bucket, key string) ([]byte, bool, error)   // 未找到 -> (nil, false, nil)
+    Delete(bucket, key string) error
+    List(bucket string) ([]string, error)
     Close() error
 }
+```
 
-type Subscription interface {
-    Unsubscribe() error
-    Topic() string
+| 实现 | 文件 | 说明 |
+| --- | --- | --- |
+| `MemoryStore` | `store.go` | 进程内 bucket/key 存储 |
+| `BoltStore` | `bolt.go` | bbolt 落盘;`withLock` 串行化写,`DeleteBatch` 批量删 |
+| `SessionStore` | `session_store.go` | `SaveSnapshot` / `LoadSnapshot` / `ListSnapshots` / `DeleteSnapshot` |
+| `MessageLog` | `message_log.go` | `Append` / `Replay` / `Prune` / `Len`,单调序号日志 |
+
+### 10.3 PubSub(internal/infra/pubsub/pubsub.go)
+
+```go
+type Message struct {
+    Topic string
+    Data  []byte
 }
+
+type PubSub struct { /* 未导出字段 */ }
+
+func New() *PubSub
+func (p *PubSub) Subscribe(topic string, buffer int) (<-chan Message, func())
+func (p *PubSub) Publish(topic string, data []byte) int
+func (p *PubSub) Dropped(topic string) uint64
 ```
 
-**ChannelPubSub 并发安全:** 
+`Subscribe` 返回只读 channel 与取消函数;`Publish` 返回成功投递的订阅者数量.订阅者缓冲满
+时消息被丢弃并计入 `Dropped(topic)`,发布方永不被阻塞(集群广播不能反压业务路径).
 
-`Publish` 发布前复制消息(防止并发读写);`Unsubscribe` 和 `Publish` 之间通过 `sync.RWMutex` 协调,防止向已关闭 channel 发送导致 panic.
-
-### 10.4 CircuitBreaker(circuitbreaker/circuitbreaker.go)
+### 10.4 CircuitBreaker(internal/infra/circuitbreaker/circuitbreaker.go)
 
 ```
-状态机:
-  Closed   -> 正常调用;连续失败 > threshold -> Open
-  Open     -> 直接返回 ErrCircuitOpen;超过 timeout -> HalfOpen
-  HalfOpen -> 允许一次探测;成功 -> Closed;失败 -> Open
+状态(State string):
+  closed     Allow() 放行;连续失败 > threshold -> open
+  open       Allow() 返回 ErrOpen;超过 timeout -> half-open
+  half-open  只放行一次探测;Success() -> closed;Failure() -> open 并刷新 openedAt
 
-配置:
-  threshold int64        // 连续失败阈值(默认 5)
-  timeout   time.Duration // 熔断恢复时间(默认 30s)
+API:
+  New(threshold int, timeout time.Duration) *Breaker   // threshold<=0 -> 1, timeout<=0 -> 1s
+  Allow() error
+  Success()
+  Failure()
+  Snapshot() Snapshot    // State / OpenedAt / ...
 
-应用场景:PersistencePlugin(Store) / ClusterPlugin(PubSub/Cache)
+应用场景:PersistencePlugin(Store)/ ClusterPlugin(PubSub)
 ```
 
-### 10.5 Observability(observability/)
+### 10.5 Observability(internal/core/ + internal/infra/observability/)
 
-**slogLogger(logger.go):**
-
-- 基于 Go 1.21+ `log/slog`,默认 JSON 格式输出.
-- `WithContext(ctx)` 自动提取 `trace_id` / `request_id`.
-- `With(args...)` 创建子 logger,附加固定字段.
-- 异步写入:带缓冲 channel(容量 4096)-> 单 goroutine 刷盘(channel 满时降级同步写).
-
-**PrometheusMetrics(metrics.go):**
-
-- 启动时静态注册所有 `shark_*` 指标.
-- 热路径 atomic 计数,异步批量上报.
-- 暴露标准 Prometheus HTTP handler.
-
-**P2 引入的基础设施组件:**
-
-| 组件 | 触发条件 | 位置 |
+| 组件 | 位置 | 说明 |
 | --- | --- | --- |
-| 六级 BufferPool | benchmark 证明 readLoop alloc 为瓶颈 | `infrastructure/bufferpool/` |
-| 时间轮 | benchmark 证明心跳扫描为瓶颈 | `infrastructure/timewheel/` |
-| 日志采样器 | 高频日志场景压测发现日志成为瓶颈 | `infrastructure/logsampler/` |
+| `slogLogger` | `internal/core/observability.go` | 未导出;`core.NewSlogLogger(*slog.Logger)` 构造,`attrs` 直接透传 slog |
+| `NopLogger` / `NopMetrics` / `NopTracer` | `internal/core/observability.go` | 默认注入的空实现 |
+| `MemoryLogger` | `internal/infra/observability/logger.go` | 测试用,`Entries()` 取回日志 |
+| `MemoryMetrics` | `internal/infra/observability/metrics.go` | 进程内聚合,单指标观测数上限 65536 |
+| `PrometheusMetrics` | `internal/infra/observability/prometheus.go` | 实现 `http.Handler`,输出文本格式 |
+| `OpenTelemetryTracer` | `internal/infra/observability/otel.go` | 包装 `trace.Tracer` |
 
-**六级 BufferPool 分级(P2):**
+**P2 候选组件(当前均未实现):**
 
-| 级别 | 大小阈值 | 典型场景 |
+| 组件 | 触发条件 | 计划位置 |
 | --- | --- | --- |
-| Micro | <= 128B | CoAP/心跳控制帧,ACK 包 |
-| Tiny | <= 512B | 短文本消息,命令帧 |
-| Small | <= 4KB | 普通业务消息,JSON 请求 |
-| Medium | <= 32KB | HTTP Body,批量数据 |
-| Large | <= 256KB | 大消息,文件块 |
-| Huge | > 256KB | 直接 make,不入池(防内存膨胀) |
+| 多级 BufferPool | benchmark 证明 readLoop alloc 为瓶颈 | `internal/infra/bufferpool/` |
+| 时间轮 | benchmark 证明心跳扫描为瓶颈 | `internal/infra/timewheel/` |
+| 日志采样器 | 高频日志场景压测发现日志成为瓶颈 | `internal/infra/logsampler/` |
+
 
 ---
 
@@ -1691,7 +1568,7 @@ type Subscription interface {
   -> WorkerPool.Submit(sess, payload)
 
 Worker goroutine(隔离 panic):
-  PluginRunner.RunMessage(sess, payload)
+  PluginRunner.OnMessage(sess, payload)   // PluginChain 的入口
     -> BlacklistPlugin(0) -> RateLimitPlugin(10) -> AutoBanPlugin(20)
     -> HeartbeatPlugin(30) -> ClusterPlugin(40) -> PersistencePlugin(50)
     -> ErrPluginDrop -> 停止,不调用 Handler
@@ -1711,12 +1588,12 @@ writeLoop(每连接 1 goroutine,单 goroutine 独占写):
 listener.Accept()
   -> newTCPSession(conn)
   -> manager.Register(sess)   -> 超容:ErrSessionCapacity -> 拒绝连接
-  -> RunAccept(sess)          -> ErrPluginBlock:Close(sess) + return
+  -> OnAccept(sess)          -> ErrPluginBlock:Close(sess) + return
   -> go sess.readLoop()
   -> go sess.writeLoop()
 
 [运行中]
-  readLoop -> Framer -> RunMessage -> WorkerPool -> Handler -> sess.Send
+  readLoop -> Framer -> OnMessage -> WorkerPool -> Handler -> sess.Send
   writeLoop -> writeQueue -> conn.Write
 
 [断开 / 超时 / 错误]
@@ -1728,7 +1605,7 @@ listener.Accept()
       CAS Draining -> Closed
       CancelContext()
       conn.Close()
-    RunClose(sess)(逆序,via sync.Once)
+    OnClose(sess)(逆序,via sync.Once)
     manager.Unregister(sess.ID())
 ```
 
@@ -1769,7 +1646,7 @@ sess.Send([]byte)
 
 ```
 +------------------------------------------------------------------+
-| cmd/server Main Goroutine                                         |
+| cmd/shark-socket Main Goroutine                                   |
 | Run: app.Build -> app.Run -> signal.NotifyContext -> Stop           |
 +------------------------------------------------------------------+
 | Protocol Acceptors(每协议 1 goroutine)                          |
@@ -1779,8 +1656,8 @@ sess.Send([]byte)
 |   CoAP:readLoop(基于 UDP)                                     |
 |   QUIC:acceptLoop(quic.Listener.Accept)                       |
 +------------------------------------------------------------------+
-| WorkerPool(NumCPUx2 核心 Worker + 弹性临时 Worker)             |
-|   for task := range taskQueue -> safeRun(handler)                |
+| WorkerPool(固定 NumCPUx2 Worker,仅 TCP 使用)                     |
+|   for task := range taskQueue -> shared.CallHandler(handler)     |
 +------------------------------------------------------------------+
 | Per-Session Goroutines:                                          |
 |   TCP:readLoop + writeLoop(每连接 2 个)                       |
@@ -1865,7 +1742,7 @@ L6(慢连接防御,P1):
   gRPC-Web 畸形帧返回 400
 
 WorkerPool 背压(四种策略):
-  PolicyDrop(默认)/ PolicyBlock / PolicySpawnTemp / PolicyClose
+  PolicyDrop(默认)/ PolicyBlock / PolicyClose
 ```
 
 ### 13.4 P1 必须补齐的安全项
@@ -1921,7 +1798,7 @@ Step 2:定位热点(pprof 驱动)
   go tool pprof -> 通常热点:readLoop alloc,Manager 锁竞争
 
 Step 3:按热点引入优化(不提前优化)
-  alloc 热点 -> 引入 BufferPool(infrastructure/bufferpool/)
+  alloc 热点 -> 引入 BufferPool(internal/infra/bufferpool/)
   锁竞争热点 -> SessionManager 升级为 32 分片锁 + per-shard LRU
   定时扫描热点 -> HeartbeatPlugin 升级为时间轮
 
@@ -1956,7 +1833,7 @@ Step 4:验证优化效果
 - **端口:** 所有协议测试使用 `127.0.0.1:0`(内核分配),禁止固定端口(防冲突).
 - **缺陷回归:** 每个生产缺陷先写最小失败测试,修复后保留.
 - **并发测试:** 所有涉及 Session / PluginChain / SessionManager 的测试必须使用 `-race` 验证.
-- **云端验证:** 实机测试结果写入 `docs/PROJECT-REVIEW-YYMMDD-HHMMSS.md`.
+- **云端验证:** 实机测试结果写入 `docs/reports/PROJECT-REVIEW-YYMMDD-HHMMSS.md`.
 - **部署测试:** 检查语义(字段值,安全配置),不只检查文件存在.
 
 ### 15.3 Fuzz 测试目标
@@ -2053,7 +1930,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o shark-socket ./cmd/server
+RUN CGO_ENABLED=0 go build -o shark-socket ./cmd/shark-socket
 
 # 阶段2:运行
 FROM alpine:3.22
@@ -2073,7 +1950,7 @@ ENTRYPOINT ["./shark-socket"]
 18081 Health / Readiness
 ```
 
-### 16.2 Kubernetes(deploy/kubernetes/)
+### 16.2 Kubernetes(deploy/k8s/)
 
 **生产默认安全配置:**
 
@@ -2104,10 +1981,16 @@ livenessProbe:
 **Kustomization 结构:**
 
 ```
-deploy/kubernetes/
-  application/kustomization.yaml   <- 应用资源
-  monitoring/kustomization.yaml    <- Prometheus ServiceMonitor
-  kustomization.yaml               <- 根聚合(避免跨目录引用被 load restrictor 拒绝)
+deploy/k8s/                        <- 单层平面目录,由 kustomization.yaml 聚合
+  namespace.yaml                # Namespace
+  serviceaccount.yaml           # ServiceAccount
+  configmap.yaml                # 配置(JSON)
+  deployment.yaml               # Deployment(securityContext + probes)
+  service.yaml                  # Service(18000 / 18080 / 18081)
+  networkpolicy.yaml            # 入方向 NetworkPolicy
+  pdb.yaml                      # PodDisruptionBudget
+  hpa.yaml                      # HorizontalPodAutoscaler
+  kustomization.yaml            # resources: 上述文件清单
 ```
 
 ### 16.3 Helm(deploy/helm/shark-socket/)
@@ -2221,13 +2104,14 @@ shark-socket                  shared data plane              shark-MQTT
 
 ### ADR-002:Gateway 拥有共享 Runtime
 
-**决策:** SessionManager,PluginRunner,Logger,Metrics,Tracer 由 Gateway 创建或注入,协议通过 `UseRuntime` 接收.
+**决策:** SessionManager,插件链(`PluginChain`,实现 `core.PluginRunner`),Logger,Metrics,Tracer 由 Gateway 创建或注入,协议通过 `UseRuntime` 接收.
 
 **原因:**
 
 - 避免每个协议各自维护插件和 session,保证跨协议统计,广播和关闭一致.
 - 显式所有权,便于测试替换 Runtime 组件.
 - 协议层不得自行创建全局替代依赖.
+- `NewGateway` 内置默认值(单锁 SessionManager、空 PluginChain、三个 Nop 实现),调用方按需覆盖.
 
 ### ADR-003:关闭流程分阶段(StagedServer)
 
@@ -2240,15 +2124,16 @@ shark-socket                  shared data plane              shark-MQTT
 - 对 TCP / WebSocket / QUIC 等长连接协议尤其重要.
 - `Start -> Stop -> Start` 可重入约束通过分阶段关闭更容易保证.
 
-### ADR-004:插件 panic 在 PluginRunner 隔离
+### ADR-004:插件 panic 在插件链内隔离
 
-**决策:** panic recover 放在 PluginRunner,不散落在各协议实现中.
+**决策:** panic recover 放在插件链实现 `PluginChain`(`core.PluginRunner` 的实现),不散落在各协议实现中.
 
 **原因:**
 
 - 插件失败策略一致,协议代码更专注网络生命周期.
-- 统一记录 plugin panic 指标(`shark_plugin_panics_total`).
-- `OnClose` 必须尽量全部执行,即使某个插件 panic 也不中断后续插件.
+- 五个钩子各有独立包装(`safeAccept` / `safeMessage` / `safeClose` / `safeStart` / `safeStop`),panic 转为 `ErrPluginPanic`.
+- `OnClose` 必须尽量全部执行:某个插件 panic 后仍继续调用后续插件.
+- 链本身不调用 `sess.Close()`:是否关闭会话由传输层决定.
 
 ### ADR-005:Codec 适配层作为稳定契约
 
@@ -2286,11 +2171,11 @@ shark-socket                  shared data plane              shark-MQTT
 ### P0:架构地基(先让框架可运行,可测试)
 
 1. `internal/core/` 完整类型系统(Protocol / Message / Session / Server / Runtime / Plugin / Codec / 错误体系 / 可观测接口).
-2. `internal/runtime/` Gateway(StagedServer 三阶段关闭 + 启动回滚)+ SessionManager(P0 单锁)+ PluginRunner(panic 隔离)+ WorkerPool(四策略).
+2. `internal/runtime/` Gateway(StagedServer 三阶段关闭 + 启动回滚)+ SessionManager(单锁)+ PluginChain(panic 隔离)+ WorkerPool(三策略,位于 transport/shared).
 3. `internal/transport/tcp/` Framer 4 种 + TCPSession 6 步关闭 + TCPServer acceptLoop + TCPClient.
-4. `internal/infrastructure/observability/` slogLogger + PrometheusMetrics(静态预注册指标子集)+ NoopTracer.
-5. `internal/application/` Config(JSON+env+统一验证)+ App 装配.
-6. `cmd/server/main.go` 信号处理 + 优雅关闭.
+4. `internal/infra/observability/` MemoryLogger + MemoryMetrics + PrometheusMetrics + OpenTelemetryTracer,默认空实现在 `internal/core`.
+5. `internal/app/` Config(JSON+env+统一验证)+ App 装配.
+6. `cmd/shark-socket/main.go` 信号处理 + 优雅关闭.
 7. `api/api.go` 类型别名 + 工厂函数.
 8. 基础插件:BlacklistPlugin + RateLimitPlugin + HeartbeatPlugin(ticker 扫描).
 9. 健康 / 就绪 / Metrics 端点.
@@ -2361,7 +2246,7 @@ shark-socket                  shared data plane              shark-MQTT
 4. `go run scripts/run_tests.go -mode all -timeout 5m` 通过.
 5. 部署相关改动必须更新 `tests/deploy` 并通过 `scripts/run_tests.go (via -mode deploy)`.
 6. 公共行为改变必须同步 README,配置文档,测试策略或审查报告.
-7. 云端实测结果写入 `docs/PROJECT-REVIEW-YYMMDD-HHMMSS.md`.
+7. 云端实测结果写入 `docs/reports/PROJECT-REVIEW-YYMMDD-HHMMSS.md`.
 8. 新协议或新功能必须有对应的 example.
 
 ---
@@ -2369,10 +2254,11 @@ shark-socket                  shared data plane              shark-MQTT
 ## 21. 文档维护规则
 
 - 架构文档(本文)描述设计边界,契约和长期方向,不记录测试流水账.
-- 具体验证命令和结果写入 `docs/PROJECT-REVIEW-*.md`.
-- 配置字段完整参考写入 `docs/CONFIGURATION.md`.
-- 测试方法写入 `docs/TEST-STRATEGY.md` 和 `docs/PROTOCOL-GUIDE.md`.
-- 重要架构决策拆分到 `docs/adr/ADR-NNN-*.md`.
+- 具体验证命令和结果写入 `docs/reports/PROJECT-REVIEW-*.md`.
+- 配置字段完整参考写入 `docs/guides/CONFIGURATION-*.md`.
+- 测试方法写入 `docs/guides/TEST-STRATEGY-*.md` 和 `docs/guides/PROTOCOL-TEST-GUIDE-*.md`.
+- 重要架构决策拆分到 `docs/decisions/ADR-NNN-*.md`.
+- 各层契约与机制细节写入 `docs/architecture/` 下的对应文档.
 - 审查报告按 `PROJECT-REVIEW-YYMMDD-HHMMSS.md` 命名,保留历史.
 
 ---

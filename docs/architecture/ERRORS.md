@@ -22,8 +22,10 @@
 `internal/core/errors.go` 定义了框架的**完整错误体系**,包括:
 
 - **错误变量**:所有预定义错误,使用 `errors.New` 创建,支持 `errors.Is` 判断
-- **分类函数**:IsRetryable / IsFatal / IsSecurityRejection / IsPluginControl / IsTransient
+- **控制信号**:`ErrPluginDrop` / `ErrPluginBlock`(定义在 `internal/core/plugin.go`)
 - **命名规范**:`Err` 前缀 + 驼峰(如 `ErrSessionClosed`),不使用缩写(如 `ErrSessClosed`)
+- **不做分类包装**:框架不再提供 IsRetryable / IsFatal 之类的聚合判断,调用点直接
+  `errors.Is` / `errors.As`,理由见第 4 节
 
 **设计原则:**
 
@@ -38,21 +40,33 @@
 
 ## 2. 错误分类
 
-错误按**职责边界**分为以下类别:
+框架错误只集中在两个文件,按"是不是失败"分成两类:
 
-| 类别 | 前缀 | 说明 |
+| 文件 | 内容 | 用途 |
 |------|------|------|
-| 会话错误 | `ErrSession*` | Session 生命周期,容量限制 |
-| 消息错误 | `ErrMessage*` / `ErrFrame*` | 消息大小,帧格式,队列 |
-| 编解码错误 | `ErrEncode*` / `ErrDecode*` | Codec 转换失败 |
-| 超时错误 | `Err*Timeout` | 读写,空闲,心跳,关闭超时 |
-| 服务错误 | `ErrServer*` / `ErrListen*` | Server 生命周期,监听失败 |
-| 插件控制错误 | `ErrPlugin*` | 插件链控制流(非业务错误) |
-| 安全错误 | `ErrRateLimited` / `ErrBlacklisted` / `ErrAutoBanned` | 安全策略拒绝 |
-| 协议错误 | `Err{Protocol}*` | 协议特定错误(CoAP,gRPC-Web 等) |
-| 网关错误 | `ErrGateway*` / `ErrNoServer*` | Gateway 编排错误 |
-| 基础设施错误 | `ErrCache*` / `ErrStore*` / `ErrCircuit*` / `ErrPubSub*` | 外部依赖失败 |
-| 配置错误 | `ErrInvalidConfig` | 配置验证失败 |
+| `internal/core/errors.go` | 13 个失败信号 | 用 `errors.Is` 判断,表示传输或装配失败 |
+| `internal/core/plugin.go` | 2 个插件控制信号 | 不是失败,是插件链的控制流指令 |
+
+按语义分组:
+
+| 类别 | 变量 | 说明 |
+|------|------|------|
+| 会话 | `ErrSessionClosed` `ErrSessionCapacity` `ErrDuplicateSession` | 已关闭 / 到容量 / 重复注册 |
+| 网关编排 | `ErrNoServers` `ErrDuplicateProtocol` | 无 Server 可启动 / 协议重复注册 |
+| 服务 | `ErrServerClosed` | Server 已关闭 |
+| 参数 | `ErrInvalidArgument` | nil 或非法入参 |
+| 通用关闭 | `ErrClosed` | 资源已关闭(池,通道) |
+| 背压 | `ErrWriteQueueFull` | 写队列或任务队列满 |
+| 帧 | `ErrFrameTooLarge` | 帧长度超过限制 |
+| 能力 | `ErrUnsupportedFeature` | 当前构建不支持该能力 |
+| panic 隔离 | `ErrPluginPanic` `ErrHandlerPanic` | panic 被 recover 后转成的错误 |
+| 插件控制 | `ErrPluginDrop` `ErrPluginBlock` | 控制流语义,见第 6 节 |
+
+早期草案里设计过 `ErrSessionNotFound`、`ErrListenFailed`、`ErrReadTimeout`、
+`ErrDecodeFailure`、`ErrRateLimited`、`ErrCircuitOpen` 等约 45 个变量,它们**没有实现**.
+实际代码在这些场景中直接返回底层错误(`net.OpError`、`os.SyscallError` 等)或用
+`fmt.Errorf("%w: ...")` 包装,不做二次归一化.归一化会丢掉底层诊断信息,而调用方真正需要
+判断的是"是不是超时/是不是对端断开",这由错误自身是否实现 `net.Error` 决定.
 
 ---
 
@@ -61,356 +75,136 @@
 ### 3.1 会话错误
 
 ```go
-// 会话生命周期与状态
+// internal/core/errors.go
 var (
-    ErrSessionNotFound  = errors.New("shark: session not found")
-    ErrSessionClosed    = errors.New("shark: session closed")
-    ErrSessionCapacity  = errors.New("shark: session manager at capacity")
-    ErrSessionLimit     = errors.New("shark: session limit reached") // 协议级限制
+    ErrSessionClosed    = errors.New("session closed")
+    ErrSessionCapacity  = errors.New("session capacity reached")
+    ErrDuplicateSession = errors.New("duplicate session")
 )
 ```
 
-**使用场景:**
-
 | 错误 | 返回时机 | 调用方处理 |
 |------|---------|-----------|
-| `ErrSessionNotFound` | `SessionManager.Get(id)` 未找到 | 跨节点路由场景,降级查询 Cache |
-| `ErrSessionClosed` | `Session.Send()` 在 Draining/Closed 状态 | 停止发送,记录日志 |
-| `ErrSessionCapacity` | `SessionManager.Register()` 超过 MaxSessions | 拒绝连接,触发 LRU 淘汰(P2) |
-| `ErrSessionLimit` | 协议级 MaxSessions 限制(如 UDP Server) | 拒绝新伪会话 |
+| `ErrSessionClosed` | `Session.Send()` 时会话处于 Draining / Closed;WorkerPool 阻塞提交期间会话被关闭 | 停止发送,不再重试 |
+| `ErrSessionCapacity` | `SessionManager.Register()` 达到上限(默认 100 万) | 传输层关闭该连接,不影响已有会话 |
+| `ErrDuplicateSession` | `Register()` 遇到已存在的 ID | 调用方 ID 生成有误,关闭连接并记 Error |
 
-### 3.2 消息错误
+`Get(id)` 未找到返回 `(nil, false)` 而不返回错误:`SessionManager` 的契约里"没有这个会话"
+是正常答案,不是失败.
+
+### 3.2 网关与服务错误
 
 ```go
-// 消息大小与格式
 var (
-    ErrMessageTooLarge  = errors.New("shark: message too large")
-    ErrInvalidMessage   = errors.New("shark: invalid message")
-    ErrWriteQueueFull   = errors.New("shark: write queue full")
-)
-
-// 帧解析
-var (
-    ErrFrameTooLarge    = errors.New("shark: frame too large")
-    ErrInvalidFrame     = errors.New("shark: invalid frame")
+    ErrNoServers          = errors.New("no servers registered")
+    ErrDuplicateProtocol  = errors.New("duplicate protocol")
+    ErrServerClosed       = errors.New("server closed")
+    ErrInvalidArgument    = errors.New("invalid argument")
+    ErrClosed             = errors.New("closed")
+    ErrUnsupportedFeature = errors.New("unsupported feature")
 )
 ```
 
-**使用场景:**
+| 错误 | 返回时机 | 调用方处理 |
+|------|---------|-----------|
+| `ErrNoServers` | `Gateway.Start()` 时未注册任何 Server;`Gateway.Register(nil)` | 装配错误,直接失败 |
+| `ErrDuplicateProtocol` | `Gateway.Register()` 同一协议注册两次 | 装配错误,直接失败 |
+| `ErrServerClosed` | 已关闭的 Server 再次被使用 | 停止使用该 Server |
+| `ErrInvalidArgument` | `SessionManager.Register(nil)` 等 | 调用方 bug,记 Error |
+| `ErrClosed` | 已 Stop 的 WorkerPool 收到 `Submit` | 停止提交 |
+| `ErrUnsupportedFeature` | 配置请求了当前构建不支持的能力 | 提示配置错误 |
+
+### 3.3 背压与帧错误
+
+```go
+var (
+    ErrWriteQueueFull = errors.New("write queue full")
+    ErrFrameTooLarge  = errors.New("frame too large")
+)
+```
 
 | 错误 | 返回时机 | 调用方处理 |
 |------|---------|-----------|
-| `ErrMessageTooLarge` | 消息超过 `MaxMessageSize` | HTTP 返回 413,TCP/WS 关闭连接 |
-| `ErrInvalidMessage` | 协议帧校验失败(如 CoAP 帧长度不一致) | 丢弃消息,记录错误计数 |
-| `ErrWriteQueueFull` | `Session.Send()` 写队列满 | 调用方重试或丢弃(根据 QoS) |
+| `ErrWriteQueueFull` | 会话写队列满;或 WorkerPool 在 `PolicyDrop` / `PolicyClose` 下拒绝任务 | 由 QoS 决定丢弃或关闭会话;`PolicyBlock` 下不会出现该错误 |
 | `ErrFrameTooLarge` | 帧长度超过 Framer 限制 | 关闭连接,计入连续错误 |
-| `ErrInvalidFrame` | 帧格式错误(如长度前缀损坏) | 关闭连接,计入连续错误 |
 
-### 3.3 编解码错误
+### 3.4 panic 隔离错误
 
 ```go
-// Codec 转换失败
 var (
-    ErrEncodeFailure    = errors.New("shark: encode failure")
-    ErrDecodeFailure    = errors.New("shark: decode failure")
+    ErrPluginPanic  = errors.New("plugin panicked")
+    ErrHandlerPanic = errors.New("user handler panicked")
 )
 ```
 
-**使用场景:**
-
 | 错误 | 返回时机 | 调用方处理 |
 |------|---------|-----------|
-| `ErrEncodeFailure` | `Codec.Encode(msg)` 失败(如 JSON 序列化错误) | 返回 500 或关闭连接,记录业务错误 |
-| `ErrDecodeFailure` | `Codec.Decode(data)` 失败(如 JSON 反序列化错误) | 返回 400 或丢弃消息,记录格式错误 |
+| `ErrPluginPanic` | 插件任一钩子 panic,被 `PluginChain` 的 `safe*` 包装 recover | 会话级失败处理,进程继续 |
+| `ErrHandlerPanic` | 用户 handler panic(`shared.CallHandler`);或 `SessionManager.Broadcast` / `CloseAll` 中会话实现 panic(`safeSessionCall`) | 关闭该会话,进程继续 |
 
-### 3.4 超时错误
+这两个错误存在的意义是把"进程崩溃"降级为"一条会话失败",因此它们**必须**被记录一次日志.
+`shared.CallHandler` 会记录 `user handler panic`;`safeSessionCall` 只返回错误,由调用方决定
+是否记录.
+
+### 3.5 插件控制错误
 
 ```go
-// 各类超时
+// internal/core/plugin.go
 var (
-    ErrReadTimeout      = errors.New("shark: read timeout")
-    ErrWriteTimeout     = errors.New("shark: write timeout")
-    ErrIdleTimeout      = errors.New("shark: idle timeout")
-    ErrHeartbeatTimeout = errors.New("shark: heartbeat timeout")
-    ErrDrainTimeout     = errors.New("shark: drain timeout")
+    ErrPluginDrop  = errors.New("plugin drop")
+    ErrPluginBlock = errors.New("plugin block")
 )
 ```
 
-**使用场景:**
-
 | 错误 | 返回时机 | 调用方处理 |
 |------|---------|-----------|
-| `ErrReadTimeout` | `conn.SetReadDeadline()` 超时 | 关闭连接,记录超时 |
-| `ErrWriteTimeout` | `conn.SetWriteDeadline()` 超时 | 关闭连接,记录超时 |
-| `ErrIdleTimeout` | `LastActiveAt() + IdleTimeout < now` | HeartbeatPlugin 关闭连接 |
-| `ErrHeartbeatTimeout` | 心跳超时(WebSocket PongTimeout) | 关闭连接,记录心跳超时 |
-| `ErrDrainTimeout` | `Session.Close()` drain 超时 | 记录 Warn,强制关闭 |
+| `ErrPluginDrop` | `Plugin.OnMessage()` | 停止链,不调用 Handler,会话继续 |
+| `ErrPluginBlock` | `Plugin.OnAccept()` 或 `OnMessage()` | 停止链,传输层关闭会话 |
 
-### 3.5 服务错误
-
-```go
-// Server 生命周期
-var (
-    ErrServerClosed     = errors.New("shark: server closed")
-    ErrServerNotStarted = errors.New("shark: server not started")
-    ErrListenFailed     = errors.New("shark: listen failed")
-)
-```
-
-**使用场景:**
-
-| 错误 | 返回时机 | 调用方处理 |
-|------|---------|-----------|
-| `ErrServerClosed` | `Server.Start()` 在已关闭的 Server 上调用 | 返回错误,不启动 |
-| `ErrServerNotStarted` | `Server.Stop()` 在未启动的 Server 上调用 | 直接返回 nil(幂等) |
-| `ErrListenFailed` | `net.Listen()` 失败(端口占用,权限不足) | Gateway 启动失败,回滚已启动的 Server |
-
-### 3.6 插件控制错误
-
-```go
-// 插件控制流(非业务错误)
-var (
-    ErrPluginDrop       = errors.New("shark: plugin drop message")  // 丢弃消息
-    ErrPluginBlock      = errors.New("shark: plugin block session") // 拒绝连接或关闭连接
-    ErrPluginDuplicate  = errors.New("shark: plugin duplicate name") // 重复注册(Warn 日志)
-)
-```
-
-**使用场景:**
-
-| 错误 | 返回时机 | 调用方处理 |
-|------|---------|-----------|
-| `ErrPluginDrop` | `Plugin.OnMessage()` 返回 | 停止插件链,不调用 Handler,连接继续 |
-| `ErrPluginBlock` | `Plugin.OnAccept()` 或 `OnMessage()` 返回 | 关闭连接,记录拒绝原因 |
-| `ErrPluginDuplicate` | `PluginRunner.Register()` 重复名称 | 覆盖旧插件,记录 Warn |
-
-**注意:** 这些错误是**控制流语义**,不是真正的业务错误,详见 [sec.6 控制错误与业务错误](#6-控制错误与业务错误).
-
-### 3.7 安全错误
-
-```go
-// 安全策略拒绝
-var (
-    ErrRateLimited      = errors.New("shark: rate limited")
-    ErrBlacklisted      = errors.New("shark: ip blacklisted")
-    ErrAutoBanned       = errors.New("shark: auto banned")
-    ErrMessageRateExceeded = errors.New("shark: message rate exceeded")
-)
-```
-
-**使用场景:**
-
-| 错误 | 返回时机 | 调用方处理 |
-|------|---------|-----------|
-| `ErrRateLimited` | RateLimitPlugin 连接速率超限 | OnAccept 返回 ErrPluginBlock,拒绝连接 |
-| `ErrBlacklisted` | BlacklistPlugin IP 在黑名单 | OnAccept 返回 ErrPluginBlock,拒绝连接 |
-| `ErrAutoBanned` | AutoBanPlugin 触发自动封禁 | 加入黑名单,拒绝连接 |
-| `ErrMessageRateExceeded` | RateLimitPlugin 消息速率超限 | OnMessage 返回 ErrPluginDrop,丢弃消息 |
-
-### 3.8 协议错误
-
-```go
-// 协议特定错误
-var (
-    ErrCoAPInvalidMessage      = errors.New("shark: coap invalid message")
-    ErrGRPCWebMalformedFrame   = errors.New("shark: grpc-web malformed frame")
-    ErrUnsupportedVersion      = errors.New("shark: unsupported version")
-)
-```
-
-**使用场景:**
-
-| 错误 | 返回时机 | 调用方处理 |
-|------|---------|-----------|
-| `ErrCoAPInvalidMessage` | CoAP 帧校验失败(Version != 1 / TKL > 8) | 丢弃消息,计入协议错误 |
-| `ErrGRPCWebMalformedFrame` | gRPC-Web 帧标志位非法 | 返回 400,关闭连接 |
-| `ErrUnsupportedVersion` | 协议版本不支持 | 返回协议错误码,拒绝连接 |
-
-### 3.9 网关错误
-
-```go
-// Gateway 编排
-var (
-    ErrNoServerRegistered   = errors.New("shark: no server registered")
-    ErrDuplicateProtocol    = errors.New("shark: duplicate protocol")
-    ErrGatewayNotStarted    = errors.New("shark: gateway not started")
-    ErrGracefulShutdown     = errors.New("shark: graceful shutdown") // 关闭信号(非错误)
-)
-```
-
-**使用场景:**
-
-| 错误 | 返回时机 | 调用方处理 |
-|------|---------|-----------|
-| `ErrNoServerRegistered` | `Gateway.Start()` 时 servers 为空 | 返回错误,不启动 |
-| `ErrDuplicateProtocol` | 注册重复 Protocol 的 Server | 返回错误,拒绝注册 |
-| `ErrGatewayNotStarted` | `Gateway.Stop()` 在未启动的 Gateway 上调用 | 直接返回 nil(幂等) |
-| `ErrGracefulShutdown` | Handler 可感知的关闭信号 | Handler 返回此错误表示主动关闭 |
-
-### 3.10 基础设施错误
-
-```go
-// 外部依赖失败
-var (
-    ErrCacheMiss        = errors.New("shark: cache miss")
-    ErrStoreNotFound    = errors.New("shark: store key not found")
-    ErrCircuitOpen      = errors.New("shark: circuit breaker open")
-    ErrPubSubClosed     = errors.New("shark: pubsub closed")
-    ErrInfrastructure   = errors.New("shark: infrastructure error") // 通用基础设施错误
-    ErrDegraded         = errors.New("shark: service degraded")     // 降级状态
-)
-```
-
-**使用场景:**
-
-| 错误 | 返回时机 | 调用方处理 |
-|------|---------|-----------|
-| `ErrCacheMiss` | `Cache.Get(key)` 未找到 | 降级到本地查找或返回默认值 |
-| `ErrStoreNotFound` | `Store.Load(key)` 未找到 | 返回 404 或初始化新记录 |
-| `ErrCircuitOpen` | CircuitBreaker 熔断状态 | 快速失败,跳过调用 |
-| `ErrPubSubClosed` | PubSub 已关闭 | 停止发布,记录错误 |
-| `ErrInfrastructure` | 通用基础设施错误(包装具体错误) | 降级或重试 |
-| `ErrDegraded` | 服务进入降级状态 | 记录告警,跳过非核心功能 |
-
-### 3.11 配置错误
-
-```go
-// 配置验证
-var (
-    ErrInvalidConfig    = errors.New("shark: invalid configuration")
-)
-```
-
-**使用场景:**
-
-| 错误 | 返回时机 | 调用方处理 |
-|------|---------|-----------|
-| `ErrInvalidConfig` | `application.Config.Validate()` 失败 | 拒绝启动,输出具体字段错误 |
+这两个不是失败,是控制流指令,详见第 6 节.
 
 ---
 
-## 4. 分类判断函数
+## 4. 错误判断方式
 
-### 4.1 IsRetryable
+框架**没有**提供 `IsRetryable` / `IsFatal` / `IsSecurityRejection` / `IsTransient`
+这类分类函数.分类函数把判断逻辑与调用场景解耦,结果是每个调用点都要先理解函数内部的错误
+集合,反而比直接判断更难维护.实际的判断方式只有三种:
+
+**1. `errors.Is` 判断哨兵错误:**
 
 ```go
-// IsRetryable:调用方可安全重试
-func IsRetryable(err error) bool {
-    return errors.Is(err, ErrWriteQueueFull) ||
-           errors.Is(err, ErrCircuitOpen) ||
-           errors.Is(err, ErrRateLimited) ||
-           errors.Is(err, ErrCacheMiss)
+if errors.Is(err, core.ErrPluginDrop) {
+    return // 丢弃消息,连接继续
+}
+if errors.Is(err, core.ErrWriteQueueFull) {
+    s.rt.Metrics().IncCounter("tcp_task_queue_full_total")
 }
 ```
 
-**使用场景:**
+**2. `shared.IsTimeout` 判断网络超时:**
 
 ```go
-if err := sess.Send(data); err != nil {
-    if IsRetryable(err) {
-        time.Sleep(10 * time.Millisecond)
-        return sess.Send(data) // 重试一次
-    }
-    return err
+// internal/transport/shared/timeout.go
+func IsTimeout(err error) bool {
+    var netErr net.Error
+    return errors.As(err, &netErr) && netErr.Timeout()
 }
 ```
 
-### 4.2 IsFatal
+这是框架里唯一存在的分类辅助函数,被 TCP / UDP / WebSocket / CoAP / gRPC-Web 五个服务端
+用来区分"空闲超时"与"真实故障":前者只计指标,后者记 Error 日志.
+
+**3. `errors.As` 提取底层错误:**
 
 ```go
-// IsFatal:连接或服务不可继续
-func IsFatal(err error) bool {
-    return errors.Is(err, ErrSessionClosed) ||
-           errors.Is(err, ErrServerClosed) ||
-           errors.Is(err, ErrFrameTooLarge) ||
-           errors.Is(err, ErrMessageTooLarge)
-}
+var netErr net.Error
+if errors.As(err, &netErr) { ... }
 ```
 
-**使用场景:**
-
-```go
-if err := handleMessage(sess, msg); err != nil {
-    if IsFatal(err) {
-        sess.Close(context.Background()) // 立即关闭连接
-        return err
-    }
-    logger.Warn("non-fatal error", "error", err)
-}
-```
-
-### 4.3 IsSecurityRejection
-
-```go
-// IsSecurityRejection:安全策略拒绝
-func IsSecurityRejection(err error) bool {
-    return errors.Is(err, ErrBlacklisted) ||
-           errors.Is(err, ErrAutoBanned) ||
-           errors.Is(err, ErrRateLimited) ||
-           errors.Is(err, ErrMessageRateExceeded)
-}
-```
-
-**使用场景:**
-
-```go
-if err := pluginChain.RunAccept(sess); err != nil {
-    if IsSecurityRejection(err) {
-        metrics.Counter("shark_rejected_connections_total",
-            "protocol", sess.Protocol().String(),
-            "reason", err.Error()).Inc()
-    }
-    return err
-}
-```
-
-### 4.4 IsPluginControl
-
-```go
-// IsPluginControl:插件控制流(非业务错误)
-func IsPluginControl(err error) bool {
-    return errors.Is(err, ErrPluginDrop) ||
-           errors.Is(err, ErrPluginBlock)
-}
-```
-
-**使用场景:**
-
-```go
-data, err := pluginChain.RunMessage(sess, payload)
-if err != nil {
-    if IsPluginControl(err) {
-        // 正常控制流,不记录业务错误
-        return err
-    }
-    logger.Error("plugin error", "error", err)
-    return err
-}
-```
-
-### 4.5 IsTransient
-
-```go
-// IsTransient:临时故障,可降级处理
-func IsTransient(err error) bool {
-    return errors.Is(err, ErrCircuitOpen) ||
-           errors.Is(err, ErrCacheMiss) ||
-           errors.Is(err, ErrPubSubClosed) ||
-           errors.Is(err, ErrInfrastructure)
-}
-```
-
-**使用场景:**
-
-```go
-if err := store.Save(ctx, key, data); err != nil {
-    if IsTransient(err) {
-        logger.Warn("transient failure, skipping persistence", "error", err)
-        return nil // 降级处理,不阻塞主流程
-    }
-    return err
-}
-```
+**为什么没有 `IsRetryable`:** 能否重试取决于调用场景而非错误类型.同一个
+`ErrWriteQueueFull`,在可丢消息的场景下应当丢弃,在不可丢消息的场景下应当阻塞等待;把它归入
+统一的 retryable 集合必然在其中一种场景下给出错误答案.
 
 ---
 
@@ -418,19 +212,24 @@ if err := store.Save(ctx, key, data); err != nil {
 
 ### 5.1 错误包装
 
-使用 `fmt.Errorf` 包装错误,保留原始错误信息:
+用 `fmt.Errorf("%w: ...")` 保留可判定的原因,同时附加定位上下文:
 
 ```go
-// [OK] 正确
-if err := conn.Read(buf); err != nil {
-    return fmt.Errorf("%w: %v", ErrReadTimeout, err)
-}
+// [OK] 正确:保留 %w,errors.Is 仍然可用,同时补上出错的协议与地址
+return fmt.Errorf("listen %s %s: %w", proto, addr, err)
 
-// [X] 错误(丢失原始错误)
-if err := conn.Read(buf); err != nil {
-    return ErrReadTimeout
-}
+// [OK] 正确:附加协议名,保留可判定的原因
+return fmt.Errorf("plugin %q start: %w", p.Name(), err)
+
+// [X] 错误:把底层错误整个丢掉,运维拿不到真正的原因(端口占用?权限?)
+return core.ErrServerClosed
+
+// [X] 错误:用 %v 包装会切断错误链,errors.Is 失效
+return fmt.Errorf("listen failed: %v", err)
 ```
+
+只在确实需要一个**新语义**时才用 `%w` 包哨兵错误(例如 `StartAll` 把插件启动失败包成
+`plugin %q start: %w`);纯透传的场景直接 `return err`.
 
 ### 5.2 错误判断
 
@@ -438,49 +237,47 @@ if err := conn.Read(buf); err != nil {
 
 ```go
 // [OK] 正确
-if errors.Is(err, ErrSessionClosed) {
+if errors.Is(err, core.ErrSessionClosed) {
     // 处理逻辑
 }
 
-// [X] 错误(字符串比较不可靠)
-if err != nil && err.Error() == "shark: session closed" {
+// [X] 错误(字符串比较不可靠,错误信息可能被包装)
+if err != nil && err.Error() == "session closed" {
     // 处理逻辑
 }
 ```
 
 ### 5.3 错误返回优先级
 
-多个错误同时发生时,按优先级返回:
+一个函数同时可能返回多个错误时,按"最先发生的真实原因"返回,不做优先级重排.实践中形成的
+习惯顺序是:
 
 ```
-1. Fatal 错误(ErrSessionClosed / ErrFrameTooLarge)
-2. 安全错误(ErrBlacklisted / ErrRateLimited)
-3. 插件控制错误(ErrPluginDrop / ErrPluginBlock)
-4. 业务错误
-5. 临时错误(ErrCircuitOpen / ErrCacheMiss)
+1. panic 隔离错误(ErrPluginPanic / ErrHandlerPanic):最需要被看见
+2. 会话 / 服务终止错误(ErrSessionClosed / ErrServerClosed)
+3. 插件控制错误(ErrPluginDrop / ErrPluginBlock):控制流,调用方必须能区分
+4. 背压错误(ErrWriteQueueFull)
+5. 业务错误
 ```
 
-示例:
+关停路径是唯一的例外:`Gateway.Stop` 保留**首个**错误作为返回值,同时继续走完所有阶段,
+因为关停必须完成;其余阶段的失败只记日志.
 
 ```go
-if errors.Is(err, ErrSessionClosed) {
-    return err // 优先返回 Fatal 错误
+if err := runStage(ctx, g.timeouts.Drain, staged.Drain); err != nil && firstErr == nil {
+    firstErr = err     // 记住第一个失败,但不中断后续阶段
 }
-if IsSecurityRejection(err) {
-    return err // 其次返回安全错误
-}
-// 其他错误...
 ```
 
 ### 5.4 错误日志级别
 
 | 错误类型 | 日志级别 | 说明 |
 |---------|---------|------|
-| Fatal 错误 | Error | 连接不可继续,记录完整堆栈 |
-| 安全错误 | Warn | 记录 IP,原因,触发时间 |
-| 插件控制错误 | Debug | 正常控制流,不记录 Error |
-| 临时错误 | Warn | 降级处理,记录降级原因 |
+| `ErrPluginPanic` / `ErrHandlerPanic` | Error | 原本会导致进程崩溃,必须留下诊断 |
 | 业务错误 | Error | 记录业务上下文 |
+| 背压错误(`ErrWriteQueueFull`) | Warn + 专用指标 | 单独计数,避免污染错误率 |
+| 会话 / 服务终止错误 | Debug 或 Warn | 对端断开是常态,不是故障 |
+| 插件控制错误 | Debug | 正常控制流,不计入错误指标 |
 
 ---
 
@@ -500,21 +297,19 @@ if IsSecurityRejection(err) {
 **错误判断流程:**
 
 ```go
-data, err := pluginChain.RunMessage(sess, payload)
+data, err := pluginChain.OnMessage(sess, payload)
 if err != nil {
     if errors.Is(err, ErrPluginDrop) {
         // 控制流:正常丢弃消息,不记录业务错误
-        metrics.Counter("shark_dropped_messages_total",
-            "protocol", sess.Protocol().String(),
-            "reason", "plugin_drop").Inc()
+        metrics.IncCounter("dropped_messages_total", "protocol", sess.Protocol().String(),
+            "reason", "plugin_drop")
         return nil // 不向上传播
     }
     if errors.Is(err, ErrPluginBlock) {
         // 控制流:关闭连接
         sess.Close(context.Background())
-        metrics.Counter("shark_rejected_connections_total",
-            "protocol", sess.Protocol().String(),
-            "reason", "plugin_block").Inc()
+        metrics.IncCounter("rejected_connections_total", "protocol", sess.Protocol().String(),
+            "reason", "plugin_block")
         return err
     }
     // 业务错误:记录 Error 日志
@@ -537,17 +332,33 @@ if err := handler(sess, Message{Payload: data}); err != nil {
 ```go
 // [OK] 正确
 if errors.Is(err, ErrPluginDrop) {
-    metrics.Counter("shark_dropped_messages_total",
-        "protocol", proto.String(),
-        "reason", "plugin_drop").Inc()
+    metrics.IncCounter("dropped_messages_total", "protocol", proto.String(),
+        "reason", "plugin_drop")
     return nil
 }
 
 // [X] 错误(计入业务错误,导致告警误报)
 if errors.Is(err, ErrPluginDrop) {
-    metrics.Counter("shark_errors_total",
-        "protocol", proto.String(),
-        "kind", "plugin").Inc()
+    metrics.IncCounter("errors_total", "protocol", proto.String(),
+        "kind", "plugin")
     return err
 }
 ```
+
+---
+
+## 附:指标录制 API 约定
+
+框架的 `core.Metrics` 只有三个方法,没有 `Counter()/.Inc()` 之类的链式工厂:
+
+```go
+IncCounter(name string, labels ...string)
+SetGauge(name string, value float64, labels ...string)
+ObserveHistogram(name string, value float64, labels ...string)
+```
+
+`labels` 以 key/value 交替传入.本文档中的指标名是**示意名**,用于说明接入方式的形状;
+框架自身实际录制的指标只有 5 个(`sessions_accepted_total` / `sessions_closed_total` /
+`sessions_active` / `sessions_reclaimed_total` / `tcp_task_queue_full_total`),
+清单见 `docs/guides/Architecture.md` 9.1 节.实现参考
+`internal/infra/observability/prometheus.go`.

@@ -33,8 +33,10 @@ type PoolTask struct {
 // because Go has no per-goroutine recovery.
 //
 // The pool is safe for concurrent use and for repeated Start/Stop, which keeps
-// the transports reentrant. It is shared by the TCP, UDP and CoAP servers so
-// they all get identical backpressure and panic-isolation semantics.
+// the transports reentrant. It lives in the shared package so any transport can
+// reuse it: the TCP server instantiates one today (the other transports call the
+// handler inline through CallHandler), and all of them therefore share identical
+// handler panic-isolation semantics.
 type WorkerPool struct {
 	handler core.Handler
 	logger  core.Logger

@@ -29,27 +29,28 @@
 | 原则 | 实现 |
 |------|------|
 | 单一职责 | 每个插件只负责一个横切关注点 |
-| 优先级明确 | Priority 数字越小越先执行,启动时静态排序 |
-| panic 隔离 | PluginRunner.safeRun 捕获所有 panic,不影响其他插件 |
-| 可观测 | 每个插件记录执行时间,错误次数,panic 次数 |
-| 可替换 | 同名插件后注册覆盖(记录 Warn 日志) |
+| 优先级明确 | Priority 数字越小越先执行,`Append` 时稳定排序 |
+| panic 隔离 | `PluginChain` 的 `safe*` 包装捕获所有 panic,不影响其他插件 |
+| 可观测 | 插件自行上报执行时间与错误次数,链不代劳 |
+| 不去重 | `Append` 顺序追加,同名插件共存,名称唯一性由调用方负责 |
 | 幂等关闭 | 所有有状态插件的 Close 通过 sync.Once 保证幂等 |
 
-### 1.2 插件与 PluginRunner 的职责分离
+### 1.2 插件与 PluginChain 的职责分离
 
 ```
-PluginRunner 负责(详见 GATEWAY.md sec.4):
-  - 按 Priority 排序
+PluginChain 负责(详见 GATEWAY.md sec.4):
+  - 按 Priority 稳定排序(Append 时一次完成)
   - 按顺序调用各插件方法
-  - panic 隔离(safeRun)
-  - 记录执行时间指标
-  - ErrPluginDrop / ErrPluginBlock 语义处理
+  - 保证回调在锁外执行(copy-on-write 快照)
+  - panic 隔离(每个钩子一个 safe* 包装,返回 ErrPluginPanic)
+  - OnAccept 中途失败时逆序回滚已调用过的插件
+  - StartAll / StopAll 的启动顺序,回滚与错误汇总
 
 各插件负责:
   - 具体业务判断(黑名单匹配,令牌桶计算等)
   - 返回正确的控制错误(ErrPluginDrop / ErrPluginBlock)
   - 自身资源的生命周期管理
-  - 自身指标的记录(不依赖 PluginRunner 代劳)
+  - 自身指标的记录(不依赖 PluginChain 代劳)
 ```
 
 ### 1.2.1 生命周期插件(Start/Stop)
@@ -65,6 +66,32 @@ PluginRunner 负责(详见 GATEWAY.md sec.4):
 - 被动插件(只实现 `OnAccept/OnMessage/OnClose`)被自动跳过.
 - 脱离 Gateway 单独使用插件链时须自行 `Start()/Stop()`;内置生命周期辅助
   (`internal/plugin/lifecycle.go`)保证重复调用,Stop-without-Start 安全.
+
+**panic 隔离与错误汇总(V9 增强):**
+
+`Start` / `Stop` 与 `OnAccept` / `OnMessage` / `OnClose` 一样是用户回调,因此走同一套
+隔离机制.`PluginChain` 为五个钩子各准备一个包装:
+
+| 包装 | 钩子 | panic 后 |
+|------|------|----------|
+| `safeStart` | `Start` | 记录日志,返回 `core.ErrPluginPanic`,`StartAll` 触发回滚 |
+| `safeStop` | `Stop` | 记录日志,返回 `core.ErrPluginPanic`,`StopAll` 继续处理其余插件 |
+| `safeAccept` | `OnAccept` | 记录日志,返回 `core.ErrPluginPanic`,链逆序回滚 |
+| `safeMessage` | `OnMessage` | 记录日志,返回 `core.ErrPluginPanic`,链终止 |
+| `safeClose` | `OnClose` | 记录日志后继续下一个插件 |
+
+此前 `Start` / `Stop` 没有任何 recover:插件后台循环的启动 panic 会绕过网关的错误路径
+直接终止进程.现在它表现为一个普通的启动失败,由 `Gateway.Start` 返回给调用方.
+
+错误聚合语义:
+
+- `StartAll` 按优先级正序启动;第 k 个插件失败时,前 k-1 个已启动插件按**逆序**收到 `Stop`,
+  回滚自身的失败也一并汇总(因为"启动失败后仍有插件在跑"这件事必须对调用方可见).
+- `StopAll` 按逆序停止全部插件,`errors.Join` 汇总各自失败,单个插件失败不会阻止其余插件停止.
+- 空链、未启动就调 `StopAll`、重复调用都是安全 no-op.
+
+**链本身不调用 `sess.Close()`:** `PluginChain` 只表达"拒绝"语义(返回错误),关闭会话的
+具体动作由传输层决定,这样同一套插件链可以服务于 TCP、UDP、CoAP 等关闭代价不同的传输.
 
 ### 1.3 文件清单
 
@@ -89,41 +116,50 @@ internal/plugin/
 
 ```
 按 Priority 升序执行:
-  ErrPluginBlock -> 中断,关闭连接,记录 metrics
-  普通 error + stopOnError=true -> 中断,关闭连接
-  普通 error + stopOnError=false -> 记录 Warn,继续
-  panic -> safeRun recover,记录 Error,按配置中断或继续
   nil -> 继续下一个插件
+  ErrPluginBlock -> 立刻返回该错误,链不继续;关闭动作由传输层执行
+  普通 error     -> 立刻返回该错误,链不继续
+  panic          -> safeAccept recover,记录 Error,返回 ErrPluginPanic
+
+任一插件返回错误时,序号在它之前且已成功执行的插件按逆序收到 OnClose,
+释放它们在 OnAccept 中分配的资源(逆序回滚).
 ```
+
+链内没有 stopOnError 之类的开关:错误一律终止链并上抛,由传输层决定是关闭会话还是只记录.
+行为只有一种,便于推理与测试.
 
 ### 2.2 OnMessage 执行规则(payload 改写链)
 
 ```
 data = originalPayload
 按 Priority 升序执行:
-  ErrPluginDrop -> 停止链,不调用 Handler,连接继续
-  ErrPluginBlock -> 停止链,关闭连接
-  nil, out -> data = out(允许改写 payload)
-  普通 error -> 按策略处理
-返回最终 data 给 Handler
+  nil, out -> data = out(允许改写 payload),继续下一个插件
+  ErrPluginDrop -> 立刻返回,不调用 Handler,连接继续
+  ErrPluginBlock -> 立刻返回,连接关闭由传输层执行
+  普通 error     -> 立刻返回该错误
+  panic          -> safeMessage recover,记录 Error,返回 ErrPluginPanic
+返回最终 data 给传输层,再交给 Handler
 ```
+
+返回错误时 `OnMessage` 返回 `nil` payload,避免调用方把被丢弃的消息当作有效数据继续处理.
 
 ### 2.3 OnClose 执行规则
 
 ```
-按 Priority 逆序执行(确保资源全部释放):
-  每个插件必须执行(不可中断)
-  即使 panic 也继续后续插件(safeRun defer-style)
-  忽略返回错误(void)
+按 Priority 逆序执行(确保依赖方先释放):
+  每个插件都必须被调用(不可中断)
+  即使某个插件 panic 也继续调用后续插件(safeClose 只记日志,不改控制流)
+  返回值为 void,错误无法表达也不被观察
 ```
 
 ### 2.4 控制错误语义速查
 
 | 错误 | OnAccept 效果 | OnMessage 效果 |
 |------|--------------|----------------|
-| `ErrPluginBlock` | 拒绝连接,关闭 Session | 停止消息处理,关闭 Session |
+| `ErrPluginBlock` | 返回错误,链回滚,传输层关闭 Session | 返回错误,传输层关闭 Session |
 | `ErrPluginDrop` | 不适用 | 丢弃消息,Session 继续 |
-| 普通 error | 中断或继续(stopOnError) | 中断或继续(stopOnError) |
+| 普通 error | 返回错误,链回滚 | 返回错误,链终止 |
+| `ErrPluginPanic` | 链回滚(包装层产生) | 链终止(包装层产生) |
 | nil | 继续 | 继续,使用新 payload |
 
 ---
@@ -154,6 +190,12 @@ data = originalPayload
 ```
 
 ---
+
+> **说明:** 第 4 至 11 节的插件实现是**设计示意片段**,用于说明插件如何组织;
+> 实际落地的内置插件只使用两个控制信号 `core.ErrPluginDrop` / `core.ErrPluginBlock`,
+> 且不自行写指标(指标录制点见 `docs/guides/Architecture.md` 9.1 节).
+> 片段中的缓存/存储调用已按 `internal/infra` 的真实接口(`Cache.Get` 返回 `(val, ok)`,
+> `Store.Load` 返回 `(val, found, err)`)校正.
 
 ## 4. BlacklistPlugin
 
@@ -269,23 +311,14 @@ func (p *BlacklistPlugin) isCIDRBlacklisted(ip string) bool {
 }
 
 func (p *BlacklistPlugin) isCacheBlacklisted(ip string) (bool, error) {
-    ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-    defer cancel()
-
-    _, err := p.cache.Get(ctx, "blacklist:ip:"+ip)
-    if err == nil {
-        return true, nil // 命中缓存黑名单
-    }
-    if errors.Is(err, core.ErrCacheMiss) {
-        return false, nil // 未命中,放行
-    }
-    return false, err // 缓存错误,降级本地
+    // Cache.Get 的第二个返回值表达命中与否,没有单独的 error 通道
+    _, ok := p.cache.Get("blacklist:ip:" + ip)
+    return ok, nil // 命中即黑名单;未命中放行
 }
 
 func (p *BlacklistPlugin) recordBlock(ip, reason string, sess core.Session) {
-    p.metrics.Counter("shark_rejected_connections_total",
-        "protocol", sess.Protocol().String(),
-        "reason", "blacklisted").Inc()
+    p.metrics.IncCounter("rejected_connections_total", "protocol", sess.Protocol().String(),
+        "reason", "blacklisted")
     p.logger.Info("connection blocked by blacklist",
         "ip", ip,
         "reason", reason,
@@ -510,11 +543,10 @@ func (p *RateLimitPlugin) Priority() int { return 10 }
 func (p *RateLimitPlugin) OnAccept(sess core.Session) error {
     // 全局连接限流
     if !p.globalBucket.Allow() {
-        p.metrics.Counter("shark_rejected_connections_total",
-            "protocol", sess.Protocol().String(),
-            "reason", "global_rate_limited").Inc()
+        p.metrics.IncCounter("rejected_connections_total", "protocol", sess.Protocol().String(),
+            "reason", "global_rate_limited")
         return fmt.Errorf("%w: global connection rate exceeded",
-            core.ErrRateLimited)
+            core.ErrPluginBlock)
     }
 
     // per-IP 连接限流
@@ -522,14 +554,13 @@ func (p *RateLimitPlugin) OnAccept(sess core.Session) error {
     bucket := p.getOrCreateIPBucket(ip)
     if !bucket.Allow() {
         p.incrementViolation(ip)
-        p.metrics.Counter("shark_rejected_connections_total",
-            "protocol", sess.Protocol().String(),
-            "reason", "ip_rate_limited").Inc()
+        p.metrics.IncCounter("rejected_connections_total", "protocol", sess.Protocol().String(),
+            "reason", "ip_rate_limited")
         p.logger.Warn("connection rate limited",
             "ip", ip,
             "session_id", sess.ID())
         return fmt.Errorf("%w: per-IP connection rate exceeded for %s",
-            core.ErrRateLimited, ip)
+            core.ErrPluginBlock, ip)
     }
 
     return nil
@@ -541,11 +572,10 @@ func (p *RateLimitPlugin) OnMessage(sess core.Session, data []byte) ([]byte, err
 
     if !bucket.Allow() {
         p.incrementViolation(ip)
-        p.metrics.Counter("shark_dropped_messages_total",
-            "protocol", sess.Protocol().String(),
-            "reason", "message_rate_exceeded").Inc()
+        p.metrics.IncCounter("dropped_messages_total", "protocol", sess.Protocol().String(),
+            "reason", "message_rate_exceeded")
         return nil, fmt.Errorf("%w: message rate exceeded for %s",
-            core.ErrMessageRateExceeded, ip)
+            core.ErrPluginDrop, ip)
     }
 
     return data, nil
@@ -728,8 +758,7 @@ func (p *AutoBanPlugin) ban(ip, reason, detail string) {
     }
     p.protocolErrors.Delete(ip)
 
-    p.metrics.Counter("shark_autoban_total",
-        "reason", reason).Inc()
+    p.metrics.IncCounter("autoban_total", "reason", reason)
     p.logger.Warn("ip auto banned",
         "ip", ip,
         "reason", reason,
@@ -829,9 +858,8 @@ func (p *HeartbeatPlugin) scan() {
                 "protocol", sess.Protocol(),
                 "last_active", sess.LastActiveAt(),
                 "idle_timeout", p.options.IdleTimeout)
-            p.metrics.Counter("shark_session_errors_total",
-                "protocol", sess.Protocol().String(),
-                "reason", "idle_timeout").Inc()
+            p.metrics.IncCounter("session_errors_total", "protocol", sess.Protocol().String(),
+                "reason", "idle_timeout")
             go sess.Close(context.Background())
             expired++
         }
@@ -853,7 +881,7 @@ func (p *HeartbeatPlugin) scan() {
   (10 万连接,每秒扫描一次,O(N) 遍历约 1ms)
 
 P2 方案:
-  使用 infrastructure/timewheel/timewheel.go
+  使用 internal/infra/timewheel/timewheel.go(尚未实现)
   OnAccept -> timeWheel.Add(sess.ID(), idleTimeout, callback)
   OnMessage -> timeWheel.Reset(sess.ID())
   OnClose -> timeWheel.Remove(sess.ID())
@@ -931,12 +959,12 @@ func (p *PersistencePlugin) OnAccept(sess core.Session) error {
 
     // 尝试加载历史数据
     err := p.breaker.Do(func() error {
-        data, err := p.store.Load(ctx, sessionStoreKey(sess.ID()))
+        data, found, err := p.store.Load(p.bucket, sessionStoreKey(sess.ID()))
         if err != nil {
-            if errors.Is(err, core.ErrStoreNotFound) {
-                return nil // 新会话,无历史数据
-            }
             return err
+        }
+        if !found {
+            return nil // 新会话,无历史数据
         }
         sess.SetMeta("persistence:history", data)
         return nil
@@ -975,9 +1003,8 @@ func (p *PersistencePlugin) OnMessage(
         // 成功入队
     default:
         // 队列满,丢弃(记录指标)
-        p.metrics.Counter("shark_dropped_messages_total",
-            "protocol", sess.Protocol().String(),
-            "reason", "persistence_queue_full").Inc()
+        p.metrics.IncCounter("dropped_messages_total", "protocol", sess.Protocol().String(),
+            "reason", "persistence_queue_full")
         p.logger.Warn("persistence: write queue full, dropping message",
             "session_id", sess.ID())
     }
@@ -1235,20 +1262,17 @@ func (p *ClusterPlugin) Route(
 
     // 查询远端节点
     sessIDStr := fmt.Sprintf("%d", targetSessionID)
-    nodeIDBytes, err := p.cache.Get(ctx, "session:route:"+sessIDStr)
-    if err != nil {
-        if errors.Is(err, core.ErrCacheMiss) {
-            return fmt.Errorf("%w: session %d not found in cluster",
-                core.ErrSessionNotFound, targetSessionID)
-        }
-        return err
+    nodeIDBytes, ok := p.cache.Get("session:route:" + sessIDStr)
+    if !ok {
+        return fmt.Errorf("%w: session %d not found in cluster",
+            core.ErrSessionClosed, targetSessionID)
     }
 
     remoteNodeID := string(nodeIDBytes)
     if remoteNodeID == p.nodeID {
         // 路由指向本节点但 Manager 未找到(会话已关闭)
         return fmt.Errorf("%w: session %d routing inconsistency",
-            core.ErrSessionNotFound, targetSessionID)
+            core.ErrSessionClosed, targetSessionID)
     }
 
     // 向远端节点发布路由消息
@@ -1370,8 +1394,7 @@ func (p *SlowHandlerPlugin) RecordHandlerDuration(
         return
     }
 
-    p.metrics.Counter("shark_handler_duration_seconds",
-        "protocol", sess.Protocol().String()).Inc()
+    p.metrics.IncCounter("handler_duration_seconds", "protocol", sess.Protocol().String())
     p.logger.Warn("slow handler detected",
         "session_id", sess.ID(),
         "protocol", sess.Protocol(),
@@ -1411,34 +1434,74 @@ func (p *MyPlugin) OnMessage(
 }
 ```
 
-### 12.2 注册到 PluginRunner
+### 12.2 注册到插件链
+
+插件在构造 Gateway 时一次性挂载:
 
 ```go
-// application/app.go 中注册
-rt.Plugins().Register(&MyPlugin{})
+gw := api.NewGateway(api.WithPlugins(
+    api.NewBlacklistPlugin(),
+    api.NewRateLimitPlugin(10000, time.Second),
+    &MyPlugin{},
+))
 ```
+
+`WithPlugins` 内部构造 `runtime.NewPluginChain(plugins...)`,链内按 `Priority` 稳定排序.
+需要在运行期追加时,通过 `Append` 在链上追加(链是 copy-on-write 的,`Append` 与
+并发回调安全).`internal/runtime` 是模块内部包,该写法只在模块内可用:
+
+```go
+if chain, ok := gw.Runtime().Plugins().(*runtime.PluginChain); ok {
+    chain.Append(&MyPlugin{})
+}
+```
+
+`Append` 是具体类型 `PluginChain` 的方法,不在 `core.PluginRunner` 接口内:接口只描述
+"如何执行插件",注册属于装配阶段的具体实现细节.
 
 ### 12.3 自定义插件检查清单
 
 ```
 功能验证:
-  [ ] Name() 返回全局唯一名称(重复时后注册覆盖)
+  [ ] Name() 返回可辨识名称(链不去重,同名插件会共存并都被执行)
   [ ] Priority() 不与内置插件冲突(参考第 3 节 Priority 表)
-  [ ] OnAccept 返回 ErrPluginBlock 时连接被拒绝
+  [ ] OnAccept 返回 ErrPluginBlock 时传输层会拒绝并关闭连接
   [ ] OnMessage 返回 ErrPluginDrop 时消息被丢弃,连接继续
   [ ] OnClose 不返回错误(void),即使失败也不影响其他插件
-  [ ] panic 在 PluginRunner.safeRun 中被捕获(无需自行 recover)
+  [ ] 不需要自行 recover:PluginChain 的 safe* 包装会捕获 panic
+      并转为 ErrPluginPanic(Start/Stop 同样被包装)
 
 资源管理:
   [ ] 有状态插件(goroutine,ticker)使用 sync.Once 保证幂等关闭
+  [ ] 实现 core.LifecyclePlugin(Start/Stop)的插件要能被重复 Start/Stop
+  [ ] Start 失败时不留后台 goroutine(链会回滚,但回滚只调 Stop)
   [ ] 不持有 Session 的强引用(避免内存泄漏)
   [ ] 不在 OnClose 中阻塞(OnClose 逆序串行执行,阻塞影响整体关闭速度)
 
 并发安全:
   [ ] 共享状态使用 sync.RWMutex 或 sync.Map
   [ ] 计数器使用 atomic.Int64
+  [ ] 不在回调内依赖 PluginChain 的锁语义:回调在锁外执行,插件自身状态需自保
 
 指标:
   [ ] 使用 core.Metrics 接口,不直接引用 Prometheus
-  [ ] 指标名称遵循 shark_{plugin_name}_{action}_total 格式
+  [ ] 指标名称使用 <plugin>_<action>_total 形式,并避免无界标签
 ```
+
+---
+
+## 附:指标录制 API 约定
+
+框架的 `core.Metrics` 只有三个方法,没有 `Counter()/.Inc()` 之类的链式工厂:
+
+```go
+IncCounter(name string, labels ...string)
+SetGauge(name string, value float64, labels ...string)
+ObserveHistogram(name string, value float64, labels ...string)
+```
+
+`labels` 以 key/value 交替传入.本文档中的指标名是**示意名**,用于说明接入方式的形状;
+框架自身实际录制的指标只有 5 个(`sessions_accepted_total` / `sessions_closed_total` /
+`sessions_active` / `sessions_reclaimed_total` / `tcp_task_queue_full_total`),
+清单见 `docs/guides/Architecture.md` 9.1 节.实现参考
+`internal/infra/observability/prometheus.go`.

@@ -3,6 +3,10 @@
 > Shark-Socket 应用协议层:LwM2M 详细设计  
 > 版本:v0.2.x-alpha  
 > 最后更新:2026-06-01
+>
+> 说明:LwM2M 层使用自己的包级失败信号哨兵(`ErrInvalidPath` / `ErrRegistrationGone` /
+> `ErrReadOnly` / `ErrNotSupported` / `ErrRegistrationLimit` / `ErrInvalidCoAPPayload`),
+> 不复用 `internal/core` 的错误变量.
 
 ---
 
@@ -100,13 +104,13 @@ func ParsePath(path string) (ObjectPath, error) {
     if len(parts) == 0 || len(parts) > 3 {
         return ObjectPath{}, fmt.Errorf(
             "%w: invalid path format %q (expected /OID, /OID/IID, or /OID/IID/RID)",
-            core.ErrInvalidMessage, path)
+            ErrInvalidPath, path)
     }
 
     objectID, err := parseUint16(parts[0])
     if err != nil {
         return ObjectPath{}, fmt.Errorf(
-            "%w: invalid OID %q: %v", core.ErrInvalidMessage, parts[0], err)
+            "%w: invalid OID %q: %v", ErrInvalidPath, parts[0], err)
     }
 
     result := ObjectPath{ObjectID: objectID}
@@ -115,7 +119,7 @@ func ParsePath(path string) (ObjectPath, error) {
         instanceID, err := parseUint16(parts[1])
         if err != nil {
             return ObjectPath{}, fmt.Errorf(
-                "%w: invalid IID %q: %v", core.ErrInvalidMessage, parts[1], err)
+                "%w: invalid IID %q: %v", ErrInvalidPath, parts[1], err)
         }
         result.InstanceID = instanceID
         result.HasInstance = true
@@ -125,7 +129,7 @@ func ParsePath(path string) (ObjectPath, error) {
         resourceID, err := parseUint16(parts[2])
         if err != nil {
             return ObjectPath{}, fmt.Errorf(
-                "%w: invalid RID %q: %v", core.ErrInvalidMessage, parts[2], err)
+                "%w: invalid RID %q: %v", ErrInvalidPath, parts[2], err)
         }
         result.ResourceID = resourceID
         result.HasResource = true
@@ -221,14 +225,14 @@ func parseLinkEntry(entry string) (ObjectLink, error) {
     if !strings.HasPrefix(entry, "<") {
         return ObjectLink{}, fmt.Errorf(
             "%w: link entry must start with '<': %q",
-            core.ErrInvalidMessage, entry)
+            ErrInvalidPath, entry)
     }
 
     closeIdx := strings.Index(entry, ">")
     if closeIdx < 0 {
         return ObjectLink{}, fmt.Errorf(
             "%w: link entry missing '>': %q",
-            core.ErrInvalidMessage, entry)
+            ErrInvalidPath, entry)
     }
 
     pathStr := entry[1:closeIdx]
@@ -417,11 +421,11 @@ func (s *Server) Register(
 ) (locationPath string, err error) {
     if endpoint == "" {
         return "", fmt.Errorf("%w: endpoint must not be empty",
-            core.ErrInvalidMessage)
+            core.ErrInvalidArgument)
     }
     if lifetime <= 0 {
         return "", fmt.Errorf("%w: lifetime must be > 0",
-            core.ErrInvalidMessage)
+            core.ErrInvalidArgument)
     }
 
     // 深拷贝 objects,防止调用方后续修改
@@ -470,7 +474,7 @@ func (s *Server) Update(endpoint string, lifetime int) error {
     reg, exists := s.registry[endpoint]
     if !exists {
         return fmt.Errorf("%w: endpoint %q not registered",
-            core.ErrSessionNotFound, endpoint)
+            ErrRegistrationGone, endpoint)
     }
 
     now := time.Now()
@@ -492,7 +496,7 @@ func (s *Server) Deregister(endpoint string) error {
     if !exists {
         s.registryMu.Unlock()
         return fmt.Errorf("%w: endpoint %q not registered",
-            core.ErrSessionNotFound, endpoint)
+            ErrRegistrationGone, endpoint)
     }
     delete(s.registry, endpoint)
     s.registryMu.Unlock()
@@ -545,7 +549,7 @@ func (s *Server) ReadResource(
 ) ([]byte, error) {
     reg, exists := s.Registration(endpoint)
     if !exists {
-        return nil, fmt.Errorf("%w: endpoint %q", core.ErrSessionNotFound, endpoint)
+        return nil, fmt.Errorf("%w: endpoint %q", ErrRegistrationGone, endpoint)
     }
 
     // 构造 CoAP GET 请求
@@ -578,7 +582,7 @@ func (s *Server) WriteResource(
 ) error {
     reg, exists := s.Registration(endpoint)
     if !exists {
-        return fmt.Errorf("%w: endpoint %q", core.ErrSessionNotFound, endpoint)
+        return fmt.Errorf("%w: endpoint %q", ErrRegistrationGone, endpoint)
     }
 
     // 深拷贝 value,防止调用方复用切片
@@ -624,7 +628,7 @@ func (s *Server) ExecuteResource(
 ) error {
     reg, exists := s.Registration(endpoint)
     if !exists {
-        return fmt.Errorf("%w: endpoint %q", core.ErrSessionNotFound, endpoint)
+        return fmt.Errorf("%w: endpoint %q", ErrRegistrationGone, endpoint)
     }
 
     request := &coap.Message{
@@ -970,7 +974,7 @@ func (c *Client) GetResource(path ObjectPath) ([]byte, error) {
 
     if !exists {
         return nil, fmt.Errorf("%w: resource %s not found",
-            core.ErrStoreNotFound, path)
+            ErrRegistrationGone, path)
     }
 
     if resource.OnRead != nil {
@@ -987,7 +991,7 @@ func (c *Client) SetResource(path ObjectPath, value []byte) error {
 
     if !exists {
         return fmt.Errorf("%w: resource %s not found",
-            core.ErrStoreNotFound, path)
+            ErrRegistrationGone, path)
     }
 
     if resource.OnWrite != nil {
@@ -1086,7 +1090,7 @@ func (c *Client) sendRequest(ctx context.Context, request *coap.Message) (*coap.
     // 验证 Token 一致性
     if !bytes.Equal(response.Token, request.Token) {
         return nil, fmt.Errorf("%w: response token mismatch",
-            core.ErrCoAPInvalidMessage)
+            ErrInvalidCoAPPayload)
     }
 
     return response, nil
@@ -1273,7 +1277,7 @@ func (r *Responder) handleUpdate(
     }
 
     if err := r.server.Update(endpoint, lifetime); err != nil {
-        if errors.Is(err, core.ErrSessionNotFound) {
+        if errors.Is(err, ErrRegistrationGone) {
             ack, _ := coap.NewACK(msg, coap.CodeNotFound, nil).Marshal()
             return sess.Send(ack)
         }
@@ -1296,7 +1300,7 @@ func (r *Responder) handleDeregister(
     }
 
     if err := r.server.Deregister(endpoint); err != nil {
-        if errors.Is(err, core.ErrSessionNotFound) {
+        if errors.Is(err, ErrRegistrationGone) {
             ack, _ := coap.NewACK(msg, coap.CodeNotFound, nil).Marshal()
             return sess.Send(ack)
         }
@@ -1323,159 +1327,113 @@ func (r *Responder) findEndpointByLocation(locationPath string) string {
 
 ## 6. 配置项完整参考
 
-### 6.1 ServerOptions
+### 6.1 Server 配置
+
+LwM2M Server **没有独立的 `ServerOptions` 结构**:配置项直接是 `Server` 的字段,通过
+Functional Options 设置。
 
 ```go
-// internal/protocol/lwm2m/options.go
-type ServerOptions struct {
-    Addr                  string        // 默认 "0.0.0.0:5783"
-    DefaultLifetime       int           // 默认 86400s(24 小时)
-    LifetimeCheckInterval time.Duration // 默认 60s(过期检查间隔)
-    MaxRegistrations      int           // 默认 10000(0=不限制)
+// internal/protocol/lwm2m/server.go
+type Server struct {
+    mu               sync.RWMutex
+    registrations    map[string]Registration
+    resources        map[string]map[string]Resource
+    objects          map[int]ObjectDefinition
+    defaultLife      time.Duration                            // 默认 5m
+    maxRegistrations int                                      // 默认 65536
+    lastSweepAt      time.Time
+    OnWrite          func(resourcePath string, value []byte)  // 可选回调
 }
 
-func defaultServerOptions() ServerOptions {
-    return ServerOptions{
-        Addr:                  "0.0.0.0:5783",
-        DefaultLifetime:       86400,
-        LifetimeCheckInterval: 60 * time.Second,
-        MaxRegistrations:      10000,
-    }
-}
+type ServerOption func(*Server)
 
-type ServerOption func(*ServerOptions)
-
-func WithServerAddr(addr string) ServerOption {
-    return func(o *ServerOptions) { o.Addr = addr }
-}
-
-func WithDefaultLifetime(seconds int) ServerOption {
-    return func(o *ServerOptions) { o.DefaultLifetime = seconds }
-}
-
-func WithLifetimeCheckInterval(d time.Duration) ServerOption {
-    return func(o *ServerOptions) { o.LifetimeCheckInterval = d }
-}
-
-func WithMaxRegistrations(max int) ServerOption {
-    return func(o *ServerOptions) { o.MaxRegistrations = max }
-}
-
-// 注册事件回调 Options
-func WithOnRegister(fn func(Registration)) ServerOption {
-    return func(o *ServerOptions) { /* 存储到 Server,非 Options */ }
-}
+func NewServer(opts ...ServerOption) *Server
+func WithMaxRegistrations(max int) ServerOption            // <= 0 保持默认
+func WithDefaultLifetime(lifetime time.Duration) ServerOption
 ```
 
-### 6.2 ClientOptions
+**注册表上限是硬约束:** 注册表由未经认证的网络输入填充(CoAP responder 模式),因此注册条数
+(`defaultMaxRegistrations` = 65536)与单条注册的 lifetime(`maxLifetime` = 30 天)都被封顶.
+注册表满时先做一次**节流扫描**(`sweepThrottle` = 1 分钟最多一次)回收过期条目,仍然满则返回
+`ErrRegistrationLimit`.
+
+**Server 方法:**
+
+| 方法 | 说明 |
+| --- | --- |
+| `RegisterObject(def ObjectDefinition)` | 注册一个支持的 OMA 对象定义 |
+| `SupportedObjects() []ObjectDefinition` | 列出已注册对象 |
+| `GetResourceDefinition(path) (ResourceDefinition, bool)` | 查资源定义 |
+| `Register(endpoint, lifetime, objects...) (Registration, error)` | 设备注册 |
+| `Update(endpoint, lifetime) (Registration, error)` | 刷新注册 |
+| `Deregister(endpoint)` | 注销 |
+| `Registration(endpoint) (Registration, bool)` | 查注册 |
+| `Write(endpoint, path, value) error` | 下行写资源 |
+| `Read(endpoint, path) (Resource, bool)` | 下行读资源 |
+| `SweepExpired(now) int` | 手动清理过期注册 |
+
+### 6.2 Client 配置
 
 ```go
-type ClientOptions struct {
-    ServerAddr  string        // 默认 "127.0.0.1:5783"
-    LocalAddr   string        // 默认 ""(系统自动分配)
-    Endpoint    string        // 必填:设备端点名称
-    Lifetime    int           // 默认 86400s
-    BindingMode string        // 默认 "U"(UDP)
-    AckTimeout  time.Duration // 默认 10s(等待 ACK 超时)
+// internal/protocol/lwm2m/client.go
+type Client struct {
+    Endpoint string
+    Lifetime time.Duration
+    Objects  []ObjectPath
+    // 未导出字段略
 }
 
-func defaultClientOptions() ClientOptions {
-    return ClientOptions{
-        ServerAddr:  "127.0.0.1:5783",
-        Endpoint:    "unknown-device",
-        Lifetime:    86400,
-        BindingMode: "U",
-        AckTimeout:  10 * time.Second,
-    }
-}
+type ClientOption func(*Client)
 
-type ClientOption func(*ClientOptions)
-
-func WithServerAddr(addr string) ClientOption {
-    return func(o *ClientOptions) { o.ServerAddr = addr }
-}
-
-func WithEndpoint(endpoint string) ClientOption {
-    return func(o *ClientOptions) { o.Endpoint = endpoint }
-}
-
-func WithLifetime(seconds int) ClientOption {
-    return func(o *ClientOptions) { o.Lifetime = seconds }
-}
-
-func WithBindingMode(mode string) ClientOption {
-    return func(o *ClientOptions) { o.BindingMode = mode }
-}
-
-func WithAckTimeout(d time.Duration) ClientOption {
-    return func(o *ClientOptions) { o.AckTimeout = d }
-}
-
-// NewServer 构造函数
-func NewServer(opts ...ServerOption) *Server {
-    options := defaultServerOptions()
-    for _, opt := range opts {
-        opt(&options)
-    }
-    return &Server{
-        options:  options,
-        registry: make(map[string]*Registration),
-        stopCh:   make(chan struct{}),
-    }
-}
-
-// NewClient 构造函数
-func NewClient(opts ...ClientOption) *Client {
-    options := defaultClientOptions()
-    for _, opt := range opts {
-        opt(&options)
-    }
-    return &Client{
-        options:   options,
-        resources: make(map[string]Resource),
-        stopCh:    make(chan struct{}),
-    }
-}
+func NewClient(endpoint string, server *Server, opts ...ClientOption) *Client
+func WithLifetime(lifetime time.Duration) ClientOption
+func WithObjects(objects ...ObjectPath) ClientOption
 ```
+
+**Client 方法:**
+
+| 方法 | 说明 |
+| --- | --- |
+| `Register() (Registration, error)` | 向 Server 注册 |
+| `Update(lifetime) (Registration, error)` | 刷新注册 |
+| `Deregister()` | 注销 |
+| `Write(path, value) error` | 写本地资源 |
+| `Read(path) (Resource, bool)` | 读本地资源 |
 
 ### 6.3 配置使用示例
 
 ```go
-// LwM2M Server 示例
+// LwM2M Server + 自定义默认 lifetime / 注册上限
 lwm2mServer := lwm2m.NewServer(
-    lwm2m.WithServerAddr(":5783"),
-    lwm2m.WithDefaultLifetime(3600),
-    lwm2m.WithLifetimeCheckInterval(30*time.Second),
+    lwm2m.WithDefaultLifetime(5*time.Minute),
+    lwm2m.WithMaxRegistrations(65536),
 )
-lwm2mServer.SetOnRegister(func(reg lwm2m.Registration) {
-    log.Printf("device registered: %s, objects: %v",
-        reg.Endpoint, reg.Objects)
-})
+lwm2mServer.RegisterObject(lwm2m.ObjectDefinition{ID: 3, Name: "Device"})
 
-// 将 LwM2M Responder 绑定到 CoAP Server
-responder := lwm2m.NewResponder(lwm2mServer)
-coapServer := coap.NewServer(responder.Handler(),
+// 绑定到 CoAP Server:app 层在 mode=lwm2m 时用 WithResponder
+coapServer := coap.NewServer(
     coap.WithAddr(":5783"),
+    coap.WithResponder(lwm2m.NewCoAPResponder(lwm2mServer)),
 )
 
-// LwM2M Client 示例
-client := lwm2m.NewClient(
-    lwm2m.WithServerAddr("192.168.1.100:5783"),
-    lwm2m.WithEndpoint("sensor-001"),
-    lwm2m.WithLifetime(3600),
-)
-
-// 注册资源
-client.AddResource(
-    lwm2m.ObjectPath{ObjectID: 3, InstanceID: 0,
-        ResourceID: 0, HasInstance: true, HasResource: true},
-    lwm2m.NewResource(0, []byte("ACME Corp")),
-)
-
-// 注册到 Server
-ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-defer cancel()
-if err := client.Register(ctx); err != nil {
+// LwM2M Client
+client := lwm2m.NewClient("sensor-001", lwm2mServer, lwm2m.WithLifetime(time.Hour))
+reg, err := client.Register()
+if err != nil {
     log.Fatal("register failed:", err)
 }
 ```
+
+**CoAP responder 的文本命令协议**(`lwm2m.NewCoAPResponder` -> `Server.HandleCoAPPayload`):
+
+```
+register <endpoint> <lifetime-seconds> [object-path...]
+update <endpoint> <lifetime-seconds>
+deregister <endpoint>
+write <endpoint> <resource-path> <value>
+read <endpoint> <resource-path>
+discover
+```
+
+无法解析、字段个数不对或 lifetime 非法时返回 `lwm2m.ErrInvalidCoAPPayload`;lifetime 上限为
+`maxLifetime`(30 天),超过即拒绝,防止对端注册"近似永久"的注册项.

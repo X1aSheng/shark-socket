@@ -7,6 +7,76 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### V9 Review - Correctness and CI Batch (2026-10-15)
+
+V9 全量审查(逐项复现 - 写失败用例确认 - 修复 - 验证 - 提交)后的修复批次.详见
+`docs/reports/PROJECT-REVIEW-261015-172344.md`.18 项缺陷已修复,8 项记入该报告的
+第 4 节作为待办.
+
+**高危(资源耗尽 / 不可用)**:
+
+- **传输层忙等**:UDP/CoAP 的 DTLS accept 循环与 UDP read 循环在非关闭错误上直接
+  `continue`,一个卡在错误态的 listener(EMFILE,被外部破坏)会把一个核心跑满 -- 实测
+  UDP 在 250ms 内调用 `Accept` 10,298,963 次(约 4100 万次/秒),CoAP 9,541,655 次.
+  新增 `shared.Backoff`(5ms 起,每次失败翻倍,上限 1s,成功后 Reset,与 `net/http`
+  `Server.Serve` 同策略)并接入 4 个循环.同时把 `net.ErrClosed` 视为终止条件:此前
+  socket 被外部关闭时 `s.closed` 仍为 false,循环永久重试,`Drain` 永远等不到退出
+- **QUIC Drain 死锁**:quic-go 的 `Listener.Close` 不关闭已接受连接,`handleConn` 阻塞
+  在 `AcceptStream`,而 `Drain` 先于 `CloseSessions` 执行,于是有活跃连接时 `Drain` 与
+  `Gateway.Stop` 必然超时.改为 server 级 stop context
+- **mTLS 客户端 CA 热更新不生效**:`tls.Config.ClientCAs` 在握手中读到的是启动快照,
+  轮换 CA 必须重启进程.改为 `GetConfigForClient` 每次握手 Clone 并刷新
+- **DTLS 连接泄漏**:`handleDTLSConn` 读错误后只做 map 删除,而 `dtlsConns.Delete` 又让
+  `StopAccept` 看不到该连接,于是无人关闭它 -- 每个断开的 DTLS 对端泄漏一个 socket.
+  改为在清理中先 `sess.Close`(`closeOnce` 保证幂等)
+- **`tcp.Client` 并发不安全且泄漏连接**:`Connect/Send/Receive/Close` 直接读写 `conn`,
+  无任何同步(`-race` 实报 DATA RACE),且重复 `Connect` 覆盖字段而不关闭旧连接.该类型
+  经 `api.NewTCPClient` 对外导出.改为 RWMutex 仅保护指针交换,锁外拨号,装新后关旧
+- **插件生命周期 panic 未隔离**:一个插件 `Start`/`Stop` panic 会打崩整个进程,且
+  `StopAll` 不返回错误.新增 `safeStart`/`safeStop` + `errors.Join`,`StopAll` 改为返回
+  error,Gateway 两处调用点检查并记录
+
+**正确性与资源**:
+
+- **CoAP RFC 7252/7641 一致性**:Empty CON(ping)此前回 2.05,规范要求回 RST;规范的
+  RST(TKL=0,无 token)无法取消 observe 关系,因为代码按 token 关联而必须按 Message ID;
+  Observe 选项长度为 0(Observe=0 注册)时不注册.既有用例固化了错误假设,已同步修正
+- **Acceptor 记账**:容量限制先扣令牌再判容量,令牌桶拒绝时不归还容量槽位,导致 active
+  计数被永久抬高;时钟回拨(NTP 校正)会把令牌桶抽干;速率低于 1/s 时桶容量不足 1 会拒绝
+  所有连接.容量改为 CAS 先判再加,拒绝时归还槽位,负 elapsed 钳到 0,桶容量下限 1
+- **gRPC-Web**:`content-type` 仅在分帧响应上设置;`framed` 按声明判定而非解析请求体;
+  `grpc-message` trailer 按规范百分号编码(此前含 CR/LF 会破坏 trailer 块,可注入
+  header);WebSocket 会话新增写超时 `WithWriteTimeout`(慢对端不再永久占住 goroutine)
+- **MQTT**:`SetResumeSubs(true)`(默认不恢复订阅,重连后静默失联);入站 payload 做一次
+  拷贝(paho 在回调返回后回收缓冲);`waitToken` 增加超时兜底
+- **infra**:Bolt 打开默认 3s 超时(库文件被占用时不再永久挂起);熔断器 `Open` 态不再被
+  迟到的 `Success` 提前闭合;cache `ttl < 0` 显式删除;pubsub 每个订阅者构造独立 msg
+- **插件状态**:AutoBan 封禁键按 `SplitHostPort` 归一化(此前 `1.2.3.4` 记录,`1.2.3.4:5678`
+  查询命中不了,封禁静默失效);Heartbeat 清扫给 `sess.Close` 加超时上限(单个卡死会话不再
+  阻塞整轮清扫);Cluster topic 改在 RLock 下读取(`-race` 实报 DATA RACE);Persistence
+  构造失败经 `Err()`/`Start()` 上报;SlowHandler 容忍 nil next
+
+**工程与工具**:
+
+- **worker pool 移入 shared**:TCP 的 pool 把 handler panic 转成 `ErrHandlerPanic` 却不记
+  日志,运维只能看到会话消失.泛化到 `core.Session` 并移入 `internal/transport/shared`,
+  委托 `shared.CallHandler`(recover + 日志 + 同一 sentinel);`tcp` 用类型别名保留
+  `FullPolicy`/`WithWorkers`/`Policy*` 等公开名字
+- **CI lint 红灯**:`golangci-lint` 报 4 个 staticcheck 问题(1 个 QF1001,3 个 QF1006),
+  其中 3 个在本次审查之前就已存在,即 main 上 lint 一直是红的.已全部修复
+- **CI 权限收敛**:顶层原本给所有 job 授予 `actions: write`,而 lint/security/docker-build
+  都不需要.改为顶层 `contents: read`,仅 4 个上传日志的 job 单独声明 `actions: write`
+- **`run_stress` 退出码**:此前只有初始化失败才返回非 0,运行结果完全不影响退出码
+  (`-host <unreachable>` 输出 `sent=0 recv=0` 却退出 0).现在未发出消息,未收到回复或
+  错误率超过 5% 时逐条输出原因并退出 1;顺手修掉失败场景的 `throughput=%!s(<nil>)`
+- **`examples/tls_server`**:内嵌 PEM 是手工拼凑的(base64 中混入空格),启动即
+  `x509: malformed certificate`,该示例从未可用过.改为运行时真正生成 ECDSA P-256 自签
+  证书(SAN 覆盖 localhost 与 127.0.0.1),并补测试
+- **文档字符集**:49 个 markdown 文件共 14420 处字符不符合"仅 ASCII + 中文"约定
+  (全角标点,制表符画线,箭头,破折号,勾选符号,表情符号),已逐类映射归一化,复查为 0.
+  代码块内的改动全部落在中文注释,未触碰任何 Go 语句或字面量
+- **`.gitignore`**:忽略本地工具目录 `.workbuddy/`
+
 ### Security Hardening - Audit Batch (2026-09-02)
 
 全量代码审计(传输/插件/运行时/LwM2M/CoAP/部署四路并行复核)后的修复批次:

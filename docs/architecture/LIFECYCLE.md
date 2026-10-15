@@ -30,9 +30,10 @@
 
 ```
 Gateway 生命周期
-    +-- 启动阶段 -> 向各 Server 注入 Runtime
-    +-- 运行阶段 -> 管理所有 Server + SessionManager + PluginRunner
-    +-- 停止阶段 -> 5 阶段关闭(StopAccept -> Drain -> CloseSessions -> StopNonStaged -> CloseAll)
+    +-- 启动阶段 -> 注入 Runtime -> Plugins().StartAll() -> 逐 Server Start
+    +-- 运行阶段 -> 管理所有 Server + SessionManager + PluginChain
+    +-- 停止阶段 -> 3 阶段关闭(StopAccept -> Drain -> CloseSessions)
+                    -> Sessions().CloseAll -> Plugins().StopAll()
 
 Server 生命周期(每个协议独立)
     +-- 启动阶段 -> 监听端口 + 启动 WorkerPool
@@ -46,9 +47,11 @@ Session 生命周期(每个连接独立)
     +-- Closed     -> 已关闭(清理资源)
 
 Plugin 生命周期(跨 Session 共享)
-    +-- 注册阶段 -> PluginRunner.Register
+    +-- 注册阶段 -> PluginChain.Append(装配期一次性完成)
+    +-- 启动阶段 -> StartAll -> Start(仅 LifecyclePlugin,优先于 Server)
     +-- 执行阶段 -> OnAccept / OnMessage(每个 Session 触发)
     +-- 关闭阶段 -> OnClose(每个 Session 触发,逆序执行)
+    +-- 停止阶段 -> StopAll -> Stop(仅 LifecyclePlugin,晚于全部会话关闭)
 ```
 
 ---
@@ -104,7 +107,7 @@ const (
 | Active | 读取错误(EOF / 超时) | Draining | readLoop 检测到错误 | 调用 `Close()` |
 | Active | 连续错误超限 | Draining | `consecutiveErrors > MaxConsecutiveErrors` | 调用 `Close()` |
 | Draining | 写队列排空 | Closed | `writeQueue` 全部发送完成 | `conn.Close()` |
-| Draining | `DrainTimeout` 超时 | Closed | 等待超过 `DrainTimeout` | 强制 `conn.Close()`,记录 `ErrDrainTimeout` |
+| Draining | 写队列排空等待超时 | Closed | `Close(ctx)` 的 ctx 到期 | 强制 `conn.Close()`,返回 `ctx.Err()` |
 | Closed | 任意操作 | Closed | - | 返回 `ErrSessionClosed` |
 
 ### 2.4 状态转换实现(CAS 保证并发安全)
@@ -242,150 +245,173 @@ func (s *TCPSession) Send(data []byte) error {
 ### 3.1 状态定义
 
 ```go
-// Gateway 内部状态(无状态机,用 atomic.Bool 控制)
+// Gateway 内部状态(无独立状态机,用 atomic 字段 + startMu 表达)
 type Gateway struct {
-    started atomic.Bool
-    ready   atomic.Bool
-    // ...
+    startMu   sync.Mutex                   // 串行化 Start / Stop / Register
+    mu        sync.RWMutex                 // 保护 servers / order
+    servers   map[core.Protocol]core.Server
+    order     []core.Protocol
+    rt        *Runtime
+    timeouts  core.StageTimeouts
+    startedAt atomic.Pointer[time.Time]    // nil 表示未启动
+    started   atomic.Bool
 }
 ```
+
+只有一个布尔状态位 `started`:启动中与运行中都为 true,关停一开始就置回 false.没有
+"starting" / "stopping" 这样的中间态,因为这两种阶段的边界由 `startMu` 的持有者界定,
+暴露成状态反而会引入不一致窗口.
 
 ### 3.2 启动流程
 
 ```go
 func (g *Gateway) Start(ctx context.Context) error {
-    // 1. 检查是否已启动(幂等保护)
-    if !g.started.CompareAndSwap(false, true) {
-        return ErrGatewayNotStarted
+    g.startMu.Lock()
+    defer g.startMu.Unlock()
+
+    if g.started.Load() {
+        return fmt.Errorf("gateway: already started")
+    }
+    servers := g.snapshot()
+    if len(servers) == 0 {
+        return core.ErrNoServers
     }
 
-    // 2. 检查 servers 非空
-    if len(g.servers) == 0 {
-        g.started.Store(false)
-        return ErrNoServerRegistered
-    }
-
-    // 3. 向 RuntimeConfigurable server 注入 Runtime
-    for _, srv := range g.servers {
-        if rc, ok := srv.(RuntimeConfigurable); ok {
-            rc.UseRuntime(g.runtime)
+    // 1. 注入 Runtime:必须在任何 Start 之前完成.
+    for _, srv := range servers {
+        if configurable, ok := srv.(core.RuntimeConfigurable); ok {
+            configurable.UseRuntime(g.rt)
         }
     }
 
-    // 4. 顺序启动 servers(任一失败时逆序回滚)
-    var started []Server
-    for _, srv := range g.servers {
+    // 2. 启动生命周期插件:失败时还没有 Server 启动过,StartAll 自行回滚.
+    if err := g.rt.Plugins().StartAll(); err != nil {
+        return err
+    }
+
+    // 3. 按注册顺序启动 Server.
+    started := make([]core.Server, 0, len(servers))
+    for _, srv := range servers {
         if err := srv.Start(ctx); err != nil {
-            // 回滚:逆序停止已启动的 server
+            g.rt.Logger().Error("server start failed", "protocol", srv.Protocol(), "error", err)
+            // 回滚:以 Finalize 预算构造上下文,逆序停止已启动的 Server.
+            rollbackCtx, cancel := context.WithTimeout(context.Background(), g.timeouts.Finalize)
             for i := len(started) - 1; i >= 0; i-- {
-                stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-                started[i].Stop(stopCtx)
-                cancel()
+                if stopErr := started[i].Stop(rollbackCtx); stopErr != nil {
+                    g.rt.Logger().Error("rollback stop failed", "protocol", started[i].Protocol(), "error", stopErr)
+                }
             }
-            g.started.Store(false)
-            return fmt.Errorf("failed to start %s: %w", srv.Protocol(), err)
+            cancel()
+            if stopErr := g.rt.Plugins().StopAll(); stopErr != nil {
+                g.rt.Logger().Error("plugin stop during rollback failed", "error", stopErr)
+            }
+            return err
         }
         started = append(started, srv)
     }
 
-    // 5. 标记就绪
-    g.ready.Store(true)
-    g.startedAt = time.Now()
-    g.logger.Info("gateway started",
-        "protocols", g.protocolNames(),
-        "uptime", time.Since(g.startedAt))
-
+    // 4. 标记启动.
+    now := time.Now()
+    g.startedAt.Store(&now)
+    g.started.Store(true)
     return nil
 }
 ```
 
 **启动不变量:**
 
-- `Start()` 失败必须回滚,不留半启动状态
-- `RuntimeConfigurable` 注入必须在 `Start()` 之前完成
-- 所有 Server 按注册顺序启动,失败时逆序停止
+- `RuntimeConfigurable` 注入必须在任何 `srv.Start` 之前完成,Server 之后才能持共享资源.
+- 插件先于 Server 启动:`StartAll` 失败即返回,此时没有任何 Server 启动过,不需要回滚 Server.
+- Server 启动失败时按逆序停止已启动的 Server,随后 `Plugins().StopAll()` 停掉刚启动的插件,
+  最后返回原始错误.不留半启动状态.
+- `startMu` 串行化 `Start` / `Stop` / `Register`,三者不会交错.
+- 启动成功后 `startedAt` 与 `started` 同时就位,`Ready()` 开始返回 true.
 
-### 3.3 停止流程(5 阶段)
+### 3.3 停止流程(3 阶段 + 收尾)
 
 ```go
 func (g *Gateway) Stop(ctx context.Context) error {
-    // 幂等检查
-    if !g.ready.CompareAndSwap(true, false) {
-        return nil // 未启动或已停止
-    }
+    g.startMu.Lock()
+    defer g.startMu.Unlock()
 
-    // 阶段1:StopAccept(停止新连接入口)
-    g.logger.Info("gateway stopping: phase 1 - stop accept")
-    g.runStage(ctx, "StopAccept", func(srv Server) error {
-        if ss, ok := srv.(StagedServer); ok {
-            return ss.StopAccept(ctx)
-        }
-        return nil
-    })
-
-    // 阶段2:Drain(等待读写 goroutine 收敛)
-    g.logger.Info("gateway stopping: phase 2 - drain")
-    g.runStage(ctx, "Drain", func(srv Server) error {
-        if ss, ok := srv.(StagedServer); ok {
-            return ss.Drain(ctx)
-        }
-        return nil
-    })
-
-    // 阶段3:CloseSessions(关闭协议持有的活跃会话)
-    g.logger.Info("gateway stopping: phase 3 - close sessions")
-    g.runStage(ctx, "CloseSessions", func(srv Server) error {
-        if ss, ok := srv.(StagedServer); ok {
-            return ss.CloseSessions(ctx)
-        }
-        return nil
-    })
-
-    // 阶段4:StopNonStaged(停止非 StagedServer 协议)
-    g.logger.Info("gateway stopping: phase 4 - stop non-staged")
-    g.runStage(ctx, "Stop", func(srv Server) error {
-        if _, ok := srv.(StagedServer); !ok {
-            return srv.Stop(ctx)
-        }
-        return nil
-    })
-
-    // 阶段5:CloseAll(清理 SessionManager 残留会话)
-    g.logger.Info("gateway stopping: phase 5 - close all sessions")
-    if err := g.runtime.Sessions().CloseAll(ctx); err != nil {
-        g.logger.Warn("close all sessions failed", "error", err)
-    }
-
+    // 先置为未启动,让整个关停窗口内 Ready() 为 false,Register() 被拒绝.
     g.started.Store(false)
-    g.logger.Info("gateway stopped", "uptime", time.Since(g.startedAt))
-    return nil
+
+    servers := g.snapshot()
+    var firstErr error
+
+    // 阶段1:StopAccept -- 停止接受新连接.
+    for _, srv := range servers {
+        if staged, ok := srv.(core.StagedServer); ok {
+            if err := runStage(ctx, g.timeouts.StopAccept, staged.StopAccept); err != nil && firstErr == nil {
+                firstErr = err
+            }
+        }
+    }
+
+    // 阶段2:Drain -- 等待在途请求处理完.
+    for _, srv := range servers {
+        if staged, ok := srv.(core.StagedServer); ok {
+            if err := runStage(ctx, g.timeouts.Drain, staged.Drain); err != nil && firstErr == nil {
+                firstErr = err
+            }
+        }
+    }
+
+    // 阶段3:CloseSessions -- 关闭剩余会话.
+    for _, srv := range servers {
+        if staged, ok := srv.(core.StagedServer); ok {
+            if err := runStage(ctx, g.timeouts.CloseSessions, staged.CloseSessions); err != nil && firstErr == nil {
+                firstErr = err
+            }
+            continue
+        }
+        // 未实现 StagedServer 的 Server 在同一个 CloseSessions 预算内整体 Stop.
+        if err := runStage(ctx, g.timeouts.CloseSessions, func(stageCtx context.Context) error {
+            return srv.Stop(stageCtx)
+        }); err != nil && firstErr == nil {
+            firstErr = err
+        }
+    }
+    if err := runStage(ctx, g.timeouts.CloseSessions, func(stageCtx context.Context) error {
+        return g.rt.Sessions().CloseAll(stageCtx)
+    }); err != nil && firstErr == nil {
+        firstErr = err
+    }
+
+    // 收尾:全部会话关闭后才停插件,避免插件后台循环与传输层拆除竞争.
+    if err := g.rt.Plugins().StopAll(); err != nil {
+        g.rt.Logger().Error("plugin stop failed", "error", err)
+        if firstErr == nil {
+            firstErr = err
+        }
+    }
+
+    g.startedAt.Store(nil)
+    return firstErr
 }
 
-// runStage 并发执行阶段任务
-func (g *Gateway) runStage(ctx context.Context, stage string, fn func(Server) error) {
-    var wg sync.WaitGroup
-    for _, srv := range g.servers {
-        wg.Add(1)
-        go func(s Server) {
-            defer wg.Done()
-            if err := fn(s); err != nil {
-                g.logger.Warn("stage failed",
-                    "stage", stage,
-                    "protocol", s.Protocol(),
-                    "error", err)
-            }
-        }(srv)
+func runStage(parent context.Context, timeout time.Duration, fn func(context.Context) error) error {
+    ctx := parent
+    cancel := func() {}
+    if timeout > 0 {
+        ctx, cancel = context.WithTimeout(parent, timeout)
     }
-    wg.Wait()
+    defer cancel()
+    return fn(ctx)
 }
 ```
 
 **停止不变量:**
 
-- `Stop()` 必须可重复调用(幂等)
-- 各阶段并发执行(所有相同阶段的 server 并发执行,阶段间串行)
-- `CloseAll` 执行前必须确保所有 `StopAccept` 完成(防止新 session 逃脱清理)
-- Drain 超时不阻塞后续阶段
+- 三个阶段串行执行,每个阶段内部对全部 Server 依次调用(超时逐 Server 独立计时).
+- 每阶段使用 `core.StageTimeouts` 中自己的预算(默认 `StopAccept=5s`、`Drain=5s`、
+  `CloseSessions=10s`),某一阶段超时不缩短后续阶段的预算.
+- 首个错误被保留为返回值,但**不中断**后续阶段:关停必须走完,否则会留下未释放的连接与插件.
+- `CloseAll` 在全部 `CloseSessions` 之后执行,防止新会话逃脱清理.
+- `Plugins().StopAll()` 的失败也计入返回值.
+- 重复调用 `Stop` 安全:第二阶段开始 `started` 已为 false,而所有阶段操作对已停止的
+  Server 都是幂等的空操作.
 
 ### 3.4 CloseAll 并发安全保证
 
@@ -409,28 +435,31 @@ func (g *Gateway) runStage(ctx context.Context, stage string, fn func(Server) er
 ### 3.5 Ready 状态查询
 
 ```go
-func (g *Gateway) Ready() bool {
-    return g.ready.Load()
-}
+func (g *Gateway) Ready() bool { return g.started.Load() }
 
-// 健康检查端点使用
 func (g *Gateway) Health() map[string]any {
-    return map[string]any{
-        "status":    g.healthStatus(), // "healthy" / "degraded" / "not_ready"
-        "uptime":    time.Since(g.startedAt).String(),
-        "protocols": g.protocolNames(),
-        "sessions":  g.runtime.Sessions().Count(),
+    started := g.started.Load()
+    resp := map[string]any{
+        "started":  started,
+        "sessions": g.rt.Sessions().Count(),
     }
-}
-
-func (g *Gateway) healthStatus() string {
-    if !g.Ready() {
-        return "not_ready"
+    if started {
+        if startedAt := g.startedAt.Load(); startedAt != nil {
+            resp["started_at"] = startedAt.Format(time.RFC3339Nano)
+            resp["uptime"] = time.Since(*startedAt).String()
+        }
     }
-    // 可扩展:检查外部依赖(Cache/Store/PubSub)
-    return "healthy"
+    resp["protocols"] = g.Protocols()
+    return resp
 }
 ```
+
+`Health()` 把启动时间与 uptime 放在 `started == true` 分支内,因此关停窗口内不会出现
+`started=false` 却带一个活的 uptime 的自相矛盾响应.`healthz` 恒返回 200,`readyz` 映射
+`Ready()`:未就绪时返回 503,负载均衡器据此摘除实例.
+
+`Health()` 不检查外部依赖(Cache / Store / PubSub).把外部依赖塞进就绪判断会让一次下游抖动
+摘掉整个实例,覆盖面远超实际故障;这些依赖的健康度应各自暴露为独立端点.
 
 ---
 
@@ -648,142 +677,168 @@ Stop() 阶段(StagedServer 三阶段):
 
 ## 5. 插件生命周期
 
-### 5.1 注册阶段
+插件链的执行器是 `internal/runtime/plugin_chain.go` 中的 `PluginChain`,实现
+`core.PluginRunner`.本节只描述生命周期相关的行为,执行规则的完整说明见
+`PLUGIN.md sec.2` 与 `GATEWAY.md sec.4`.
+
+### 5.1 注册阶段(Append)
+
+注册发生在装配期,不在运行期:
 
 ```go
-func (r *PluginRunner) Register(p Plugin) error {
-    r.mu.Lock()
-    defer r.mu.Unlock()
-
-    // 检查重复名称
-    if idx, exists := r.nameIndex[p.Name()]; exists {
-        r.logger.Warn("plugin duplicate name, overwriting",
-            "name", p.Name(),
-            "old_priority", r.plugins[idx].Priority(),
-            "new_priority", p.Priority())
-        r.plugins[idx] = p
-        return nil
+func (c *PluginChain) Append(plugins ...core.Plugin) {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    next := append([]core.Plugin(nil), c.plugins...)
+    for _, p := range plugins {
+        if p == nil {
+            continue
+        }
+        next = append(next, p)
     }
-
-    // 添加插件
-    r.plugins = append(r.plugins, p)
-    r.nameIndex[p.Name()] = len(r.plugins) - 1
-
-    // 按 Priority 升序排序(启动时一次性排序,热路径无排序开销)
-    slices.SortFunc(r.plugins, func(a, b Plugin) int {
+    slices.SortStableFunc(next, func(a, b core.Plugin) int {
         return a.Priority() - b.Priority()
     })
-
-    return nil
+    c.plugins = next
 }
 ```
+
+- 没有 `Register`,也没有 `nameIndex`:不再按名称去重覆盖.需要唯一性时由装配方保证.
+- copy-on-write:构造新切片后整体换入,因此 `snapshot()` 可以直接交出切片引用,热路径零分配,
+  且插件在回调内调用 `SetLogger` / `Append` 不会死锁.
+- `nil` 插件被静默跳过,方便调用方用条件表达式拼装列表.
+- 稳定排序:同优先级插件按 `Append` 顺序执行,跨运行、跨平台可复现.
 
 ### 5.2 执行阶段
 
 **OnAccept(按 Priority 升序):**
 
 ```go
-func (r *PluginRunner) RunAccept(sess Session) error {
-    for _, p := range r.plugins {
-        start := time.Now()
-        err := r.safeRun(p.Name(), func() error {
-            return p.OnAccept(sess)
-        })
-        r.metrics.Histogram("shark_plugin_duration_seconds",
-            "plugin", p.Name()).Observe(time.Since(start).Seconds())
-
-        if err != nil {
-            if errors.Is(err, ErrPluginBlock) {
-                sess.Close(context.Background())
-                return err
+func (c *PluginChain) OnAccept(sess core.Session) error {
+    plugins, logger := c.snapshot()
+    for i, p := range plugins {
+        if err := c.safeAccept(p, logger, sess); err != nil {
+            // 回滚:已 accept 的插件按逆序收到 OnClose.
+            for j := i - 1; j >= 0; j-- {
+                c.safeClose(plugins[j], logger, sess)
             }
-            if r.stopOnError {
-                return err
-            }
-            r.logger.Warn("plugin OnAccept error",
-                "plugin", p.Name(),
-                "error", err,
-                "session_id", sess.ID())
+            return err
         }
     }
     return nil
 }
 ```
 
+链不调用 `sess.Close()`:它只表达"拒绝",关闭动作由传输层执行.
+
 **OnMessage(按 Priority 升序,支持 payload 改写):**
 
 ```go
-func (r *PluginRunner) RunMessage(sess Session, data []byte) ([]byte, error) {
-    current := data
-    for _, p := range r.plugins {
-        start := time.Now()
-        var out []byte
-        var err error
-        r.safeRun(p.Name(), func() error {
-            out, err = p.OnMessage(sess, current)
-            return err
-        })
-        r.metrics.Histogram("shark_plugin_duration_seconds",
-            "plugin", p.Name()).Observe(time.Since(start).Seconds())
-
+func (c *PluginChain) OnMessage(sess core.Session, data []byte) ([]byte, error) {
+    plugins, logger := c.snapshot()
+    var err error
+    for _, p := range plugins {
+        data, err = c.safeMessage(p, logger, sess, data)
         if err != nil {
-            if errors.Is(err, ErrPluginDrop) {
-                return nil, err // 停止链,不调用 Handler
-            }
-            if errors.Is(err, ErrPluginBlock) {
-                sess.Close(context.Background())
-                return nil, err
-            }
-            if r.stopOnError {
-                return nil, err
-            }
-            r.logger.Warn("plugin OnMessage error",
-                "plugin", p.Name(),
-                "error", err,
-                "session_id", sess.ID())
-            continue
+            return nil, err
         }
-        current = out // 允许 plugin 改写 payload
     }
-    return current, nil
+    return data, nil
 }
 ```
+
+非 nil 返回即下一个插件的输入;任何错误立即终止链并返回 `nil` payload.
 
 **OnClose(按 Priority 逆序,不可中断):**
 
 ```go
-func (r *PluginRunner) RunClose(sess Session) {
-    // 逆序执行(确保资源全部释放)
-    for i := len(r.plugins) - 1; i >= 0; i-- {
-        p := r.plugins[i]
-        r.safeRun(p.Name(), func() error {
-            p.OnClose(sess)
-            return nil
-        })
+func (c *PluginChain) OnClose(sess core.Session) {
+    plugins, logger := c.snapshot()
+    for i := len(plugins) - 1; i >= 0; i-- {
+        c.safeClose(plugins[i], logger, sess)
     }
 }
 ```
 
+逆序执行保证依赖方先释放;某个插件 panic 后,序号更靠前的插件仍会收到 `OnClose`.
+
 ### 5.3 panic 隔离
 
+五个钩子各有一个包装,panic 一律在包装内被转为 `core.ErrPluginPanic`:
+
 ```go
-func (r *PluginRunner) safeRun(name string, fn func() error) (err error) {
+func (c *PluginChain) safeAccept(p core.Plugin, logger core.Logger, sess core.Session) (err error) {
     defer func() {
-        if rec := recover(); rec != nil {
-            err = fmt.Errorf("plugin panic: %v\nstack: %s", rec, debug.Stack())
-            r.logger.Error("plugin panic recovered",
-                "plugin", name,
-                "panic", rec,
-                "stack", string(debug.Stack()))
-            r.metrics.Counter("shark_plugin_panics_total",
-                "plugin", name).Inc()
+        if r := recover(); r != nil {
+            logger.Error("plugin accept panic", "plugin", p.Name(), "panic", r)
+            err = core.ErrPluginPanic
         }
     }()
-    return fn()
+    return p.OnAccept(sess)
 }
 ```
 
----
+| 包装 | 钩子 | panic 后 |
+|------|------|----------|
+| `safeAccept` | `OnAccept` | 返回 `ErrPluginPanic`,链逆序回滚 |
+| `safeMessage` | `OnMessage` | 返回 `ErrPluginPanic`,链终止 |
+| `safeClose` | `OnClose` | 记录日志,继续下一个插件 |
+| `safeStart` | `Start` | 返回 `ErrPluginPanic`,`StartAll` 回滚 |
+| `safeStop` | `Stop` | 返回 `ErrPluginPanic`,`StopAll` 继续 |
+
+注意 `safeClose` 不返回错误:`OnClose` 的契约是 void,且关闭阶段必须走完所有插件.
+链内不做 metrics 埋点,插件耗时与错误计数由插件自身与传输层上报.
+
+### 5.4 StartAll 与 StopAll
+
+```go
+func (c *PluginChain) StartAll() error {
+    plugins, logger := c.snapshot()
+    var started []core.Plugin
+    for _, p := range plugins {
+        if _, ok := p.(core.LifecyclePlugin); !ok {
+            continue        // 被动插件直接跳过
+        }
+        if err := c.safeStart(p, logger); err != nil {
+            var rollbackErr error
+            for i := len(started) - 1; i >= 0; i-- {
+                rollbackErr = errors.Join(rollbackErr, c.safeStop(started[i], logger))
+            }
+            return errors.Join(fmt.Errorf("plugin %q start: %w", p.Name(), err), rollbackErr)
+        }
+        started = append(started, p)
+    }
+    return nil
+}
+```
+
+`StopAll` 逆序遍历,对每个实现 `LifecyclePlugin` 的插件调用 `safeStop`,`errors.Join`
+汇总失败.空链、未启动、重复调用都是安全 no-op.
+
+### 5.5 插件生命周期与网关阶段的对应关系
+
+```
+Gateway.Start:
+  1. 对每个 Server 注入 Runtime
+  2. Plugins().StartAll()          <- 插件后台循环在此启动
+  3. 逐个 srv.Start(ctx)           <- 此后才有流量
+     失败 -> 逆序 Stop 已启动 Server + Plugins().StopAll()
+
+Gateway.Stop:
+  1. started = false
+  2. StopAccept  (默认 5s)
+  3. Drain       (默认 5s)
+  4. CloseSessions (默认 10s) + Sessions().CloseAll(ctx)
+  5. Plugins().StopAll()           <- 全部会话关闭之后才停插件
+```
+
+启动顺序与关停顺序相反,理由是不对称的:
+
+- 启动时插件必须先就绪,否则第一条消息到达时自动封禁的过期清理、心跳扫荡、集群消费循环
+  都还没在跑,前几秒的行为与稳态不一致.
+- 关停时插件必须在最后停止,否则插件的后台循环会与传输层拆除竞争同一批会话.
+
+`StopAll` 的失败会计入 `Gateway.Stop` 的返回值,关停故障不会被静默丢弃.
 
 ## 6. 连接完整数据流
 
@@ -792,29 +847,27 @@ func (r *PluginRunner) safeRun(name string, fn func() error) (err error) {
 ```
 网络 -> listener.Accept()
   v
-newTCPSession(conn)
+id   := rt.Sessions().NextID()
+sess := newSession(id, conn, framer, writeQueue, writeTimeout, highWater)
   v
-manager.Register(sess) -> 超容:LRU Evict 或拒绝连接
+register / accept 阶段:
+  defer 中记录 accepted 标志:只有真正完成 OnAccept 的会话才会收到 OnClose
+  rt.Sessions().Register(sess)  -> 失败(ErrSessionCapacity / ErrDuplicateSession):
+                                    sess.Close + return,不发 OnClose
+  rt.Plugins().OnAccept(sess)   -> 失败:链已逆序回滚自身,传输层 sess.Close + return
+  accepted = true
   v
-pluginChain.OnAccept(sess)
-  -> ErrPluginBlock:sess.Close() + return(不进入 Active)
-  -> nil:继续
-  v
-sess.SetState(Active)
-  v
-go sess.readLoop()  +  go sess.writeLoop()
-
-[运行中]
-readLoop:
+go sess.writeLoop()
+sess.readLoop(...)     <- readLoop 内部同时是插件链的驱动者
   Framer.ReadFrame(conn) -> payload
   sess.TouchActive()
-  WorkerPool.Submit(sess, payload)
+  rt.Plugins().OnMessage(sess, payload) -> data
+    -> ErrPluginDrop :丢弃该消息,连接继续
+    -> 其它错误      :sess.Close + return
+  pool.Submit(sess, core.ProtocolTCP, data)
+    -> ErrWriteQueueFull :计数 tcp_task_queue_full_total(按 FullPolicy 决定是否关会话)
 
-Worker goroutine:
-  pluginChain.OnMessage(sess, payload) -> data
-    -> ErrPluginDrop:停止,不调用 Handler
-    -> ErrPluginBlock:sess.Close() + return
-    -> nil:继续
+Worker goroutine(池内):
   Handler(sess, Message{Payload: data})
     -> sess.Send(response)
 
@@ -824,7 +877,7 @@ writeLoop:
     bufferpool.Put(data)
 
 [断开]
-readLoop 检测到错误(EOF / 超时)
+readLoop 检测到错误(EOF / net.ErrClosed / 超时)
   v
 sess.Close(ctx):
   步骤1:CAS Active -> Draining
@@ -834,10 +887,20 @@ sess.Close(ctx):
   步骤5:cancel() -> 所有 <-ctx.Done() 退出
   步骤6:conn.Close()
   v
-pluginChain.OnClose(sess)(逆序执行)
-  v
-manager.Unregister(sess.ID())
+defer 收尾:
+  sessions.Delete(id)
+  rt.Sessions().Unregister(id)
+  accepted == true -> rt.Plugins().OnClose(sess)(逆序执行)
 ```
+
+**插件链在 readLoop 上,不在 WorkerPool 里:** `OnMessage` 与 Handler 分处两个阶段.链上运行的
+是黑名单匹配、令牌桶等轻量判断,作用是尽快丢弃不该处理的消息;真正的业务 Handler 才交给池.
+这样做的代价是:如果某个插件在 `OnMessage` 里做重活,它的耗时会计入 readLoop,造成队首阻塞
+(见 `PROJECT-REVIEW-261015-172344.md` 的记录项 D1).插件应当保持 O(1) 判断,重活放到 Handler.
+
+**`accepted` 标志是必要的:** 当 `Register` 或 `OnAccept` 失败时,链已经对部分插件执行过逆序
+回滚(触发了它们的 `OnClose`),传输层若再无条件下发一次 `OnClose` 就会重复通知,导致插件对同
+一个会话做两次资源释放.
 
 ### 6.2 UDP 伪会话生命周期
 
@@ -878,7 +941,7 @@ sweepLoop 定期扫描:
 | **固定系统 Goroutine** | ~10-20 | 与 Gateway 同生命周期 | Gateway.Stop() -> ctx.Done() |
 | **per-Protocol Goroutine** | 每协议 1-3 个 | 与 Server 同生命周期 | Server.Stop() -> listener.Close() 或 ctx.Done() |
 | **per-Session Goroutine** | 每连接 2-3 个 | 与 Session 同生命周期 | Session.Close() -> ctx.Done() |
-| **WorkerPool Goroutine** | 固定数量 + 临时扩容 | 与 WorkerPool 同生命周期 | WorkerPool.Stop() -> close(taskQueue) |
+| **WorkerPool Goroutine** | 固定数量(`WorkerCount`) | 与 WorkerPool 同生命周期 | WorkerPool.Stop() -> close(done) |
 
 ### 7.2 固定系统 Goroutine
 
@@ -972,35 +1035,30 @@ func (s *TCPSession) readLoop() {
 }
 ```
 
-**WorkerPool HandlerTimeout 保护:**
+**WorkerPool 的 handler 隔离:**
 
 ```go
-func (w *WorkerPool) worker() {
-    for task := range w.taskQueue {
-        ctx := task.sess.Context()
-        if w.handlerTimeout > 0 {
-            var cancel context.CancelFunc
-            ctx, cancel = context.WithTimeout(ctx, w.handlerTimeout)
-            defer cancel()
-        }
-
-        done := make(chan struct{})
-        go func() {
-            w.safeRun(func() {
-                task.handler(task.sess, task.msg)
-            })
-            close(done)
-        }()
-
-        select {
-        case <-done:
-            // 正常完成
-        case <-ctx.Done():
-            w.logger.Warn("handler timeout",
-                "session_id", task.sess.ID(),
-                "timeout", w.handlerTimeout)
-            // goroutine 泄漏,但不阻塞 Worker
-        }
+func (p *WorkerPool) handle(t PoolTask) {
+    if p.handler == nil || t.Session == nil {
+        return
+    }
+    msg := core.Message{SessionID: t.Session.ID(), Protocol: t.Protocol, Payload: t.Payload}
+    if err := p.callHandler(t.Session, msg); err != nil {
+        _ = t.Session.Close(context.Background())
     }
 }
+
+// CallHandler 捕获 handler panic,记录日志并返回 core.ErrHandlerPanic.
+func (p *WorkerPool) callHandler(sess core.Session, msg core.Message) error {
+    return CallHandler(func() error { return p.handler(sess, msg) }, p.logger)
+}
 ```
+
+handler panic 被转为 `core.ErrHandlerPanic`,随后关闭该会话.worker goroutine 继续消费队列,
+一条连接的故障不会影响其它连接,也不会带走进程(V9 修复项:此前 panic 会直接终止进程,
+且没有任何诊断输出).
+
+池**不提供** handler 执行超时:worker 不额外起 goroutine 包住 handler,也不做超时后放弃的
+select.原因是一次"放弃等待"必然泄漏那个仍在运行的 handler goroutine,而且会让同一条会话的
+后续消息乱序执行.需要超时语义时由 handler 自身观察 `sess.Context()` 实现,超时归还在 handler
+内部完成,池不引入第二种并发语义.

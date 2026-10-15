@@ -33,9 +33,9 @@
 |------|------|
 | `types.go` | Protocol 类型 (string alias) + 协议常量 |
 | `session.go` | Session 接口 + SessionState 枚举 + SessionManager 接口 |
-| `server.go` | Server 接口 + RuntimeConfigurable + StagedServer + PluginRunner 接口 |
+| `server.go` | Server 接口 + RuntimeConfigurable + StagedServer |
 | `message.go` | Message 结构体 + Handler 类型 + AdaptTyped + Codec[M] 接口 |
-| `plugin.go` | Plugin 接口 + BasePlugin + 控制错误 |
+| `plugin.go` | Plugin 接口 + PluginRunner 接口 + 控制错误 |
 | `errors.go` | 完整错误体系(详见 ERRORS.md) |
 | `observability.go` | Logger / Metrics / Tracer 接口 |
 
@@ -73,7 +73,7 @@ Protocol 是 string 别名,无需显式 String() 方法.Go 原生支持 string �
 |------|---------|
 | Gateway 注册去重 | `gateway.servers` map key |
 | Session 标记来源 | `session.Protocol()` |
-| 插件和指标标签 | `metrics.Counter("shark_messages_total", "protocol", proto.String())` |
+| 插件和指标标签 | `metrics.IncCounter("messages_total", "protocol", proto.String())` |
 | 日志和追踪属性 | `logger.Info("connection accepted", "protocol", proto)` |
 
 ---
@@ -360,7 +360,7 @@ func (s *TCPServer) Drain(ctx context.Context) error {
         // 超时后强制关闭所有 goroutine(通过 context cancel)
         s.logger.Warn("drain timeout, forcing close",
             "goroutine_count", runtime.NumGoroutine())
-        return ErrDrainTimeout
+        return context.DeadlineExceeded
     }
 }
 ```
@@ -404,10 +404,11 @@ type Runtime struct {
     tracer   Tracer
 }
 
-func NewRuntime(opts ...RuntimeOption) *Runtime {
+func NewRuntime(sessions core.SessionManager, plugins core.PluginRunner,
+    opts ...RuntimeOption) *Runtime {
     r := &Runtime{
-        sessions: newManager(),
-        plugins:  newRunner(),
+        sessions: sessions,
+        plugins:  plugins,
         logger:   slogLogger{},
         metrics:  PrometheusMetrics{},
         tracer:   NoopTracer{},
@@ -458,7 +459,7 @@ func (BasePlugin) OnMessage(Session, []byte) ([]byte, error)        { return nil
 func (BasePlugin) OnClose(Session)                                  {}
 ```
 
-### 8.3 PluginRunner 接口
+### 8.3 PluginRunner 接口(实现:`PluginChain`)
 
 ```go
 // PluginRunner is the plugin chain execution interface.
@@ -467,10 +468,27 @@ type PluginRunner interface {
     OnAccept(Session) error
     OnMessage(Session, []byte) ([]byte, error)
     OnClose(Session)
+
+    // StartAll starts every plugin that implements LifecyclePlugin, in
+    // priority order, rolling back already-started plugins on failure.
+    // Gateway.Start calls it before starting any server.
+    StartAll() error
+
+    // StopAll stops every plugin that implements LifecyclePlugin, in
+    // reverse priority order. Gateway.Stop calls it after all sessions
+    // have been closed. Repeated or unpaired calls are no-ops. Errors from
+    // individual plugins are aggregated and returned so a shutdown failure
+    // is visible to the caller instead of being silently discarded.
+    StopAll() error
 }
 ```
 
-**Note:** Plugin registration is handled by the concrete `PluginChain` type, not the `PluginRunner` interface.
+**Note:** Plugin registration is handled by the concrete `PluginChain` type
+(`Append(plugins ...Plugin)`), not by the `PluginRunner` interface.
+
+**生命周期隔离:** `StartAll` / `StopAll` 逐个包装插件,单个插件的 panic 被 recover 为
+`ErrPluginPanic` 并记录日志,不会中断整轮启动或关停;多个错误经 `errors.Join` 汇总返回.
+`StartAll` 中途失败时按逆序回滚已启动的插件,回滚自身的失败也一并汇总返回.
 
 ### 8.4 特殊控制错误
 
@@ -514,7 +532,7 @@ for each plugin(逆序):
   plugin.OnClose(sess)
 ```
 
-详见 `PLUGIN.md sec.执行规则` 和 `GATEWAY.md sec.PluginRunner 实现`.
+详见 `PLUGIN.md sec.执行规则` 和 `GATEWAY.md sec.PluginChain 实现`.
 
 ---
 
@@ -537,12 +555,12 @@ type TypedHandler[M any] func(Session, M) error
 ### 9.3 AdaptTyped 适配函数
 
 ```go
-// AdaptTyped 将 TypedHandler[M] 包装为 Handler,解码失败返回 ErrDecodeFailure.
+// AdaptTyped 将 TypedHandler[M] 包装为 Handler;codec.Decode 的错误原样返回.
 func AdaptTyped[M any](codec Codec[M], h TypedHandler[M]) Handler {
     return func(s Session, msg Message) error {
         typed, err := codec.Decode(msg.Payload)
         if err != nil {
-            return fmt.Errorf("%w: %v", ErrDecodeFailure, err)
+            return err
         }
         return h(s, typed)
     }
@@ -567,7 +585,7 @@ func handleTyped(sess Session, msg MyMessage) error {
 // 装配层(application/app.go)
 codec := JSONCodec[MyMessage]{}
 handler := AdaptTyped(handleTyped, codec)
-server := NewTCPServer(handler, WithAddr(":8080"))
+server := NewTCPServer(WithTCPHandler(handler), WithTCPAddr(":8080"))
 ```
 
 ---

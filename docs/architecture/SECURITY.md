@@ -41,12 +41,15 @@ TLS 在 **TCP** 与 **QUIC** 上支持(QUIC 强制要求),DTLS 在 **UDP** 与 *
 
 | 协议 | TLS/DTLS | mTLS | 说明 |
 |------|----------|------|------|
-| TCP | 可选 | 可选 | 通过 `tls_cert_file` / `tls_key_file` 启用,证书热加载 |
+| TCP | 可选 | 可选 | 通过 `tls_cert_file` / `tls_key_file` 启用,证书与客户端 CA 均热加载 |
 | QUIC | **必须** | 可选 | 启动时校验,缺少证书直接拒绝启动 |
 | WebSocket | - | - | 建议前置 TLS 反向代理 |
 | HTTP | - | - | 建议前置 TLS 反向代理 |
 | UDP | 可选(DTLS) | 可选 | 通过 `tls_cert_file` / `tls_key_file` 启用 |
 | CoAP | 可选(DTLS) | 可选 | 通过 `tls_cert_file` / `tls_key_file` 启用 |
+
+只有 `tcp` / `udp` / `coap` / `quic` 接受 TLS 相关字段,其它协议在配置校验阶段即被拒绝.
+证书与客户端 CA 的热加载机制见 2.5.
 
 **UDP/CoAP DTLS 与 mTLS 注意**:应用配置路径(JSON / `SHARK_*` 环境变量)的证书经
 `GetCertificate` 桥接进 pion/dtls(配置 `Certificates` 恒为空),映射层负责在
@@ -102,6 +105,75 @@ SHARK_TCP_KEY_FILE=/certs/server.key
 SHARK_TCP_CLIENT_CA_FILE=/certs/ca.crt
 SHARK_TCP_CLIENT_AUTH=require_and_verify
 ```
+
+### 2.5 证书与客户端 CA 的热加载
+
+服务端证书与 mTLS 客户端 CA **都不需要重启进程即可轮换**:
+
+```go
+// internal/infra/tlsutil/cert_cache.go
+type CertCache struct {
+    mu           sync.RWMutex
+    cert         *tls.Certificate
+    certFile     string
+    keyFile      string
+    clientCAPool *x509.CertPool
+    clientCAFile string
+}
+
+func NewCertCache(certFile, keyFile string) *CertCache
+func (c *CertCache) SetClientCA(caFile string)
+func (c *CertCache) Load() error                             // 原子替换
+func (c *CertCache) GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error)
+func (c *CertCache) GetClientCAPool() *x509.CertPool
+func (c *CertCache) Files() []string
+```
+
+`Load()` 的原子性是关键:**先读盘并解析全部输入,全部成功后才提交**.一个损坏的客户端 CA
+文件不会让正在服务的证书池处于半更新状态 -- 失败时旧证书与旧 CA 池完整保留.
+
+`internal/app` 在装配时收集所有需要 TLS 的协议的 `CertCache`,并为每个 cache 启动一个
+30 秒轮询的观察者:
+
+```go
+cancel := tlsutil.WatchFilesWithWG(a.appCtx, 30*time.Second, func() {
+    if err := c.Load(); err != nil {
+        logger.Error("cert reload failed", "error", err)
+    } else {
+        logger.Info("cert reload successful")
+    }
+}, &a.certWG, c.Files()...)
+```
+
+**客户端 CA 必须走 `GetConfigForClient`,不能直接赋给 `ClientCAs`:**
+
+```go
+// internal/app/config.go
+if cache.GetClientCAPool() != nil {
+    // tls.Config.ClientCAs 在握手时读取一次捕获到的值,直接赋值会把启动时
+    // 加载的 CA 钉死,此后轮换 CA 文件(观察者调用 cache.Load())直到进程
+    // 重启都不会生效.
+    cfg.GetConfigForClient = func(*tls.ClientHelloInfo) (*tls.Config, error) {
+        next := cfg.Clone()
+        next.GetConfigForClient = nil // 克隆不得重入本钩子
+        next.ClientCAs = cache.GetClientCAPool()
+        return next, nil
+    }
+}
+```
+
+| 目标 | 机制 | 生效时机 |
+|------|------|----------|
+| 服务端证书轮换 | `tls.Config.GetCertificate` -> `CertCache.GetCertificate` | 每次握手 |
+| mTLS 客户端 CA 轮换 | `tls.Config.GetConfigForClient` -> `CertCache.GetClientCAPool` | 每次握手 |
+| 磁盘变更检测 | `tlsutil.WatchFilesWithWG`,30s 轮询 mtime | 变更后 <= 30s |
+| 轮换失败 | `Load()` 返回错误,旧值保留 | 立即(记录 Error 日志) |
+
+**验证:** `internal/app/mtls_hot_reload_test.go` 的
+`TestClientCAHotReloadTakesEffect` 用真实 CA 做端到端确认 -- 轮换前只有 ca-one 签发的
+客户端证书能通过校验,轮换后只有 ca-two 的能通过,且 ca-one 立即失效.
+若把 CA 池直接赋给 `ClientCAs`(去掉 `GetConfigForClient`),该测试会失败并明确指出
+"CA 池被钉在启动值上".
 
 ---
 
@@ -196,7 +268,7 @@ Blacklist(0) -> AutoBan(5) -> RateLimit(10) -> [业务插件] -> Heartbeat(50) -
 | UDP | `MaxDatagram` | 64 KB | 单个 UDP 报文最大大小 |
 
 超过限制时:
-- TCP/WS/gRPC-Web:关闭连接,返回 `ErrFrameTooLarge` 或 `ErrMessageTooLarge`
+- TCP/WS/gRPC-Web:关闭连接,返回 `core.ErrFrameTooLarge`(没有单独的「消息过大」哨兵)
 - HTTP:返回 413 Payload Too Large
 - CoAP/UDP:丢弃报文
 
@@ -275,28 +347,53 @@ api.NewWebSocketServer(
 
 ### 6.2 插件 Panic 隔离
 
-每个插件调用包裹在 `safeRun` 中:
+五个插件钩子(以及 Start/Stop)各有一个包装,panic 一律转为 `core.ErrPluginPanic`:
 
 ```go
-func (pc *PluginChain) safeRun(name string, fn func() error) (err error) {
+func (c *PluginChain) safeAccept(p core.Plugin, logger core.Logger, sess core.Session) (err error) {
     defer func() {
         if r := recover(); r != nil {
-            // 记录 panic,返回错误,不传播到协议层
-            err = fmt.Errorf("plugin panic: %v", r)
+            logger.Error("plugin accept panic", "plugin", p.Name(), "panic", r)
+            err = core.ErrPluginPanic
         }
     }()
-    return fn()
+    return p.OnAccept(sess)
 }
 ```
 
-**单个插件 panic 不影响其他插件和协议层.**
+| 包装 | 钩子 | panic 后 |
+|------|------|----------|
+| `safeAccept` | `OnAccept` | 返回 `ErrPluginPanic`,链逆序回滚 |
+| `safeMessage` | `OnMessage` | 返回 `ErrPluginPanic`,链终止 |
+| `safeClose` | `OnClose` | 记录日志,继续下一个插件 |
+| `safeStart` | `Start` | 返回 `ErrPluginPanic`,`StartAll` 回滚 |
+| `safeStop` | `Stop` | 返回 `ErrPluginPanic`,`StopAll` 继续 |
+
+**单个插件 panic 不影响其他插件和协议层.** `Start` / `Stop` 也在包装内(V9 修复项):
+此前它们完全没有 recover,插件后台循环的启动 panic 会绕过网关的错误路径直接终止进程.
+
+用户 handler 走同一套思路:`shared.CallHandler` 捕获 panic,记录日志并返回
+`core.ErrHandlerPanic`,随后关闭该会话.`SessionManager.Broadcast` / `CloseAll` 中会话实现的
+panic 由 `safeSessionCall` 隔离.
 
 ### 6.3 写队列满保护
 
-TCP Session 写队列满时:
+TCP 会话写队列满时:
+
 - 返回 `ErrWriteQueueFull`
 - 记录 `tcp_task_queue_full_total` 指标
-- 根据 WorkerPool 策略(Block/Drop)决定后续行为
+- 按 WorkerPool 的 `FullPolicy` 决定后续行为
+
+| 策略 | 行为 | 风险 |
+|------|------|------|
+| `PolicyDrop`(默认) | 返回 `ErrWriteQueueFull`,消息丢弃 | 消息丢失 |
+| `PolicyBlock` | 提交方阻塞,同时监听池停止与会话 Context | 对端断连时可立即返回,不会泄漏 goroutine |
+| `PolicyClose` | 返回 `ErrWriteQueueFull` 并关闭会话 | 连接中断,客户端可感知 |
+
+`PolicyBlock` 的阻塞发送同时 select 三个出口(队列、`done`、`sess.Context().Done()`),
+因此队列满且对端已断连时提交方立刻返回 `ErrSessionClosed`,不会为每条卡住的连接留下一个
+永久阻塞的 goroutine.这是拒绝服务角度最容易出问题的一处:只 select 队列的实现会在
+对端消失后把整个 readLoop 卡死.
 
 ### 6.4 Gateway 启动回滚
 

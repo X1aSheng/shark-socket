@@ -245,7 +245,8 @@ go test -bench=BenchmarkTCPEcho -benchmem ./tests/benchmark/ -timeout 2m
 
 **症状:** 日志出现 `plugin panic: ...`,该插件后续调用被跳过
 
-**说明:** PluginChain 的 `safeRun` 捕获 panic,不影响其他插件和协议层.连接继续正常处理.
+**说明:** `PluginChain` 在 `OnAccept` / `OnMessage` / `Start` / `Stop` 的包装里捕获 panic
+(`OnClose` 也会捕获但只记日志),不影响其他插件和协议层.连接继续正常处理.
 
 **排查:** 检查 panic 堆栈,修复插件实现中的 nil 解引用或数组越界.
 

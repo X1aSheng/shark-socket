@@ -183,14 +183,18 @@ defer span.End()
 `PrometheusMetrics.ExportText()` 生成标准 Prometheus 文本格式:
 
 ```
-# TYPE shark_messages_total counter
-shark_messages_total{protocol="tcp",direction="in"} 1234
-# TYPE shark_sessions_active gauge
-shark_sessions_active{protocol="tcp"} 42
-# TYPE shark_request_duration_seconds summary
-shark_request_duration_seconds_count{protocol="tcp"} 500
-shark_request_duration_seconds_sum{protocol="tcp"} 12.345
+# TYPE sessions_accepted_total counter
+sessions_accepted_total 1234
+# TYPE sessions_active gauge
+sessions_active 42
+# TYPE handler_duration_seconds histogram
+handler_duration_seconds_count 500
+handler_duration_seconds_sum 12.345
 ```
+
+框架自身目前只写入 5 个指标(`sessions_accepted_total` / `sessions_closed_total` /
+`sessions_active` / `sessions_reclaimed_total` / `tcp_task_queue_full_total`),完整清单见
+`docs/guides/Architecture.md` 9.1 节.
 
 ### 5.2 HTTP 端点
 
@@ -287,14 +291,19 @@ Gateway 可观测性注入通过 Functional Options 完成:
 
 ## 8. 指标命名规范
 
+**没有全局前缀。** 指标名由写入点直接给出,不强制统一前缀(实现中不存在 `shark_` 前缀)。
+
 | 规则 | 示例 |
 |------|------|
-| 前缀 `shark_` | `shark_sessions_active` |
-| 使用 snake_case | `shark_tcp_connections_total` |
-| Counter 以 `_total` 结尾 | `shark_messages_total` |
-| Gauge 描述当前状态 | `shark_sessions_active` |
-| Histogram 使用物理单位 | `shark_request_duration_seconds` |
+| 用 snake_case | `sessions_active` |
+| Counter 以 `_total` 结尾 | `sessions_accepted_total` |
+| Gauge 描述当前状态 | `sessions_active` |
+| Histogram 使用物理单位后缀 | `handler_duration_seconds` |
 | Label 值小写,snake_case | `protocol="tcp"`, `status="ok"` |
+| 标签维度保持有界 | 避免把 session_id 这类高基数值做成标签 |
+
+标签不是必填:实现里除 `session_metrics.go` 与 `session_metrics.go` 的会话指标外,多数写入点
+只传指标名。新增指标时请先确认它不在上表 5 个已记录指标之内,避免重复计数。
 
 ---
 
