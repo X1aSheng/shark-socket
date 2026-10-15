@@ -5,11 +5,15 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
 )
 
+// Client is a framed TCP client. It is safe for concurrent use: Connect,
+// Send, Receive and Close may be called from different goroutines. Calls that
+// race a Connect observe either the previous or the new connection.
 type Client struct {
 	addr        string
 	framer      Framer
@@ -17,7 +21,10 @@ type Client struct {
 	dialer      net.Dialer
 	linger      *int // SO_LINGER timeout; nil means OS default
 	readTimeout time.Duration
-	conn        net.Conn
+	// mu guards conn. It is held only for the pointer swap, never across I/O,
+	// so a slow dial or a blocking write does not stall other callers.
+	mu   sync.RWMutex
+	conn net.Conn
 }
 
 type ClientOption func(*Client)
@@ -76,29 +83,59 @@ func (c *Client) Connect(ctx context.Context) error {
 		}
 		conn = tlsConn
 	}
+	// Install the new connection and release the previous one. Dialing happens
+	// outside the lock so a slow dial cannot block Send/Receive/Close, and the
+	// old connection is closed after the swap so a concurrent caller holding a
+	// snapshot of it is not left with a closed socket mid-operation.
+	c.mu.Lock()
+	prev := c.conn
 	c.conn = conn
+	c.mu.Unlock()
+	if prev != nil {
+		_ = prev.Close()
+	}
 	return nil
 }
 
-func (c *Client) Send(payload []byte) error {
+// currentConn returns the active connection, or core.ErrClosed when the client
+// is not connected.
+func (c *Client) currentConn() (net.Conn, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	if c.conn == nil {
-		return core.ErrClosed
+		return nil, core.ErrClosed
 	}
-	return c.framer.WriteFrame(c.conn, payload)
+	return c.conn, nil
+}
+
+// currentConnOrNil reports the active connection for tests.
+func (c *Client) currentConnOrNil() net.Conn {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.conn
+}
+
+func (c *Client) Send(payload []byte) error {
+	conn, err := c.currentConn()
+	if err != nil {
+		return err
+	}
+	return c.framer.WriteFrame(conn, payload)
 }
 
 func (c *Client) Receive() ([]byte, error) {
-	if c.conn == nil {
-		return nil, core.ErrClosed
+	conn, err := c.currentConn()
+	if err != nil {
+		return nil, err
 	}
 	// Apply the configured read timeout so a half-dead peer does not block
 	// Receive forever (WithClientReadTimeout).
 	if c.readTimeout > 0 {
-		if err := c.conn.SetReadDeadline(time.Now().Add(c.readTimeout)); err != nil {
+		if err := conn.SetReadDeadline(time.Now().Add(c.readTimeout)); err != nil {
 			return nil, err
 		}
 	}
-	return c.framer.ReadFrame(c.conn)
+	return c.framer.ReadFrame(conn)
 }
 
 // WithClientReadTimeout sets a per-Receive read deadline (0 disables).
@@ -109,8 +146,12 @@ func WithClientReadTimeout(timeout time.Duration) ClientOption {
 }
 
 func (c *Client) Close() error {
-	if c.conn == nil {
+	c.mu.Lock()
+	conn := c.conn
+	c.conn = nil
+	c.mu.Unlock()
+	if conn == nil {
 		return nil
 	}
-	return c.conn.Close()
+	return conn.Close()
 }
