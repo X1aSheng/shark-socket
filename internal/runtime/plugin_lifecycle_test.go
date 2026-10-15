@@ -186,9 +186,15 @@ func TestPluginChainStopAllWithoutStartIsSafe(t *testing.T) {
 	log := &lifecycleLog{}
 	plugin := &lifecyclePlugin{name: "p", priority: 50, log: log}
 	chain := NewPluginChain(plugin)
-	chain.StartAll() // starts p
-	chain.StopAll()
-	chain.StopAll() // double stop must not panic or double-close resources
+	if err := chain.StartAll(); err != nil { // starts p
+		t.Fatalf("StartAll: %v", err)
+	}
+	if err := chain.StopAll(); err != nil {
+		t.Fatalf("StopAll: %v", err)
+	}
+	if err := chain.StopAll(); err != nil { // double stop must not panic or double-close resources
+		t.Fatalf("second StopAll: %v", err)
+	}
 	if !plugin.started || !plugin.stopped {
 		t.Fatalf("plugin started=%v stopped=%v", plugin.started, plugin.stopped)
 	}

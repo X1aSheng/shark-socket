@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
@@ -12,7 +13,9 @@ type Heartbeat struct {
 	manager  core.SessionManager
 	timeout  time.Duration
 	interval time.Duration
-	lc       lifecycle
+	// closeTimeout bounds a single session Close from the sweep goroutine.
+	closeTimeout time.Duration
+	lc           lifecycle
 }
 
 func NewHeartbeat(manager core.SessionManager, timeout time.Duration, interval time.Duration) *Heartbeat {
@@ -25,7 +28,16 @@ func NewHeartbeat(manager core.SessionManager, timeout time.Duration, interval t
 	if interval <= 0 {
 		interval = time.Second
 	}
-	return &Heartbeat{manager: manager, timeout: timeout, interval: interval}
+	return &Heartbeat{manager: manager, timeout: timeout, interval: interval, closeTimeout: defaultSweepCloseTimeout}
+}
+
+// WithSweepCloseTimeout overrides how long a single session Close may take
+// during a sweep. Values <= 0 leave the default in place.
+func (p *Heartbeat) WithSweepCloseTimeout(d time.Duration) *Heartbeat {
+	if d > 0 {
+		p.closeTimeout = d
+	}
+	return p
 }
 
 func (p *Heartbeat) Name() string  { return "heartbeat" }
@@ -69,7 +81,7 @@ func (p *Heartbeat) Sweep(now time.Time) int {
 		if now.Sub(sess.LastActiveAt()) > p.timeout {
 			// Panic-isolate session Close so a broken session implementation
 			// cannot crash the sweep goroutine (and the whole process).
-			if safeSessionClose(sess) == nil {
+			if p.safeSessionClose(sess) == nil {
 				closed++
 			}
 			p.manager.Unregister(sess.ID())
@@ -78,12 +90,40 @@ func (p *Heartbeat) Sweep(now time.Time) int {
 	return closed
 }
 
-// safeSessionClose recovers a panic from a user session's Close method.
-func safeSessionClose(sess core.Session) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = core.ErrHandlerPanic
-		}
+// defaultSweepCloseTimeout bounds a single session Close during a sweep. Close
+// runs on the sweep goroutine and Stop waits for that goroutine, so an
+// unbounded Close would hang plugin shutdown and, through it, Gateway.Stop
+// (which holds the gateway mutex for the whole shutdown).
+const defaultSweepCloseTimeout = 5 * time.Second
+
+// errSweepCloseTimeout reports that a session Close exceeded the sweep budget.
+var errSweepCloseTimeout = errors.New("heartbeat: session close timed out")
+
+// safeSessionClose recovers a panic from a user session's Close method and
+// bounds how long it may take.
+func (p *Heartbeat) safeSessionClose(sess core.Session) (err error) {
+	timeout := p.closeTimeout
+	if timeout <= 0 {
+		timeout = defaultSweepCloseTimeout
+	}
+	done := make(chan error, 1)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				done <- core.ErrHandlerPanic
+			}
+		}()
+		done <- sess.Close(context.Background())
 	}()
-	return sess.Close(context.Background())
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case err = <-done:
+		return err
+	case <-timer.C:
+		// The session implementation ignored cancellation; abandon the wait so
+		// the sweep (and shutdown) can proceed. The abandoned goroutine exits
+		// whenever the session implementation eventually returns.
+		return errSweepCloseTimeout
+	}
 }

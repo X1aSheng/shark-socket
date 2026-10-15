@@ -21,14 +21,17 @@ func WithSlowHandlerClock(now func() time.Time) SlowHandlerOption {
 }
 
 func NewSlowHandler(logger core.Logger, threshold time.Duration, next core.Handler, opts ...SlowHandlerOption) core.Handler {
+	// A nil next would panic on the first message, so substitute a no-op
+	// regardless of the threshold: the disabled path (threshold <= 0) already
+	// did this, but the enabled path called next directly.
+	if next == nil {
+		next = func(core.Session, core.Message) error { return nil }
+	}
 	// A zero or negative threshold means "not configured": pass requests
 	// straight through without slow-request logging. Clamping a negative
 	// threshold to 0 would make every request qualify (elapsed >= 0 always)
 	// and flood the logs.
 	if threshold <= 0 {
-		if next == nil {
-			next = func(core.Session, core.Message) error { return nil }
-		}
 		return next
 	}
 	cfg := slowHandlerOptions{now: time.Now}

@@ -107,7 +107,9 @@ func (g *Gateway) Start(ctx context.Context) error {
 				}
 			}
 			cancel()
-			g.rt.Plugins().StopAll()
+			if stopErr := g.rt.Plugins().StopAll(); stopErr != nil {
+				g.rt.Logger().Error("plugin stop during rollback failed", "error", stopErr)
+			}
 			return err
 		}
 		started = append(started, srv)
@@ -166,8 +168,15 @@ func (g *Gateway) Stop(ctx context.Context) error {
 	}
 	// Stop lifecycle-aware plugins only after every session is closed, so
 	// plugin background loops (heartbeat sweeps, cluster consumers) never
-	// race the transport teardown above.
-	g.rt.Plugins().StopAll()
+	// race the transport teardown above. Stop failures and plugin panics are
+	// aggregated into the returned error instead of being discarded: a
+	// plugin that failed to release resources must be visible to the caller.
+	if err := g.rt.Plugins().StopAll(); err != nil {
+		g.rt.Logger().Error("plugin stop failed", "error", err)
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
 	// started was already cleared at the top of Stop so readyz reports
 	// not-ready for the whole shutdown window; only the uptime is stale here.
 	g.startedAt.Store(nil)

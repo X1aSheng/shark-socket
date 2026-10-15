@@ -15,11 +15,16 @@ type Persistence struct {
 	store      store.Store
 	bucket     string
 	messageLog *store.MessageLog
+	initErr    error
 	loggerMu   sync.RWMutex
 	logger     core.Logger
 }
 
 // NewPersistence creates a persistence plugin backed by the given Store.
+//
+// A message-log initialisation failure is recorded and can be observed through
+// Err(); Start() returns it so gateway startup aborts loudly rather than
+// running with persistence silently disabled.
 func NewPersistence(s store.Store, bucket string) *Persistence {
 	if bucket == "" {
 		bucket = "sessions"
@@ -29,11 +34,25 @@ func NewPersistence(s store.Store, bucket string) *Persistence {
 		var err error
 		p.messageLog, err = store.NewMessageLog(s, bucket+"/messages")
 		if err != nil {
+			p.initErr = fmt.Errorf("persistence: init message log: %w", err)
+			// Intentional: the logger is still the Nop logger at construction
+			// time, so recording the error (surfaced via Err/Start) is the only
+			// way to make the failure observable.
 			p.logger.Error("persistence: failed to init message log", "error", err)
 		}
 	}
 	return p
 }
+
+// Err returns the construction-time initialisation error, if any.
+func (p *Persistence) Err() error { return p.initErr }
+
+// Start reports a failed initialisation so PluginChain.StartAll aborts gateway
+// startup instead of leaving the plugin silently discarding messages.
+func (p *Persistence) Start() error { return p.initErr }
+
+// Stop is a no-op; Persistence holds no background goroutines.
+func (p *Persistence) Stop() error { return nil }
 
 // SetLogger sets the logger used for operational messages.
 // The write is locked so it is safe to call while the plugin is active.

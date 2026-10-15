@@ -163,18 +163,35 @@ func (p *AutoBan) Record(sess core.Session) bool {
 	return false
 }
 
+// Banned reports whether the given address is currently banned. Bans are
+// recorded per remote host (see remoteKey), so the argument is normalised the
+// same way: passing "10.0.0.7:1234" looks up the ban recorded for "10.0.0.7"
+// instead of silently missing it.
 func (p *AutoBan) Banned(addr string) bool {
+	key := normalizeBanKey(addr)
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	expiry, ok := p.banned[addr]
+	expiry, ok := p.banned[key]
 	if !ok {
 		return false
 	}
 	if time.Now().After(expiry) {
-		delete(p.banned, addr)
+		delete(p.banned, key)
 		return false
 	}
 	return true
+}
+
+// normalizeBanKey reduces an address to the same host-only key Record and
+// OnAccept use, so lookups and inserts agree.
+func normalizeBanKey(addr string) string {
+	if addr == "" {
+		return "unknown"
+	}
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		return host
+	}
+	return addr
 }
 
 func remoteKey(sess core.Session) string {

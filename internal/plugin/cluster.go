@@ -47,8 +47,8 @@ func (p *Cluster) Name() string  { return "cluster" }
 func (p *Cluster) Priority() int { return 95 }
 
 // WithTopic overrides the default pub/sub topic. Intended for construction-time
-// configuration (before Start); the write is locked so a late call cannot race
-// the consumer goroutine.
+// configuration (before Start). Readers take the same lock through topicName,
+// so a late call cannot race the consumer goroutine.
 func (p *Cluster) WithTopic(topic string) *Cluster {
 	if topic != "" {
 		p.mu.Lock()
@@ -56,6 +56,15 @@ func (p *Cluster) WithTopic(topic string) *Cluster {
 		p.mu.Unlock()
 	}
 	return p
+}
+
+// topicName returns the current topic. Every read of p.topic goes through this
+// helper: WithTopic writes it under the lock, and an unsynchronised read of a
+// string header can tear (and is a -race violation).
+func (p *Cluster) topicName() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.topic
 }
 
 func (p *Cluster) Start() error {
@@ -67,7 +76,7 @@ func (p *Cluster) Start() error {
 		p.lc.done()
 		return nil
 	}
-	ch, cancel := p.bus.Subscribe(p.topic, p.buffer)
+	ch, cancel := p.bus.Subscribe(p.topicName(), p.buffer)
 	go func() {
 		defer p.lc.done()
 		defer cancel() // unsubscribe the consumer when it exits
@@ -85,9 +94,10 @@ func (p *Cluster) OnMessage(sess core.Session, data []byte) ([]byte, error) {
 	if p.bus == nil {
 		return data, nil
 	}
+	topic := p.topicName()
 	env := clusterEnvelope{
 		NodeID:   p.nodeID,
-		Topic:    p.topic,
+		Topic:    topic,
 		Protocol: string(sess.Protocol()),
 		Payload:  append([]byte(nil), data...),
 	}
@@ -95,7 +105,7 @@ func (p *Cluster) OnMessage(sess core.Session, data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	p.bus.Publish(p.topic, encoded)
+	p.bus.Publish(topic, encoded)
 	return data, nil
 }
 
@@ -134,7 +144,7 @@ func (p *Cluster) handleClusterMessage(data []byte) {
 		}
 		return
 	}
-	if env.NodeID == p.nodeID || env.Topic != p.topic || len(env.Payload) == 0 {
+	if env.NodeID == p.nodeID || env.Topic != p.topicName() || len(env.Payload) == 0 {
 		return
 	}
 	if err := p.manager.Broadcast(env.Payload); err != nil {

@@ -36,8 +36,10 @@ type PluginRunner interface {
 
 	// StopAll stops every plugin that implements LifecyclePlugin, in
 	// reverse priority order. Gateway.Stop calls it after all sessions
-	// have been closed. Repeated or unpaired calls are no-ops.
-	StopAll()
+	// have been closed. Repeated or unpaired calls are no-ops. Errors from
+	// individual plugins are aggregated and returned so a shutdown failure is
+	// visible to the caller instead of being silently discarded.
+	StopAll() error
 }
 
 // StagedServer is optional. Gateway uses it for precise graceful shutdown.

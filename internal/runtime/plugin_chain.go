@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"sync"
@@ -58,21 +59,26 @@ func (c *PluginChain) Append(plugins ...core.Plugin) {
 // stopped in reverse order and the failure is returned so Gateway.Start can
 // abort. Passive plugins (no Start/Stop) are skipped. Repeated calls are safe:
 // the built-in lifecycle-aware plugins treat a second Start as a no-op.
+//
+// Start is a user callback like any other, so it runs behind the same panic
+// isolation as OnAccept/OnMessage/OnClose: an escaping panic here would bypass
+// the gateway's error path and crash the process.
 func (c *PluginChain) StartAll() error {
-	plugins, _ := c.snapshot()
+	plugins, logger := c.snapshot()
 	var started []core.Plugin
 	for _, p := range plugins {
-		lp, ok := p.(core.LifecyclePlugin)
-		if !ok {
+		if _, ok := p.(core.LifecyclePlugin); !ok {
 			continue
 		}
-		if err := lp.Start(); err != nil {
+		if err := c.safeStart(p, logger); err != nil {
+			var rollbackErr error
 			for i := len(started) - 1; i >= 0; i-- {
-				if stop, ok := started[i].(core.LifecyclePlugin); ok {
-					_ = stop.Stop()
-				}
+				// Rollback failures are reported alongside the original
+				// start error: a plugin left running after a failed
+				// startup is worth surfacing, not swallowing.
+				rollbackErr = errors.Join(rollbackErr, c.safeStop(started[i], logger))
 			}
-			return fmt.Errorf("plugin %q start: %w", p.Name(), err)
+			return errors.Join(fmt.Errorf("plugin %q start: %w", p.Name(), err), rollbackErr)
 		}
 		started = append(started, p)
 	}
@@ -80,15 +86,18 @@ func (c *PluginChain) StartAll() error {
 }
 
 // StopAll stops every plugin that implements core.LifecyclePlugin, in reverse
-// priority order. Safe to call when nothing was started (plugins tolerate
-// Stop without Start) and from multiple goroutines.
-func (c *PluginChain) StopAll() {
-	plugins, _ := c.snapshot()
+// priority order, and reports the aggregated failures. Safe to call when
+// nothing was started (plugins tolerate Stop without Start) and from multiple
+// goroutines.
+func (c *PluginChain) StopAll() error {
+	plugins, logger := c.snapshot()
+	var err error
 	for i := len(plugins) - 1; i >= 0; i-- {
-		if lp, ok := plugins[i].(core.LifecyclePlugin); ok {
-			_ = lp.Stop()
+		if _, ok := plugins[i].(core.LifecyclePlugin); ok {
+			err = errors.Join(err, c.safeStop(plugins[i], logger))
 		}
 	}
+	return err
 }
 
 func (c *PluginChain) OnAccept(sess core.Session) error {
@@ -167,6 +176,28 @@ func (c *PluginChain) safeClose(p core.Plugin, logger core.Logger, sess core.Ses
 		}
 	}()
 	p.OnClose(sess)
+}
+
+func (c *PluginChain) safeStart(p core.Plugin, logger core.Logger) (err error) {
+	lp := p.(core.LifecyclePlugin)
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("plugin start panic", "plugin", p.Name(), "panic", r)
+			err = core.ErrPluginPanic
+		}
+	}()
+	return lp.Start()
+}
+
+func (c *PluginChain) safeStop(p core.Plugin, logger core.Logger) (err error) {
+	lp := p.(core.LifecyclePlugin)
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("plugin stop panic", "plugin", p.Name(), "panic", r)
+			err = core.ErrPluginPanic
+		}
+	}()
+	return lp.Stop()
 }
 
 var _ core.PluginRunner = (*PluginChain)(nil)
