@@ -31,9 +31,9 @@ type captureClient struct {
 	connected bool
 }
 
-func (c *captureClient) IsConnected() bool          { return c.connected }
-func (c *captureClient) Disconnect(uint)            { c.connected = false }
-func (c *captureClient) Connect() paho.Token        { c.connected = true; return newCaptureToken() }
+func (c *captureClient) IsConnected() bool   { return c.connected }
+func (c *captureClient) Disconnect(uint)     { c.connected = false }
+func (c *captureClient) Connect() paho.Token { c.connected = true; return newCaptureToken() }
 func (c *captureClient) Publish(string, byte, bool, interface{}) paho.Token {
 	return newCaptureToken()
 }
