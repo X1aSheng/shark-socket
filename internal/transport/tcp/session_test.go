@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/transport/shared"
 )
 
 func TestSessionMethods(t *testing.T) {
@@ -112,8 +113,8 @@ func TestSessionSendCloseRace(t *testing.T) {
 // could panic with "send on closed channel" when stop() closed the task queue.
 func TestPoolSubmitStopRace(t *testing.T) {
 	for iter := 0; iter < 200; iter++ {
-		p := newWorkerPool(nil, 1, 2, PolicyBlock)
-		p.start(1)
+		p := shared.NewWorkerPool(nil, nil, 1, 2, shared.PolicyBlock)
+		p.Start(1)
 		stop := make(chan struct{})
 		var wg sync.WaitGroup
 		wg.Add(1)
@@ -125,14 +126,14 @@ func TestPoolSubmitStopRace(t *testing.T) {
 					return
 				default:
 				}
-				_ = p.submit(nil, []byte("x"))
+				_ = p.Submit(nil, core.ProtocolTCP, []byte("x"))
 			}
 		}()
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			time.Sleep(5 * time.Millisecond)
-			p.stop()
+			p.Stop()
 			close(stop)
 		}()
 		wg.Wait()

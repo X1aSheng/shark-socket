@@ -25,7 +25,7 @@ type Server struct {
 	acceptWG sync.WaitGroup
 	connWG   sync.WaitGroup
 	sessions sync.Map
-	pool     *workerPool
+	pool     *shared.WorkerPool
 }
 
 func NewServer(opts ...Option) *Server {
@@ -51,11 +51,11 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 	s.closed.Store(false)
 	s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate)
-	s.pool = newWorkerPool(s.opts.Handler, s.opts.WorkerCount, s.opts.TaskQueueSize, s.opts.FullPolicy)
-	s.pool.start(s.opts.WorkerCount)
+	s.pool = shared.NewWorkerPool(s.opts.Handler, s.rt.Logger(), s.opts.WorkerCount, s.opts.TaskQueueSize, s.opts.FullPolicy)
+	s.pool.Start(s.opts.WorkerCount)
 	ln, err := net.Listen("tcp", s.opts.Addr)
 	if err != nil {
-		s.pool.stop()
+		s.pool.Stop()
 		s.started.Store(false)
 		return fmt.Errorf("tcp listen %s: %w", s.opts.Addr, err)
 	}
@@ -122,7 +122,7 @@ func (s *Server) CloseSessions(ctx context.Context) error {
 	case <-ctx.Done():
 	}
 	if s.pool != nil {
-		s.pool.stop()
+		s.pool.Stop()
 	}
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -209,7 +209,7 @@ func (s *Server) handleConn(conn net.Conn) {
 			return
 		}
 		if s.pool != nil {
-			if err := s.pool.submit(sess, payload); err != nil && errors.Is(err, core.ErrWriteQueueFull) {
+			if err := s.pool.Submit(sess, core.ProtocolTCP, payload); err != nil && errors.Is(err, core.ErrWriteQueueFull) {
 				s.rt.Metrics().IncCounter("tcp_task_queue_full_total")
 			}
 		}
