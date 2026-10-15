@@ -10,8 +10,9 @@ import (
 )
 
 // TestCoAPRSTCancelsObserver verifies RFC 7641 §4.4: a peer that rejects a
-// CON notification with RST cancels the observe relation identified by the
-// notification token.
+// CON notification with RST cancels the observe relation. The RST is an Empty
+// message without a token (RFC 7252 §4.2), so the relation is identified via
+// the token stored with the pending notification, keyed by Message ID.
 func TestCoAPRSTCancelsObserver(t *testing.T) {
 	server := NewServer(WithAddr("127.0.0.1:0"))
 	gateway := runtime.NewGateway()
@@ -35,8 +36,20 @@ func TestCoAPRSTCancelsObserver(t *testing.T) {
 	token := []byte{0xAA}
 	server.observers.Register("/sensor/humidity", remote, token)
 
-	// Reject the CON notification with an RST carrying the same token.
-	rst := Message{Type: TypeRST, Code: CodeEmpty, MessageID: 42, Token: token}
+	// A CON notification carrying the relation token would have been tracked
+	// for retransmission; the RST is then correlated with it by Message ID.
+	// RFC 7252 section 4.2 requires the RST itself to be an Empty message
+	// with no token.
+	const notifyMID = 42
+	server.retransmitMu.Lock()
+	server.pendingNotifies[notifyKey{remote: remote, msgID: notifyMID}] = pendingNotify{
+		data:     []byte("notify"),
+		token:    append([]byte(nil), token...),
+		attempts: 0,
+	}
+	server.retransmitMu.Unlock()
+
+	rst := Message{Type: TypeRST, Code: CodeEmpty, MessageID: notifyMID}
 	data, err := rst.Marshal()
 	if err != nil {
 		t.Fatal(err)

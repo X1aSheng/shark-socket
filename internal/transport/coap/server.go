@@ -325,31 +325,52 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 	if err != nil {
 		return
 	}
+	remote := sess.remote.String()
+	// ACK and RST are Empty messages (RFC 7252 §4.2) and are handled before
+	// deduplication: neither is a CON, so ordering does not change the dedup
+	// outcome, and an empty CON ping must not pollute the dedup table.
+	if msg.Type == TypeACK {
+		// An ACK acknowledges a CON notification (or a piggybacked response);
+		// clear the pending retransmission for this remote + msgID.
+		s.clearPendingNotify(remote, msg.MessageID)
+		return
+	}
+	if msg.Type == TypeRST {
+		// RST rejects a CON notification: stop retransmitting it and cancel
+		// the observe relation the rejected notification refers to
+		// (RFC 7641 §4.4). A conformant RST is an Empty message that carries
+		// no token (RFC 7252 §4.1/§4.2), so the relation is identified via
+		// the token stored with the pending notification, keyed by the RST
+		// Message ID.
+		token, _ := s.takePendingNotify(remote, msg.MessageID)
+		if len(token) > 0 {
+			s.observers.RemoveByToken(remote, token)
+		}
+		return
+	}
+	// A CON with code 0.00 is a CoAP ping and must be answered with an RST
+	// (RFC 7252 §4.3); any other Empty message is silently ignored — it has
+	// no application-layer semantics.
+	if msg.Code == CodeEmpty {
+		if msg.Type == TypeCON {
+			rst := Message{Type: TypeRST, Code: CodeEmpty, MessageID: msg.MessageID}
+			if err := s.sendACKMsg(sess, rst); err != nil && s.rt != nil {
+				s.rt.Logger().Warn("coap ping rst send failed", "error", err)
+			}
+		}
+		return
+	}
 	// RFC 7252 deduplication applies to CON messages only. Only CON messages
 	// are recorded, so a NON/ACK/RST carrying the same msgID cannot later
 	// cause a legitimate CON request to be misclassified as a duplicate.
 	if msg.Type == TypeCON {
-		sk := seenKey{remote: sess.remote.String(), msgID: msg.MessageID}
+		sk := seenKey{remote: remote, msgID: msg.MessageID}
 		if _, loaded := s.seen.LoadOrStore(sk, struct{}{}); loaded {
 			if err := s.sendACK(sess, msg, CodeValid, nil); err != nil && s.rt != nil {
 				s.rt.Logger().Warn("coap dedup ack send failed", "error", err)
 			}
 			return
 		}
-	}
-	if msg.Type == TypeACK {
-		// An ACK acknowledges a CON notification (or a piggybacked response);
-		// clear the pending retransmission for this remote + msgID.
-		s.clearPendingNotify(sess.remote.String(), msg.MessageID)
-		return
-	}
-	if msg.Type == TypeRST {
-		// RST rejects a CON notification: stop retransmitting it and cancel
-		// the observe relation the rejected notification refers to (RFC 7641
-		// §4.4) — the notification token identifies the relation.
-		s.clearPendingNotify(sess.remote.String(), msg.MessageID)
-		s.observers.RemoveByToken(sess.remote.String(), msg.Token)
-		return
 	}
 
 	registeredObserve := s.handleObserve(sess, msg)
@@ -438,8 +459,15 @@ func (s *Server) handleObserve(sess *session, msg Message) bool {
 	obsVal, hasObserve := msg.Options[ObserveOption]
 	resource := string(msg.Payload)
 	remote := sess.remote.String()
-	if hasObserve && len(obsVal) > 0 {
-		reg := obsVal[0]
+	if hasObserve {
+		// The Observe value is a CoAP uint option encoded in the shortest
+		// form, so register (Observe=0) is a zero-length option value
+		// (RFC 7252 §3.2, RFC 7641 §2). Treating "absent value" and "value
+		// zero" separately is required for interop with conformant clients.
+		var reg byte
+		if len(obsVal) > 0 {
+			reg = obsVal[0]
+		}
 		if reg == 0 {
 			// Register returns nil when subscription limits are reached; the
 			// request is then answered without an observe relation instead of
@@ -537,6 +565,21 @@ func (s *Server) untrackNotify(remote string, msgID uint16) {
 
 func (s *Server) clearPendingNotify(remote string, msgID uint16) {
 	s.untrackNotify(remote, msgID)
+}
+
+// takePendingNotify removes and returns the token of a pending CON
+// notification identified by remote + msgID. It is used to correlate a
+// conformant (token-less) RST with the observe relation it rejects.
+func (s *Server) takePendingNotify(remote string, msgID uint16) ([]byte, bool) {
+	s.retransmitMu.Lock()
+	defer s.retransmitMu.Unlock()
+	key := notifyKey{remote: remote, msgID: msgID}
+	pn, ok := s.pendingNotifies[key]
+	if !ok {
+		return nil, false
+	}
+	delete(s.pendingNotifies, key)
+	return pn.token, true
 }
 
 func (s *Server) retransmitLoop(ctx context.Context) {
