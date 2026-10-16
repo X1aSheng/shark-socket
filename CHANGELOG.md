@@ -45,6 +45,19 @@ ubuntu 侧集成),红灯只来自两个静态检查 job;另有一个时序竞态
   再断言下一次 Submit 被拒;信号用非阻塞带缓冲发送,因为 `Stop` 之后还会 drain
   队列并再次调用 handler
 
+**文档与产物说明**:
+
+- **README 的静态链接声明缺少前提**:开篇写 "statically linked",对 Docker 镜像
+  成立(Dockerfile 显式 `CGO_ENABLED=0`),但对装有 C 工具链的主机上的裸
+  `go build` 不成立 -- 该场景下产物动态链接 `libc.so.6`,无法直接在 Alpine/musl
+  上运行.云端实测两种产物对照后,已在两版 README 补上构建命令与前提说明
+
+**云端验证**(120.76.44.233, Ubuntu 26.04, 2 vCPU, 1.6GB, Go 1.26.9, gcc 15.2.0):
+
+9 步全部通过 -- 编译 59s / vet 23s / unit 37s / integration 81s / deploy 15s /
+cover 44s (79.6%) / race 178s / 产物构建 2s / govulncheck 0 漏洞.6 组压力用例
+`fail=0`.详见 `docs/reports/CLOUD-VALIDATION-V10-261016.md`.
+
 **验证**:7 种模式(unit / vet / integration / deploy / cover / race / benchmark)
 全部退出码 0,覆盖率 79.6%(门限 70%),`golangci-lint` 0 issues,
 `govulncheck` 0 漏洞.修复后 `go.mod` 的 `go` 指令为 1.26.9.
