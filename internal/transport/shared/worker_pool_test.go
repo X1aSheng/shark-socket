@@ -68,19 +68,47 @@ func (l *recordingLogger) errorCount() int {
 }
 
 func TestWorkerPoolDropPolicyRejectsWhenFull(t *testing.T) {
+	// The handler signals when it has taken the first task, which is what
+	// makes "the queue is full" a fact rather than a guess. Submitting twice
+	// back to back used to be enough, but the single worker could dequeue the
+	// first task before the second submit ran, and then the queue was empty
+	// and the submit succeeded. Waiting for the handler to start instead pins
+	// the queue at empty, so the next submit fills it and the one after that
+	// must be rejected.
+	inHandler := make(chan struct{}, 1)
+	release := make(chan struct{})
 	pool := NewWorkerPool(func(core.Session, core.Message) error {
-		time.Sleep(100 * time.Millisecond)
+		// Non-blocking: Stop drains the queue afterwards, so the handler runs
+		// more than once and a plain close would panic on the second call.
+		select {
+		case inHandler <- struct{}{}:
+		default:
+		}
+		<-release
 		return nil
 	}, nil, 1, 1, PolicyDrop)
 	pool.Start(1)
-	defer pool.Stop()
+	defer func() {
+		close(release)
+		pool.Stop()
+	}()
 
 	if err := pool.Submit(newPoolTestSession(1), core.ProtocolTCP, []byte("one")); err != nil {
 		t.Fatalf("first submit: %v", err)
 	}
-	err := pool.Submit(newPoolTestSession(2), core.ProtocolTCP, []byte("two"))
+	select {
+	case <-inHandler:
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker never started handling the first task")
+	}
+	// The worker is parked inside the handler, so the one-slot queue is empty:
+	// this submit fills it.
+	if err := pool.Submit(newPoolTestSession(2), core.ProtocolTCP, []byte("two")); err != nil {
+		t.Fatalf("second submit: %v", err)
+	}
+	err := pool.Submit(newPoolTestSession(3), core.ProtocolTCP, []byte("three"))
 	if !errors.Is(err, core.ErrWriteQueueFull) {
-		t.Fatalf("second submit error = %v, want %v", err, core.ErrWriteQueueFull)
+		t.Fatalf("third submit error = %v, want %v", err, core.ErrWriteQueueFull)
 	}
 }
 
