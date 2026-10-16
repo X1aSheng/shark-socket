@@ -3,7 +3,7 @@
 ## meta-info
 
 - 批次: V10 Review - Multi-Host Validation Batch
-- 本地基线: main @ 659417c84 (含 D13/D14 两项修复)
+- 本地基线: main @ 659417c84 (云端实际验证的 HEAD; 其后两笔提交只改文档)
 - 验证主机: srv2 47.120.44.128 (iZf8zj5ccfontaezzi4kfrZ)
             srv3 8.130.190.141 (iZ0jlcgedkf3ybet8e1quuZ)
 - 验证时间: 2026-10-16 17:42 - 18:16 (UTC+8), 含三轮: bd5d41a8f (首轮) /
