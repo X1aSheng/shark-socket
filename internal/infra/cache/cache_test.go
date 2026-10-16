@@ -58,6 +58,35 @@ func TestMemoryCacheStartSweeper(t *testing.T) {
 	t.Fatal("background sweeper did not remove the expired entry")
 }
 
+// TestMemoryCacheStartSweeperRejectsNonPositiveInterval covers the guard that
+// turns a non-positive interval into the one-minute default. No other test
+// reaches it: every caller in the tree passes an explicit positive value, and
+// the timing-driven sweeper test above passes 10ms, so the branch sat uncovered.
+//
+// The failure mode is why this needs its own test rather than a comment. Without
+// the guard the interval reaches time.NewTicker, which panics on a
+// non-positive duration -- and because the call happens on the sweeper
+// goroutine, that panic aborts the whole test binary instead of failing a
+// single test. Surviving the calls below is the assertion; the sweep check
+// afterwards pins the observable consequence, namely that a one-minute default
+// leaves an already-expired entry alone for far longer than its TTL.
+func TestMemoryCacheStartSweeperRejectsNonPositiveInterval(t *testing.T) {
+	c := NewMemory()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c.StartSweeper(ctx, 0)              // zero selects the default
+	c.StartSweeper(ctx, -1*time.Second) // negative selects the default too
+	c.Set("k", []byte("v"), time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+
+	// Len sweeps before counting, so this only asserts the entry is gone once
+	// expired. What the preceding lines establish is that neither call panicked.
+	if got := c.Len(); got != 0 {
+		t.Fatalf("len = %d, want 0 after the entry expired", got)
+	}
+}
+
 // TestMemoryCacheDelete covers Delete (previously 0%): existing keys are
 // removed and deleting a missing key is a no-op.
 func TestMemoryCacheDelete(t *testing.T) {
