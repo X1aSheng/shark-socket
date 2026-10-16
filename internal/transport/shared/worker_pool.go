@@ -89,12 +89,12 @@ func (p *WorkerPool) WorkerBounds() (min, max int) {
 
 // Submit enqueues one message for the user handler.
 func (p *WorkerPool) Submit(sess core.Session, protocol core.Protocol, payload []byte) error {
-	return p.poolCore.submit(sess, protocol, payload)
+	return p.submit(sess, protocol, payload)
 }
 
 // Stop terminates the workers after draining everything already accepted.
 func (p *WorkerPool) Stop() {
-	p.poolCore.beginClose()
+	p.beginClose()
 	// Acquire the write lock: it cannot be granted until every in-flight Submit
 	// (which holds the read lock across its enqueue) has finished. It is held
 	// while the workers drain and through the final sweep, so the sweep cannot
@@ -103,18 +103,18 @@ func (p *WorkerPool) Stop() {
 	defer p.submitMu.Unlock()
 	p.wg.Wait()
 	// Safety net: handle anything still queued.
-	p.poolCore.drainQueue()
+	p.drainQueue()
 }
 
 func (p *WorkerPool) run() {
 	for {
 		select {
 		case t := <-p.queue:
-			p.poolCore.handle(t)
+			p.handle(t)
 		case <-p.done:
 			// Drain any remaining queued tasks before exiting so that tasks
 			// submitted before Stop still complete.
-			p.poolCore.drainQueue()
+			p.drainQueue()
 			return
 		}
 	}

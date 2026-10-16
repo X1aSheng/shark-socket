@@ -180,9 +180,14 @@ func TestMaybeScaleDoesNotHoldSubmitLock(t *testing.T) {
 	// maybeScale is in flight. Taking the write lock from the test goroutine
 	// proves no reader holds it: if Submit still held the lock, this would
 	// block until the whole test times out.
+	var held atomic.Bool
 	done := make(chan struct{})
 	go func() {
 		p.submitMu.Lock()
+		// Record the acquisition while the write lock is held. This is the
+		// assertion itself: a concurrent Submit would still be holding the
+		// read lock here, so the Lock above could not have returned.
+		held.Store(true)
 		p.submitMu.Unlock()
 		close(done)
 	}()
@@ -190,6 +195,9 @@ func TestMaybeScaleDoesNotHoldSubmitLock(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("submitMu write lock blocked: Submit still holds the read lock")
+	}
+	if !held.Load() {
+		t.Fatal("submitMu write lock was never acquired")
 	}
 	_ = before
 }

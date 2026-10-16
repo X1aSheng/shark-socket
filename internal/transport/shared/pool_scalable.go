@@ -162,7 +162,7 @@ func (p *ScalablePool) WorkerBounds() (min, max int) {
 // the single strongest signal that the pool is short of workers, so it must
 // not be skipped.
 func (p *ScalablePool) Submit(sess core.Session, protocol core.Protocol, payload []byte) error {
-	err := p.poolCore.submit(sess, protocol, payload)
+	err := p.submit(sess, protocol, payload)
 	if p.submitTick.Add(1)%scaleCheckInterval == 0 {
 		p.maybeScale()
 	}
@@ -177,30 +177,13 @@ func (p *ScalablePool) Submit(sess core.Session, protocol core.Protocol, payload
 // follow a burst, while leaving the hot path with a single atomic add.
 const scaleCheckInterval = 1024
 
-// shouldScale decides whether to grow or shrink the worker set.
+// maybeScale decides whether to grow or shrink the worker set, and acts on it.
 //
 // The judgement uses queue occupancy alone. Two alternatives were rejected:
 // handler latency needs a per-task timer on the hot path, and error rate is a
 // consequence rather than a cause -- by the time it climbs, the drop has
 // already happened. Occupancy is the leading indicator: a backlog means
 // workers are consuming slower than producers are submitting.
-func (p *ScalablePool) shouldScale() int {
-	q, capacity := len(p.queue), cap(p.queue)
-	if capacity == 0 {
-		return 0
-	}
-	occupancy := float64(q) / float64(capacity)
-	n := p.workerCount()
-	switch {
-	case occupancy >= p.scaleUpRatio && n < int(p.maxWorker.Load()):
-		return +1
-	case occupancy <= p.scaleDownRatio && n > int(p.minWorker.Load()):
-		return -1
-	}
-	return 0
-}
-
-// maybeScale applies shouldScale's verdict.
 //
 // Growing and shrinking are deliberately asymmetric. Adding a worker that turns
 // out to be unnecessary costs one goroutine; removing one that was needed pushes
@@ -264,7 +247,7 @@ func (p *ScalablePool) retireOneWorker() {
 
 // Stop terminates every worker after draining everything already accepted.
 func (p *ScalablePool) Stop() {
-	p.poolCore.beginClose()
+	p.beginClose()
 	// Retire the workers explicitly. A worker parked in select would only
 	// notice done via its done branch, which drains the queue first; letting
 	// it exit on done keeps that single drain path and avoids two kinds of
@@ -282,7 +265,7 @@ func (p *ScalablePool) Stop() {
 	p.submitMu.Lock()
 	defer p.submitMu.Unlock()
 	p.wg.Wait()
-	p.poolCore.drainQueue()
+	p.drainQueue()
 }
 
 // addWorker starts one more worker, unless the pool is already at maxWorker or
@@ -328,7 +311,7 @@ func (p *ScalablePool) run(w *workerRef) {
 	for {
 		select {
 		case t := <-p.queue:
-			p.poolCore.handle(t)
+			p.handle(t)
 		case <-w.retire:
 			// Retire without touching the queue. A retired worker that kept
 			// consuming would race the remaining workers for tasks and could
@@ -336,7 +319,7 @@ func (p *ScalablePool) run(w *workerRef) {
 			p.removeWorker(w.id)
 			return
 		case <-p.done:
-			p.poolCore.drainQueue()
+			p.drainQueue()
 			p.removeWorker(w.id)
 			return
 		}
