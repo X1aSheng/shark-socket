@@ -62,7 +62,7 @@ func enterHandler(want int) (handler core.Handler, parked chan struct{}, release
 func TestPoolCapacityDeterministic(t *testing.T) {
 	const (
 		workers = 4
-		queue= 8
+		queue   = 8
 	)
 
 	for _, tc := range []struct {
@@ -211,7 +211,7 @@ func TestPoolBlockStallsSubmitter(t *testing.T) {
 	}()
 
 	t.Logf("confirmed: PolicyBlock blocks Submit while the queue is full; " +
-		"in tcp/server.go:212 this Submit runs in the connection read goroutine, "+
+		"in tcp/server.go:212 this Submit runs in the connection read goroutine, " +
 		"so a saturated pool stalls that connection's reader")
 
 	// Release so the deferred Stop can complete.
