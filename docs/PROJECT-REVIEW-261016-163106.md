@@ -333,6 +333,20 @@ FAIL	github.com/X1aSheng/shark-socket/internal/transport/shared	4.550s
 
 同时记录一条环境层观察（非代码缺陷，不入修复清单）：本机首次使用自动下载的 go1.26.9 工具链跑 `-mode cover` 时，出现过一次 `toolchain@v0.0.1-go1.26.9` 下 `cmd/internal/pkgpattern is not in std` 的报错，仅影响 `examples/basic_tcp` 与 `examples/basic_lwm2m` 两个包，重跑即通过。原因是 toolchain 模块首次解压与并发包构建的竞态。CI 使用 `actions/setup-go` 安装完整发行版，不经过 toolchain 模块路径，因此不受影响。
 
+### D12 (P2) README 的静态链接声明缺少前提
+
+README 开篇写 "`shark-socket` is statically linked with no external runtime dependency"（中文版同）。该表述对 Docker 镜像是成立的（Dockerfile 显式 `CGO_ENABLED=0`），但对**任何装有 C 工具链的主机上的裸 `go build`** 不成立。云端验证时实测:
+
+```
+默认构建      : dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2
+                (依赖 libc.so.6 与 ld-linux-x86-64.so.2)
+CGO_ENABLED=0 : statically linked
+```
+
+仓库中没有任何代码需要 cgo，但主机上有 gcc 时 `CGO_ENABLED` 默认为 1，cgo 版 DNS 解析器随之启用。实际后果是: 按 README 直接构建的用户会得到一个无法在 Alpine/musl 镜像上运行（除非装 glibc 兼容包）的二进制，而这恰好与紧接其后的 "deploys on resource-constrained edge nodes" 相矛盾。
+
+已在两版 README 补上构建命令、两种产物的 `file` 输出对照，并说明 `-race` 仍需要 `CGO_ENABLED=1`，避免两个要求被混为一谈。
+
 ---
 
 ## 4. GitHub Actions 修复方案
