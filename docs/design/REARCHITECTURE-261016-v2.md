@@ -2386,3 +2386,85 @@ ScalablePool 不可以**: `WorkerPool` 的 `Add` 只发生在 `Start`, 而 `Star
 **尚未验证**: L2-c 完成后需在 cloud2 上复跑 §14.2 的分离式压测, 对比
 "固定 4 worker" 与 "弹性 2-8 worker" 的实际吞吐差异。**那是 L2 收益的最终证明,
 本节只证明了机制正确。**
+
+### 14.9 L2-c 实施记录 (2026-10-16)
+
+L2-a / L2-b 完成后继续实施 L2-c (伸缩判据与触发点)。
+
+#### 产出
+
+`shared/pool_scalable.go` 新增 `shouldScale` / `maybeScale` / `retireOneWorker`
+与 `submitTick` 计数器, 提交点为:
+
+```go
+func (p *ScalablePool) Submit(...) error {
+    err := p.poolCore.submit(...)        // submitMu.RLock 覆盖整个入队
+    if p.submitTick.Add(1)%scaleCheckInterval == 0 {
+        p.maybeScale()                   // 锁已释放, 在锁外评估
+    }
+    return err
+}
+```
+
+`pool_scale_behavior_test.go` 新增 6 项测试 (4 项原有 + 2 项修订)。
+
+#### §11.3.4 的约束如何满足
+
+§11.3.4 要求"Submit 内每 N 次触发一次", 但同时 §11.5 要求
+"`maybeScale` 不得在 `submitMu.RLock` 内执行"—— 这两条看似冲突,
+因为 `poolCore.submit` 的读锁覆盖整个入队 (含 `PolicyBlock` 阻塞路径)。
+
+解法是**把 Submit 拆成两步**: 先 `poolCore.submit` (内部加解锁),
+再在外面评估伸缩。`defer RUnlock` 在 `poolCore.submit` 返回时已执行,
+因此 `maybeScale` 运行时锁一定已释放。测试
+`TestMaybeScaleDoesNotHoldSubmitLock` 专门断言该性质 (从测试 goroutine
+取写锁, 若 Submit 仍持读锁则会阻塞)。
+
+**所有返回路径都 tick, 包括 `ErrWriteQueueFull`** —— 被拒绝的提交
+正是最需要扩容的信号, 不能跳过。
+
+#### 测试中踩到并修正的两个设计约束
+
+这两条不是 bug, 是**测试设计时必须知道的池语义**:
+
+1. **收缩要求 `n > minWorker`。** 若 worker 数已在下限, 收缩分支不进,
+   落入中间地带并**重置收缩计数**。测试因此必须先把 worker 加到下限之上,
+   否则 `downStreak` 永远是 0, 看起来像收缩逻辑失效。
+2. **队列容量必须远大于 `scaleCheckInterval`。** 小队列在 submit 循环内
+   即被填满, occupancy 恒为 1.0, 走的是扩容分支而非收缩。
+   收缩类测试用 16384 容量: 3 次 tick 时最高 occupancy = 3068/16384
+   = 0.187, 仍低于 0.25 阈值。
+
+#### 提交序列
+
+按"每步可独立验证"的原则分 5 个提交推送 (gitee + github 同步):
+
+| commit | 内容 |
+|---|---|
+| `d486e9bd7` | `refactor(shared)`: 抽取 poolCore |
+| `b99494495` | `feat(shared)`: ScalablePool + workerRef |
+| `7b2bd1346` | `test(shared)`: 伸缩行为 / 竞态 / 确定性测试 |
+| `05020b71a` | `feat(scripts)`: 可隔离服务端的压测工具 |
+| `629e6ca61` | `docs(design)`: 设计文档与实测数据 |
+
+#### 验证
+
+| 检查 | 结果 |
+|---|---|
+| `go build ./...` | 通过 |
+| `go vet ./...` | 通过 |
+| `gofmt -l` | 干净 |
+| `go test ./internal/transport/shared/ -count=3` | 通过 |
+| `go test ./...` 全仓 | 通过, 无回归 |
+| **云端 `-race -count=3`** (Go 1.26.5 + gcc 15.2) | **通过, 无竞态** |
+
+`synctest` 与 `-race` 同跑无兼容性问题 (与 §12.9.2 的结论一致),
+伸缩测试因此可同时获得确定性与竞态检测, 无需分轮。
+
+#### 下一步
+
+- **L2-d**: 伸缩行为已在本次随 L2-c 一并覆盖 (6 项), 剩余是补
+  `TestScaleDownFloor` 与 `TestRetireWorkerDrainsNothing` 的独立断言
+- **L2-e**: `tcp.Option` 接线 (`WithElasticPool` / `WithScaleRatio`)
+- **收益证明**: L2-e 后在 cloud2 复跑分离式压测, 对比固定 4 worker 与
+  弹性 2-8 worker。**这是 L2 价值的最终证明, 当前只证明机制正确。**
