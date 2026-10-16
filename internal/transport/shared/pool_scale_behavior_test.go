@@ -223,6 +223,149 @@ func TestScaleUpGrowthIsCapped(t *testing.T) {
 	}
 }
 
+// TestScaleDownFloor asserts shrinking stops exactly at minWorker and never
+// goes below it.
+//
+// This is the boundary the design calls out in section 11.3.5: a pool that
+// retires past its floor loses the goroutines it can least afford to lose,
+// because minWorker is the count the caller asked to always have available.
+// The assertion is two-sided on purpose -- reaching the floor is not enough,
+// the pool must also stay there under continued low-water readings, which is
+// where an off-by-one in the comparison would show up.
+//
+// maybeScale is driven directly, with an empty queue, rather than through
+// Submit. Two earlier attempts to reach low water by submitting were both
+// measuring the wrong thing: a tight submit loop outruns the workers even with
+// a non-blocking handler, so the queue fills, occupancy leaves the shrink band
+// and the streak resets mid-run. Whether a burst of submits reads as low water
+// is a sampling question already covered by TestScaleDownRequiresStreak; what
+// this test is about is the floor itself, and an empty queue is the unambiguous
+// low-water signal for it.
+func TestScaleDownFloor(t *testing.T) {
+	var handled atomic.Int64
+	const minWorker = 2
+	p := NewScalablePool(func(core.Session, core.Message) error {
+		handled.Add(1)
+		return nil
+	}, nil, minWorker, 8, 1024, PolicyDrop)
+	p.scaleUpRatio = 0.75
+	p.scaleDownRatio = 0.25
+	p.Start()
+	defer p.Stop()
+
+	// Grow well above the floor so there is room to shrink back down to it.
+	for range 4 {
+		p.addWorker()
+	}
+	if got := p.workerCount(); got != minWorker+4 {
+		t.Fatalf("setup workerCount = %d, want %d", got, minWorker+4)
+	}
+
+	// Each retirement costs scaleDownHold consecutive readings, so drive far
+	// more readings than there are workers to retire. Without a floor the pool
+	// would keep retiring and hit zero, which is the failure under test.
+	for range int(p.scaleDownHold) * 20 {
+		p.maybeScale()
+	}
+
+	if got := p.workerCount(); got != minWorker {
+		t.Fatalf("workerCount = %d, want exactly minWorker %d", got, minWorker)
+	}
+	// Keep reading: the floor must hold, not merely be reached once.
+	for range int(p.scaleDownHold) * 10 {
+		p.maybeScale()
+	}
+	if got := p.workerCount(); got != minWorker {
+		t.Fatalf("workerCount = %d after sustained low water, want %d (floor must hold)", got, minWorker)
+	}
+}
+
+// TestRetireWorkerDrainsNothing asserts a retired worker exits without taking
+// one last task from the queue.
+//
+// The hazard is specific: run()'s retire branch returns immediately, while its
+// done branch calls drainQueue first. If a retiring worker drained on the way
+// out, it would consume tasks that the surviving workers are counting on, and
+// during Stop that work would be handled twice or lost -- the single drain
+// path would no longer be the only one.
+//
+// The test parks every worker inside the handler first, so a task is sitting in
+// the queue with no worker able to reach it. Once the retire is observed the
+// queue depth must be untouched, which is only true if the retire branch did
+// not touch the queue.
+func TestRetireWorkerDrainsNothing(t *testing.T) {
+	const (
+		workers = 3
+		backlog = 12
+	)
+	var handled atomic.Int64
+	inHandler := make(chan struct{}, workers)
+	release := make(chan struct{})
+
+	p := NewScalablePool(func(core.Session, core.Message) error {
+		handled.Add(1)
+		// Non-blocking, unlike a plain send. Stop drains the queue after the
+		// workers are gone, so the handler runs with nobody left to read this
+		// channel; a blocking send would park it forever and hang Stop.
+		select {
+		case inHandler <- struct{}{}:
+		default:
+		}
+		<-release
+		return nil
+	}, nil, workers, workers, 64, PolicyDrop)
+	p.Start()
+	// Only Stop is deferred: the parked workers need release closed before Stop
+	// can drain, and close(release) must not happen twice.
+	defer p.Stop()
+
+	sess := newPoolTestSession(1)
+	// One task per worker parks every worker inside the handler.
+	for range workers {
+		if err := p.Submit(sess, core.ProtocolTCP, []byte("a")); err != nil {
+			t.Fatalf("Submit priming: %v", err)
+		}
+	}
+	for range workers {
+		<-inHandler
+	}
+
+	// Fill the queue while no worker is available to consume it.
+	for range backlog {
+		if err := p.Submit(sess, core.ProtocolTCP, []byte("b")); err != nil {
+			t.Fatalf("Submit backlog: %v", err)
+		}
+	}
+	depthBefore := len(p.queue)
+	if depthBefore != backlog {
+		t.Fatalf("queue depth = %d, want %d", depthBefore, backlog)
+	}
+
+	// Retire one worker and wait until it has actually left the active set.
+	p.retireOneWorker()
+	deadline := time.Now().Add(2 * time.Second)
+	for p.workerCount() != workers-1 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := p.workerCount(); got != workers-1 {
+		t.Fatalf("workerCount = %d, want %d", got, workers-1)
+	}
+
+	// The retire branch ran to completion. Had it drained, the backlog would be
+	// smaller than when the retire was requested.
+	if got := len(p.queue); got != depthBefore {
+		t.Fatalf("queue depth after retire = %d, want %d: a retired worker must not drain", got, depthBefore)
+	}
+
+	// Everything still queued must be handled exactly once, and the survivors
+	// plus Stop's drain must account for all of it.
+	close(release)
+	p.Stop()
+	if got, want := handled.Load(), int64(workers+backlog); got != want {
+		t.Fatalf("handled = %d, want %d (no task lost or handled twice)", got, want)
+	}
+}
+
 // TestScalingUnderSynctest runs the same shrink cycle inside a synctest bubble
 // so the tick accounting is deterministic rather than dependent on how fast the
 // test machine happens to schedule goroutines.
