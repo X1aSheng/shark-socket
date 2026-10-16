@@ -7,6 +7,62 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### V10 Review - Multi-Host Validation Batch (2026-10-16)
+
+在两台 8C/16G 云主机(srv2 / srv3, Ubuntu 26.04)上复验 V10 批次.同一 commit
+在两台机器上结果不一致,由此定位并修复 2 项缺陷.详见
+`docs/reports/CLOUD-VALIDATION-SRV23-261016.md`.
+
+**部署测试的可用性判定不成立(1 个根因,3 个失败步骤)**:
+
+- `TestDeployToolRenderingWhenAvailable` 用 `exec.LookPath` 判定工具可用性,问的是
+  "PATH 上有没有叫 docker 的文件",而不是"`docker compose` 能不能跑".Ubuntu 的
+  `docker.io` 包不带 compose 插件,于是该主机的判定通过、子命令以 125 退出
+  (`unknown command`),测试报失败.表现为 `integration` / `deploy` / `race` 三项
+  同时转红,而每一项日志里失败的断言都只有 `deploy_test.go:149` 这一处;同一 commit
+  在装有 compose v5.5.0 的另一台机器上三项皆绿
+- 改为探测而非推断:新增 `toolRuns(name, args...)`,对测试真正依赖的那次调用做一次
+  无副作用试探.工具包方式不同的机器正确地跳过,而确实具备该能力的机器仍然渲染
+  清单、仍然能抓到真正的清单错误.`kubectl` / `helm` 同样按此处理
+
+**后台清扫器的默认间隔分支从未被覆盖**:
+
+- 覆盖率在同一 commit 上不可复现:两台主机分别报 79.7% 与 79.6%.逐函数比对
+  `go tool cover -func` 后定位到 3 个函数,其中只有这一处是系统性缺口 --
+  `Memory.StartSweeper` 的 `interval <= 0` 分支,调用方无一传非正值,时序驱动的
+  清扫测试传的是 10ms,该函数因而无论怎么跑都停在 88.9%
+- 这个分支值得单独立测:它是调用方传 0 与 `time.NewTicker(0)` 之间唯一的一道
+  防护,而后者对非正周期会 panic;panic 发生在清扫器 goroutine 上,回归因此会直接
+  中止整个测试二进制,而不是让某个测试失败.补测后 88.9% -> 100.0%,两台主机各 5 次
+  独立单跑均为 100.0%
+- 修完这一处后重跑,总覆盖率变为 79.8% / 79.7%,差异仍在,但受影响的函数**完全换了
+  一批**(第二轮是 `plugin/cluster.go Start`、`tcp/session.go readLoop`、
+  `websocket/server.go pingLoop`).两轮集合没有交集,说明这不是若干固定薄弱点,而是
+  同一类竞态在不同函数上随机显现:所有受影响函数的共同属性是定时器驱动的 goroutine
+  循环,其退出与测试收尾之间没有同步点.因此无法靠补测消除 -- 要做到确定性只能改
+  生产 API 暴露完成信号,或加入概率性 sleep,后者本项目在池的丢包测试上已明确否决过
+  一次.记为**测量边界**:覆盖率可复现区间为 79.7-79.8%,今后应报区间,不应声明与
+  本地逐位一致.对 CI 无实际影响,门限为 70%
+
+**云端验证**(srv2 47.120.44.128 / srv3 8.130.190.141,各 8 vCPU / 15.3GB,
+Ubuntu 26.04, Go 1.26.9, gcc 15.2.0):
+
+修正后两台主机均为 10 步全绿 -- 编译 2-3s / vet 0s / unit 6s / integration
+62-65s / deploy 8-9s / cover 6-7s / race 63-65s / govulncheck 11-14s / 产物 1s,
+覆盖率 79.7-79.8%,`govulncheck` 0 个可达漏洞,产物 sha256 在两台机器上完全相同
+(`61d52e8b...`,13954176 字节).6 组压力用例 `fail=0`.
+
+跨主机压测(srv2 服务端 / srv3 施压,handler 1ms,队列 512,丢包策略)表明弹性池
+在同等负载下的价值:供给提到 12000/s 时固定 8 worker 丢包 43.88%、投递 67007 条,
+弹性池(2-16)丢包 13.55%、投递 103222 条 -- 同等负载下多投递 54.0%,把固定上限造成的
+拒绝挽回了约七成.同时如实记录一处不利结论:6000/s 供给下弹性池丢包 4.06%,高于固定
+8 worker 的 0.46%,原因是弹性池从 4 worker 起步、扩容爬坡落在 10s 测量窗口内.详见
+`docs/reports/CLOUD-VALIDATION-SRV23-261016.md`.
+
+**验证**:7 种模式全部退出码 0,`golangci-lint` 0 issues,`govulncheck` 0 漏洞,
+本地 `gofmt` 干净.
+
+
 ### V10 Review - CI Restore Batch (2026-10-16)
 
 V10 全量审查(逐项复现 - 修复 - 验证 - 提交)后的修复批次.详见

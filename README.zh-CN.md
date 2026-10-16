@@ -162,7 +162,11 @@ docker compose -f deploy/docker/docker-compose.yml --profile test run mqtt-test
 |-------|---------|--------|
 | 单元测试(27 套件) | `go test ./...` | [OK] |
 | 竞态检测 | `go test -race ./...` | [OK] |
-| 覆盖率(70% 门槛) | `go run scripts/run_tests.go -mode cover` | [OK] 79.6% |
+| 覆盖率(70% 门槛) | `go run scripts/run_tests.go -mode cover` | [OK] 79.7-79.8% |
+
+覆盖率以区间而非精确值复现:定时器驱动的 goroutine 循环(`Start` / `readLoop` /
+`pingLoop`)可能在测试收尾之前或之后退出,因此哪个函数记为全覆盖会随运行变化约
+0.1 个百分点。
 | 静态检查(golangci-lint) | `golangci-lint run` | [OK] |
 | 安全扫描(govulncheck) | `govulncheck ./...` | [OK] |
 | 部署清单 | `go run scripts/run_tests.go -mode deploy` | [OK] |

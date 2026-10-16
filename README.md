@@ -214,7 +214,12 @@ docker compose -f deploy/docker/docker-compose.yml --profile test run mqtt-test
 |-------|---------|--------|
 | Unit tests (27 suites) | `go test ./...` | [OK] |
 | Race detection | `go test -race ./...` | [OK] |
-| Coverage (70% threshold) | `go run scripts/run_tests.go -mode cover` | [OK] 79.6% |
+| Coverage (70% threshold) | `go run scripts/run_tests.go -mode cover` | [OK] 79.7-79.8% |
+
+Coverage is reproducible as a range rather than to the digit: the timer-driven
+goroutine loops (`Start`, `readLoop`, `pingLoop`) can exit before or after test
+teardown, so which of them registers as fully covered varies by about 0.1
+percentage point between runs of the same commit.
 | Lint (golangci-lint) | `golangci-lint run` | [OK] |
 | Security (govulncheck) | `govulncheck ./...` | [OK] |
 | Deploy manifests | `go run scripts/run_tests.go -mode deploy` | [OK] |

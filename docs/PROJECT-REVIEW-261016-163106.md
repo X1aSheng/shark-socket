@@ -541,3 +541,74 @@ register/OnAccept/回滚），一次性大批量改写与"尽可能保持可重�
 D10（生产代码 0% 覆盖：websocket 的 RemoteAddr/LocalAddr、scripts/rateclient 的
 `readFull`）同样未补测。其中 `readFull` 是本轮之前刚加入的帧读取修正逻辑，
 优先级最高。
+
+---
+
+## 10. 双 8C/16G 主机复验与追加修复
+
+第 9 节的验证跑在 120.76.44.233 上，那是一台 2 vCPU / 1607 MB 的共享 k8s 节点，
+验证期间负载一度达到 80，且 `govulncheck` 会因内存不足被 OOM 杀死。为得到可信的
+吞吐数据并在另一组环境上交叉验证，本轮改用两台 8 vCPU / 15.3GB 的专用主机。
+
+- 审查基线: main @ 66e81e13c
+- 复验主机: srv2 47.120.44.128, srv3 8.130.190.141（均 Ubuntu 26.04, go1.26.9, gcc 15.2.0）
+- 报告: `docs/reports/CLOUD-VALIDATION-SRV23-261016.md`
+
+**同一 commit 在两台机器上结果不一致**，由此追加两项缺陷。这印证了第 7 节把
+云端验证列为例行要求的价值：单机验证会把环境差异误判成代码缺陷或稳定性。
+
+### D13 (P1) 部署测试的可用性判定不成立
+
+`tests/deploy/deploy_test.go` 的 `TestDeployToolRenderingWhenAvailable` 用
+`exec.LookPath` 判定工具可用性，问的是"PATH 上有没有叫 docker 的文件"，而不是
+"`docker compose` 能不能跑"。srv3 的 `docker.io` 包不带 compose 插件（`docker
+compose` 报 `unknown command`，退出码 125），判定通过而子命令失败。
+
+一个根因同时拉红三项：`integration`、`deploy` 与 `race` 都包含 `./tests/deploy`。
+三份日志中失败的断言都只有 `deploy_test.go:149` 一处，这是判定"三项同源"的依据。
+
+已修复（提交 `d2e7b00c1`），可用性改为探测实际能力（`toolRuns`）。`kubectl` 与
+`helm` 同属"二进制存在不等于能力可用"的类别，一并处理。双向验证：srv2（有
+compose v5.5.0）修复后**无跳过日志**，说明渲染真的执行；srv3 正确跳过；srv3 的
+integration / deploy / race 由 1/1/1 变为 0/0/0。
+
+### D14 (P2) 后台清扫器的默认间隔分支从未被覆盖，且覆盖率不可复现
+
+覆盖率在同一 commit 上不可复现（srv2 79.7% / srv3 79.6%）。逐函数比对
+`go tool cover -func` 定位到 3 个函数，其中只有 `Memory.StartSweeper` 的
+`interval <= 0` 分支是系统性缺口 -- 树内调用方无一传非正值，该函数恒停在 88.9%。
+
+已补测（提交 `66e81e13c`），88.9% -> 100.0%，两台主机各 5 次独立单跑均为 100.0%。
+
+修完后重跑，差异仍在，但受影响的函数**完全换了一批**：第一轮是
+`cache.StartSweeper` / `grpcweb.pingLoop` / `grpcweb.closeWebSocketSession`，
+第二轮是 `plugin/cluster.go Start` / `tcp/session.go readLoop` /
+`websocket/server.go pingLoop`，两轮集合无交集。
+
+因此这不是若干固定薄弱点，而是同一类竞态在不同函数上随机显现：所有受影响函数的
+共同属性是定时器驱动的 goroutine 循环，其退出与测试收尾之间没有同步点。
+
+**记为测量边界，不作为缺陷追踪**：覆盖率可复现区间为 79.7% - 79.8%，期望偏差
++/-0.1 个百分点。无法靠补测消除 -- 要做到确定性只能改生产 API 暴露 goroutine
+完成信号，或加入概率性 sleep，后者本项目在 D11（池丢包测试）上已明确否决过一次。
+对 CI 无实际影响（门限 70%）。README 与 README.zh-CN.md 的覆盖率声明已改为区间
+并附原因。
+
+### 10.1 与本轮相关的状态更新
+
+| 项 | 第 9 节 | 第 10 节 |
+| --- | --- | --- |
+| 验证主机 | 1 台 2 vCPU / 1.6GB（共享 k8s 节点） | 2 台 8 vCPU / 15.3GB（专用） |
+| 步骤结果 | 9 步通过 | 两台各 10 步通过 |
+| 覆盖率 | 79.6%（声明为与本地一致） | 79.7% - 79.8%（区间，见 D14） |
+| govulncheck | 需 `GOMEMLIMIT` 规避 OOM | 默认参数一次通过，0 漏洞 |
+| 产物可复现 | 未核对 | 两台 sha256 相同（`61d52e8b...`） |
+| CI | run 141/142/144/145 SUCCESS | 追加 run 146/147 SUCCESS |
+| 未实施项 | D4-D8, D10 | 结论不变，见 9.5 与 10.2 |
+
+### 10.2 未实施项（第 10 节结束时）
+
+D4、D5、D6、D7、D8（结构性重复）、D10（0% 覆盖的生产函数）状态与第 9.5 节相同，
+本轮未推进。D13、D14 为本轮新增并已闭环。D14 的残余部分（定时器 goroutine 退出
+竞态）明确不实施，理由见上。
+
