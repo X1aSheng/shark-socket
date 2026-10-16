@@ -476,3 +476,68 @@ CI 的**功能正确性**已被证明（validate-ubuntu / validate-windows / rac
 ```
 
 第 1、2、3 步是放行其余工作的前提。
+
+---
+
+## 9. 修复后验证结果
+
+本审查的全部修复项已逐项提交并验证。CI 状态从连续 8 次失败转为通过。
+
+### 9.1 提交清单
+
+| 提交 | 内容 | 对应缺陷 |
+| --- | --- | --- |
+| 2ab6c3d05 | fix(lint): 清除 5 处（实为 9 处）静态检查问题 | D1 |
+| 6db5fd537 | style(scripts): gofmt workerpool_baseline.go | D3 |
+| c62d4f0be | chore(deps): 升级工具链与两个模块，清除 govulncheck | D2 |
+| 08c1e5c24 | test(shared): 使丢弃策略拒绝成为确定性断言 | D11 |
+| 93391829d | docs: 本审查报告 | - |
+| bf242c9f6 | docs: 文档重新同步（字符集/事实/CHANGELOG） | - |
+| e0381168a | refactor(app): TLS 加载与缓存注册合并为一步 | D9 |
+| 0082b4ead | docs(readme): 静态链接声明补上 CGO_ENABLED=0 前提 | D12 |
+| 7960d97da | docs: 云端验证报告 + D12 入册 | - |
+| 0ecf9563d | docs(changelog): 补入 D12 与云端验证结果 | - |
+
+### 9.2 CI 验证
+
+```
+run 144  0ecf956  COMPLETED / SUCCESS   (3m 32s)  <- 最终提交
+run 143  7960d97  CANCELLED                       <- 被 run 144 按 concurrency 策略取代
+run 142  bf242c9  COMPLETED / SUCCESS
+run 141  9339182  COMPLETED / SUCCESS
+run 140  2483f59  FAILURE                         <- 修复前的 HEAD
+run 139  2860a0f  FAILURE
+run 138  629e6ca  FAILURE
+```
+
+修复前连续 8 次失败（run 133 之后全部为红）；修复后 run 141、142、144 连续三次
+成功。工作流 badge 亦为 `CI - passing`。run 143 的 CANCELLED 是 `ci.yml` 中
+`concurrency.cancel-in-progress: true` 的正常行为，不是失败。
+
+### 9.3 各修复项的验收证据
+
+| 项 | 验收命令 | 修复前 | 修复后 |
+| --- | --- | --- | --- |
+| D1 | `golangci-lint run --max-same-issues=0 --max-issues-per-linter=0 ./...` | 9 issues, rc=1 | 0 issues, rc=0 |
+| D2 | `govulncheck ./...` | 11 个可达漏洞, rc=3 | 0 个, rc=0 |
+| D3 | `gofmt -l .` | 1 个文件 | 空 |
+| D11 | `run_tests.go -mode race` | 间歇失败 | 连续通过 |
+| D9 | `go test ./internal/app/` | - | 通过（含热重载用例） |
+| D12 | 云端 `file` 产物 | 文档与实测不符 | 文档已与实测一致 |
+
+### 9.4 云端验证
+
+见 `docs/reports/CLOUD-VALIDATION-V10-261016.md`：Linux x86_64 + go1.26.9 上
+9 步全部通过，覆盖率 79.6%，6 组压力用例零失败，govulncheck 0 漏洞。
+
+### 9.5 未实施项说明
+
+D4、D5、D6、D7、D8 五项结构性重复（约 400 行）**未在本轮实施**，原因已在第 5
+节说明：它们集中在 8 个传输层的并发关键路径（会话访问器、`touch`、`Close` 骨架、
+register/OnAccept/回滚），一次性大批量改写与"尽可能保持可重入性"的要求直接冲突。
+第 5 节给出的 S1-S7 分阶段方案中，S1（新增 shared 会话基类）与 S2（先迁移 grpcweb）
+是首批候选，每阶段以 unit + integration + race 三模式全绿为放行条件。
+
+D10（生产代码 0% 覆盖：websocket 的 RemoteAddr/LocalAddr、scripts/rateclient 的
+`readFull`）同样未补测。其中 `readFull` 是本轮之前刚加入的帧读取修正逻辑，
+优先级最高。
