@@ -1,0 +1,276 @@
+```mermaid
+classDiagram
+    direction TB
+
+    class core_Protocol {
+        <<enumeration>>
+        TCP
+        UDP
+        HTTP
+        WS
+        CoAP
+        QUIC
+        GRPCWeb
+        Custom
+    }
+
+    class core_SessionState {
+        <<enumeration>>
+        StateConnecting
+        StateActive
+        StateDraining
+        StateClosed
+    }
+
+    class core_Session {
+        <<interface>>
+        ID() uint64
+        Protocol() Protocol
+        RemoteAddr() net.Addr
+        LocalAddr() net.Addr
+        State() SessionState
+        CreatedAt() time.Time
+        LastActiveAt() time.Time
+        Context() context.Context
+        SetMeta(string, any)
+        GetMeta(string) (any, bool)
+        Send([]byte) error
+        SendPacket(Packet) error
+        Close(context.Context) error
+    }
+
+    class core_Packet {
+        +Data []byte
+        +Raw []byte
+        -chunk Chunk
+        +Retain()
+        +Release()
+        +Clone() Packet
+    }
+
+    class core_SessionContext {
+        <<interface>>
+        +ID() uint64
+        +Protocol() Protocol
+        +State() SessionState
+        +LastActiveAt() time.Time
+        +Context() context.Context
+        +GetMeta(string) (any, bool)
+        +SetMeta(string, any)
+    }
+
+    class core_Decoder {
+        <<interface>>
+        +HeaderSize() int
+        +MaxFrame() int
+        +MaxHeader() int
+        +Decode(buf, scratch) Packet, int, error
+        +EncodeInto(dst, payload) []byte, error
+    }
+
+    class core_Plugin {
+        <<interface>>
+        +Name() string
+        +Priority() int
+        +OnAccept(Session) error
+        +OnMessage(Session, []byte) ([]byte, error)
+        +OnClose(Session)
+    }
+
+    class core_PluginRunner {
+        <<interface>>
+        +OnAccept(Session) error
+        +OnMessage(Session, []byte) ([]byte, error)
+        +OnClose(Session)
+        +StartAll() error
+        +StopAll() error
+    }
+
+    class core_SessionManager {
+        <<interface>>
+        +NextID() uint64
+        +Register(Session) error
+        +Unregister(uint64) bool
+        +Get(uint64) Session, bool
+        +Count() int64
+        +Snapshot() []Session
+        +Range(func(Session) bool)
+        +Broadcast([]byte) error
+        +CloseAll(context.Context) error
+    }
+
+    class kernel_ConnState {
+        -id uint64
+        -proto Protocol
+        -remote net.Addr
+        -local net.Addr
+        -created time.Time
+        -active atomic.Int64
+        -state atomic.Uint32
+        -meta sync.Map
+        -ctx context.Context
+        -cancel context.CancelFunc
+        -closeOne sync.Once
+        +ID() uint64
+        +Protocol() Protocol
+        +RemoteAddr() net.Addr
+        +LocalAddr() net.Addr
+        +State() SessionState
+        +CreatedAt() time.Time
+        +LastActiveAt() time.Time
+        +Context() context.Context
+        +SetMeta(string, any)
+        +GetMeta(string) (any, bool)
+        +Touch()
+        +Shutdown()
+    }
+
+    class kernel_Chunk {
+        -buf []byte
+        -ref atomic.Int32
+        -magic uint32
+        +Acquire() Packet
+        +Retain()
+        +Release()
+    }
+
+    class kernel_Slab {
+        -sizeClasses [][]*Chunk
+        +Acquire(size int) *Chunk
+        +Put(*Chunk)
+    }
+
+    class tcp_ClientDecoder {
+        <<note>>
+        "client 只需 Decoder + Packet
+        不需要 ConnState / ReadLoop / WriteQueue"
+    }
+
+    class kernel_ReadLoop {
+        +pending Chunk
+        -off int
+        +Run(io.Reader)
+        +Dispatch(Packet)
+    }
+
+    class kernel_WriteQueue {
+        +ch chan Packet
+        -highWater float64
+        +Push(Packet) error
+    }
+
+    class kernel_StreamConn {
+        <<interface>>
+        +Read([]byte) int, error
+        +Write([]byte) int, error
+        +Close() error
+    }
+
+    class tcp_Session {
+        -raw net.Conn
+        +SendPacket(Packet) error
+    }
+
+    class http_Session {
+        -request http.Request
+        -response http.ResponseWriter
+        +SendPacket(Packet) error
+    }
+
+    class websocket_Session {
+        -conn websocket.Conn
+        -writeMu sync.Mutex
+        +SendPacket(Packet) error
+    }
+
+    class udp_Session {
+        -conn UDPConn
+        -remote UDPAddr
+        +SendPacket(Packet) error
+    }
+
+    class tcp_Client {
+        -conn net.Conn
+        -decoder Decoder
+        +Receive() []byte, error
+        +ReceiveInto(dst []byte) int, error
+    }
+
+    class shared_WorkerPool {
+        +handler Handler
+        -queue chan PoolTask
+        -policy FullPolicy
+        +SubmitPacket(Session, Protocol, Packet) error
+        +Stop()
+    }
+
+    class runtime_PluginChain {
+        -plugins []Plugin
+        +OnMessage(Session, []byte) ([]byte, error)
+        +snapshot() []Plugin, Logger
+    }
+
+    class runtime_SessionManager {
+        -shards 32 x registryShard
+        -nextID atomic.Uint64
+        -count atomic.Int64
+        +Register(Session) error
+        +Snapshot() []Session
+        +CloseAll(context.Context) error
+    }
+
+    class observability_PrometheusMetrics {
+        -counters map~string,promCounter~
+        +IncCounter(string, ...string)
+        +SetGauge(string, float64, ...string)
+    }
+
+    class promCounter {
+        +name string
+        +labels []string
+        +value atomic.Uint64
+    }
+
+    core_Session <|.. kernel_ConnState : "ConnState 提供其中 8 个方法 (State/CreatedAt/LastActiveAt/Context/SetMeta/GetMeta + ID/Protocol)"
+    core_Session <|.. core_SessionContext : "隐式满足, 零适配"
+    core_Session <|.. tcp_Session
+    core_Session <|.. http_Session
+    core_Session <|.. websocket_Session
+    core_Session <|.. udp_Session
+
+    note for kernel_ConnState "第 1 层: 0 个 IO 方法, 全部 10 种形态内嵌 (无例外)"
+    note for http_Session "第 2 层 opt-in: http 不启用 ReadLoop/Decoder/Chunk/WriteQueue"
+    note for websocket_Session "第 2 层 opt-in: ws 是长连接, 与 TCP 同等改造"
+
+    kernel_ConnState *-- tcp_Session : "内嵌 (composition)"
+    kernel_ConnState *-- http_Session : "内嵌, 用 NewConnStateWithParent"
+    kernel_ConnState *-- websocket_Session : "内嵌, 用 NewConnState"
+    kernel_ConnState *-- udp_Session : "内嵌"
+
+    core_Packet o-- kernel_Chunk : "持有 1..N 个引用"
+    kernel_Chunk o-- kernel_Slab : "ref 归零后归还"
+    kernel_ReadLoop o-- kernel_Chunk : "pending 窗口"
+    kernel_ReadLoop ..> core_Decoder : "Decode(buf, scratch)"
+    core_Decoder <|.. kernel_ReadLoop : "4 个无状态实现"
+    kernel_ReadLoop ..> core_Packet : "产出"
+    kernel_ReadLoop ..> core_PluginRunner : "dispatch: 同步 OnMessage, 不改所有权"
+    kernel_ReadLoop ..> shared_WorkerPool : "dispatch: 唯一所有权转移点"
+
+    shared_WorkerPool ..> core_Packet : "handle() defer Release"
+    core_Session ..> core_Packet : "SendPacket 转移所有权"
+    tcp_Session *-- kernel_WriteQueue : "写队列元素为 Packet"
+    tcp_Session ..> kernel_StreamConn : "raw net.Conn"
+    kernel_WriteQueue ..> core_Packet : "出队后 Release"
+
+    tcp_Client ..> core_Decoder : "复用同一 Decoder 实现"
+    tcp_Client ..> core_Packet : "ReceiveInto 的落脚缓冲"
+    tcp_Client ..> tcp_ClientDecoder : "不需要 ConnState/ReadLoop/WriteQueue"
+
+    core_Plugin <|.. runtime_PluginChain : "快照式 copy-on-write"
+    core_PluginRunner <|.. runtime_PluginChain
+    core_SessionManager <|.. runtime_SessionManager
+    runtime_SessionManager *-- observability_PrometheusMetrics : "metricSessionManager 装饰器"
+
+    core_Protocol --> core_Session : "Protocol()"
+    core_SessionState --> core_Session : "State()"
+```

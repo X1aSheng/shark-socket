@@ -1,0 +1,76 @@
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as TCP 客户端
+    participant AC as shared.Acceptor
+    participant RL as kernel.ReadLoop
+    participant SL as kernel.Slab
+    participant DC as core.Decoder
+    participant PC as runtime.PluginChain
+    participant WP as shared.WorkerPool
+    participant H as 用户 Handler
+    participant WQ as kernel.WriteQueue
+    participant S as tcp.Session
+
+    Note over RL,SL: 帧内存唯一载体是 Chunk, 引用计数归零才归还 slab
+
+    C->>AC: Accept
+    AC->>AC: TryAccept (容量 CAS + 令牌桶)
+    AC->>S: NewConnState(id, proto, remote, local)
+    S->>PC: OnAccept(sess)
+    PC-->>S: nil (失败则回滚已 accept 的插件)
+
+    RL->>SL: Acquire(MaxFrame + MaxHeader)
+    SL-->>RL: Chunk (ref=1)
+
+    loop 读循环
+        RL->>C: Read(chunk.buf[off+len : cap])
+        C-->>RL: n bytes
+        RL->>RL: Touch() 刷新活跃时间戳
+
+        loop 尽可能多地切帧
+            RL->>DC: Decode(buf, scratch)
+            alt 数据不足
+                DC-->>RL: ErrNeedMore
+            else 协议错误
+                DC-->>RL: err
+                RL->>S: Close(ctx) 关闭连接
+            else 成功
+                DC-->>RL: Packet{Data, Raw}, consumed (Packet 持 Chunk 引用)
+                RL->>PC: OnMessage(sess, pkt.Data) 同步, 别名安全, 不改所有权
+                alt 插件丢弃
+                    PC-->>RL: ErrPluginDrop
+                    RL->>RL: pkt.Release()
+                else 插件返回新切片 (cluster 已自行复制)
+                    PC-->>RL: 新切片
+                    RL->>WP: SubmitPacket(sess, proto, pkt) 唯一所有权转移点
+                else 正常
+                    PC-->>RL: 入参别名切片
+                    RL->>WP: SubmitPacket(sess, proto, pkt)
+                end
+            end
+        end
+
+        opt 剩余连续空间不足一个最大帧
+            RL->>RL: 压缩残留到块头部 (off 归零)
+            RL->>SL: Acquire 新块 (旧块待最后一个 Packet 释放后归还)
+        end
+    end
+
+    WP->>H: handler(sess, Message{Payload: pkt.Data, Pkt: pkt})
+    Note over H,WP: handler 完成后 WP 的 handle() 执行 defer pkt.Release()
+
+    alt 回显 (零分配路径)
+        H->>S: SendPacket(msg.Pkt) 引用计数 2
+        S->>WQ: Push(pkt)
+        WQ->>C: raw.Write(pkt.Raw) 帧头已在 Chunk 内, 一次 syscall
+        WQ->>RL: pkt.Release() 引用计数回到 1
+    else 用户自造 payload
+        H->>S: Send(payload) 复制路径
+        S->>WQ: Push(新分配的 Packet)
+        WQ->>C: EncodeInto 写入预留头
+    end
+
+    RL->>SL: 换块时 pkt.Release() 引用计数归零
+    SL-->>SL: Chunk 归还 free list
+```
