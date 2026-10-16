@@ -392,9 +392,11 @@ handler 延迟 1ms, 队列 512, 丢包策略。
 | 146 | `d2e7b00c1` (D13) | SUCCESS | 2m 7s |
 | 147 | `66e81e13c` (D14) | SUCCESS | 1m 57s |
 | 148 | `659417c84` (文档同步) | SUCCESS | 1m 51s |
+| 149 | `168cba3b9` (覆盖率区间修正) | SUCCESS | 2m 5s |
 
-工作流徽章为 `CI - passing`。两个远端 (github origin / gitee) 与本地均同步于
-`659417c84`。
+工作流徽章为 `CI - passing`。两个远端 (github origin / gitee) 与本地均同步。
+本报告自身的提交也会触发一次 CI; 纯文档提交不改变被测代码, 因此上式只登记到
+最后一个影响记录的提交。
 
 ## 9. 验证脚本自身的修正
 
@@ -430,4 +432,4 @@ handler 延迟 1ms, 队列 512, 丢包策略。
 5. 同一 commit 下两台独立编译的产物 sha256 相同, 构建可复现; 二进制内嵌
    `vcs.revision`, 因此跨 HEAD 的 sha256 变化是预期的。
 6. 三处脚本缺陷已修正并记录, 其中 `${PIPESTATUS[0]}` 一项可避免"假绿"。
-7. CI run 145 - 148 全部 SUCCESS (含本批次的三个提交)。
+7. CI run 145 - 149 全部 SUCCESS。
