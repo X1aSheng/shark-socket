@@ -205,7 +205,7 @@ func run(conns int) result {
 	// in-process and read its metrics directly.
 	remote := *flagHost != ""
 	var (
-		metrics   *observability.PrometheusMetrics
+		metrics    *observability.PrometheusMetrics
 		metricsURL string
 		stopServer func()
 	)
