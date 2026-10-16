@@ -2,6 +2,7 @@ package shared
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
 )
@@ -42,6 +43,11 @@ type PoolTask struct {
 type WorkerPool struct {
 	poolCore
 	wg sync.WaitGroup
+	// workers counts the running workers so the count is observable the same way
+	// it is on ScalablePool. The pool is configured with a fixed number, but
+	// "configured" is not "running": a caller that can read one pool's count and
+	// not the other's has no way to compare them.
+	workers atomic.Int64
 }
 
 // NewWorkerPool creates a pool. A non-positive worker count is treated as 1 and
@@ -65,8 +71,20 @@ func (p *WorkerPool) Start(workers int) {
 		workers = 1
 	}
 	for i := 0; i < workers; i++ {
+		p.workers.Add(1)
 		p.wg.Go(func() { p.run() })
 	}
+}
+
+// WorkerCount returns the number of running workers.
+func (p *WorkerPool) WorkerCount() int { return int(p.workers.Load()) }
+
+// WorkerBounds returns the configured size. A fixed pool has one value for
+// both, so the pair exists to match ScalablePool's signature rather than to
+// report a range.
+func (p *WorkerPool) WorkerBounds() (min, max int) {
+	n := p.WorkerCount()
+	return n, n
 }
 
 // Submit enqueues one message for the user handler.

@@ -16,6 +16,10 @@
 // Usage:
 //
 //	go run scripts/workerpool_server.go -addr :18000 -workers 4 -queue 512 -metrics :18001
+//
+// Add -elastic -elastic-min 2 -elastic-max 8 to run the same load against the
+// elastic pool. Everything else is held constant so the two series differ only
+// in how the worker count is chosen.
 package main
 
 import (
@@ -49,6 +53,14 @@ var (
 	flagEcho     = flag.Bool("echo", true, "echo the payload back to the client")
 	flagReadyFn  = flag.String("ready-file", "", "if set, write the listen address here once accepting")
 	flagStopFile = flag.String("stop-file", "", "if set, shut down when this path appears")
+	// Elastic-pool flags. -elastic is what makes this server comparable against
+	// the fixed-pool runs: without it the pool is the WorkerPool every earlier
+	// measurement used, so the two series differ only in the pool.
+	flagElastic    = flag.Bool("elastic", false, "use the elastic worker pool instead of the fixed one")
+	flagElasticMin = flag.Int("elastic-min", 2, "elastic pool floor (and start size)")
+	flagElasticMax = flag.Int("elastic-max", 8, "elastic pool ceiling")
+	flagScaleUp    = flag.Float64("scale-up", 0, "queue occupancy that adds a worker (0 = package default)")
+	flagScaleDown  = flag.Float64("scale-down", 0, "queue occupancy below which a worker may retire (0 = package default)")
 )
 
 func main() {
@@ -66,7 +78,7 @@ func main() {
 
 	delay := *flagDelay
 	echo := *flagEcho
-	srv := tcp.NewServer(
+	opts := []tcp.Option{
 		tcp.WithAddr(*flagAddr),
 		tcp.WithFramer(tcp.LengthPrefixFramer{MaxFrameBytes: 1024 * 1024}),
 		tcp.WithHandler(func(sess core.Session, msg core.Message) error {
@@ -80,7 +92,14 @@ func main() {
 		}),
 		tcp.WithWorkers(*flagWorkers, *flagQueue, policy),
 		tcp.WithMaxConnections(*flagConns),
-	)
+	}
+	if *flagElastic {
+		opts = append(opts, tcp.WithElasticPool(*flagElasticMin, *flagElasticMax))
+		if *flagScaleUp > 0 || *flagScaleDown > 0 {
+			opts = append(opts, tcp.WithScaleRatio(*flagScaleUp, *flagScaleDown))
+		}
+	}
+	srv := tcp.NewServer(opts...)
 
 	if *flagMetrics != "" {
 		mux := http.NewServeMux()
@@ -131,8 +150,11 @@ func main() {
 			case <-t.C:
 				var ms goruntime.MemStats
 				goruntime.ReadMemStats(&ms)
-				fmt.Printf("STATS goroutines=%d heapAllocMiB=%.1f numGC=%d\n",
-					goruntime.NumGoroutine(),
+				// worker count is sampled alongside memory: with -elastic it is the
+				// only externally visible sign that scaling acted on the backlog.
+				minW, maxW := srv.WorkerBounds()
+				fmt.Printf("STATS goroutines=%d workers=%d bounds=(%d,%d) heapAllocMiB=%.1f numGC=%d\n",
+					goruntime.NumGoroutine(), srv.WorkerCount(), minW, maxW,
 					float64(ms.HeapAlloc)/(1024*1024),
 					ms.NumGC)
 			}

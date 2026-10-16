@@ -25,6 +25,8 @@ import (
 type taskPool interface {
 	Submit(sess core.Session, protocol core.Protocol, payload []byte) error
 	Stop()
+	WorkerCount() int
+	WorkerBounds() (min, max int)
 }
 
 type Server struct {
@@ -52,6 +54,26 @@ func NewServer(opts ...Option) *Server {
 }
 
 func (s *Server) Protocol() core.Protocol { return core.ProtocolTCP }
+
+// WorkerCount reports how many workers are currently dispatching tasks.
+//
+// Returns 0 before Start, when no pool exists yet. Exposed because the elastic
+// pool's worker count moves at run time, and a load test cannot tell scaling
+// apart from a fixed pool without being able to read it.
+func (s *Server) WorkerCount() int {
+	if s.pool == nil {
+		return 0
+	}
+	return s.pool.WorkerCount()
+}
+
+// WorkerBounds returns the pool's configured floor and ceiling.
+func (s *Server) WorkerBounds() (min, max int) {
+	if s.pool == nil {
+		return 0, 0
+	}
+	return s.pool.WorkerBounds()
+}
 
 func (s *Server) UseRuntime(rt core.Runtime) {
 	s.rt = rt
