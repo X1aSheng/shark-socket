@@ -11,7 +11,7 @@ This project uses semantic versioning. Pre-release tags use the form
 
 在两台 8C/16G 云主机(srv2 / srv3, Ubuntu 26.04)上复验 V10 批次.同一 commit
 在两台机器上结果不一致,由此定位并修复 2 项缺陷.详见
-`docs/reports/CLOUD-VALIDATION-SRV23-261016.md`.
+`docs/reports/CLOUD-VALIDATION-261016-SRV23.md`.
 
 **部署测试的可用性判定不成立(1 个根因,3 个失败步骤)**:
 
@@ -58,7 +58,7 @@ Ubuntu 26.04, Go 1.26.9, gcc 15.2.0):
 弹性池(2-16)丢包 13.55%、投递 103222 条 -- 同等负载下多投递 54.0%,把固定上限造成的
 拒绝挽回了约七成.同时如实记录一处不利结论:6000/s 供给下弹性池丢包 4.06%,高于固定
 8 worker 的 0.46%,原因是弹性池从 4 worker 起步、扩容爬坡落在 10s 测量窗口内.详见
-`docs/reports/CLOUD-VALIDATION-SRV23-261016.md`.
+`docs/reports/CLOUD-VALIDATION-261016-SRV23.md`.
 
 **验证**:7 种模式全部退出码 0,`golangci-lint` 0 issues,`govulncheck` 0 漏洞,
 本地 `gofmt` 干净.
@@ -67,7 +67,7 @@ Ubuntu 26.04, Go 1.26.9, gcc 15.2.0):
 ### V10 Review - CI Restore Batch (2026-10-16)
 
 V10 全量审查(逐项复现 - 修复 - 验证 - 提交)后的修复批次.详见
-`docs/PROJECT-REVIEW-261016-163106.md`.审查结论:8 个 CI job 中 6 个为绿
+`docs/reports/PROJECT-REVIEW-261016-163106.md`.审查结论:8 个 CI job 中 6 个为绿
 (validate-ubuntu / validate-windows / race / coverage / docker-build / 以及
 ubuntu 侧集成),红灯只来自两个静态检查 job;另有一个时序竞态测试会让 race job
 随机转红.本轮修复 4 项.
@@ -113,7 +113,7 @@ ubuntu 侧集成),红灯只来自两个静态检查 job;另有一个时序竞态
 
 9 步全部通过 -- 编译 59s / vet 23s / unit 37s / integration 81s / deploy 15s /
 cover 44s (79.6%) / race 178s / 产物构建 2s / govulncheck 0 漏洞.6 组压力用例
-`fail=0`.详见 `docs/reports/CLOUD-VALIDATION-V10-261016.md`.
+`fail=0`.详见 `docs/reports/CLOUD-VALIDATION-261016-V10.md`.
 
 **验证**:7 种模式(unit / vet / integration / deploy / cover / race / benchmark)
 全部退出码 0,覆盖率 79.6%(门限 70%),`golangci-lint` 0 issues,

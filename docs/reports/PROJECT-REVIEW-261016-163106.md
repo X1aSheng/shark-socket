@@ -527,7 +527,7 @@ run 138  629e6ca  FAILURE
 
 ### 9.4 云端验证
 
-见 `docs/reports/CLOUD-VALIDATION-V10-261016.md`：Linux x86_64 + go1.26.9 上
+见 `docs/reports/CLOUD-VALIDATION-261016-V10.md`：Linux x86_64 + go1.26.9 上
 9 步全部通过，覆盖率 79.6%，6 组压力用例零失败，govulncheck 0 漏洞。
 
 ### 9.5 未实施项说明
@@ -552,7 +552,7 @@ D10（生产代码 0% 覆盖：websocket 的 RemoteAddr/LocalAddr、scripts/rate
 
 - 审查基线: main @ 66e81e13c
 - 复验主机: srv2 47.120.44.128, srv3 8.130.190.141（均 Ubuntu 26.04, go1.26.9, gcc 15.2.0）
-- 报告: `docs/reports/CLOUD-VALIDATION-SRV23-261016.md`
+- 报告: `docs/reports/CLOUD-VALIDATION-261016-SRV23.md`
 
 **同一 commit 在两台机器上结果不一致**，由此追加两项缺陷。这印证了第 7 节把
 云端验证列为例行要求的价值：单机验证会把环境差异误判成代码缺陷或稳定性。
