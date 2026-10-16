@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"strings"
@@ -116,6 +117,23 @@ func (a *App) Stop(ctx context.Context) error {
 	return firstErr
 }
 
+// serverTLS loads the protocol's TLS material and registers the resulting
+// certificate cache for hot reload.
+//
+// The two steps belong together. A transport that loads a config but never
+// registers its cache still starts, still serves TLS, and silently never picks
+// up a rotated certificate -- a failure that only surfaces in production, long
+// after the reload was believed to work. Returning just the config keeps each
+// call site from having to remember the second step.
+func (a *App) serverTLS(proto ProtocolConfig, nextProtos ...string) (*tls.Config, error) {
+	tlsConfig, cache, err := loadServerTLSConfig(proto, nextProtos...)
+	if err != nil {
+		return nil, err
+	}
+	a.certCaches = append(a.certCaches, cache)
+	return tlsConfig, nil
+}
+
 func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 	lwm2mServer := api.NewLwM2MServer()
 	for _, proto := range protocols {
@@ -128,23 +146,21 @@ func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 		case "tcp":
 			opts := []api.TCPOption{api.WithTCPAddr(proto.Addr), api.WithTCPHandler(echoHandler)}
 			if proto.TLSCertFile != "" || proto.TLSKeyFile != "" {
-				tlsConfig, cache, err := loadServerTLSConfig(proto)
+				tlsConfig, err := a.serverTLS(proto)
 				if err != nil {
 					return err
 				}
 				opts = append(opts, api.WithTCPTLS(tlsConfig))
-				a.certCaches = append(a.certCaches, cache)
 			}
 			server = api.NewTCPServer(opts...)
 		case "udp":
 			opts := []api.UDPOption{api.WithUDPAddr(proto.Addr), api.WithUDPHandler(echoHandler)}
 			if proto.TLSCertFile != "" || proto.TLSKeyFile != "" {
-				tlsConfig, cache, err := loadServerTLSConfig(proto)
+				tlsConfig, err := a.serverTLS(proto)
 				if err != nil {
 					return err
 				}
 				opts = append(opts, api.WithUDPDTLS(tlsConfig))
-				a.certCaches = append(a.certCaches, cache)
 			}
 			server = api.NewUDPServer(opts...)
 		case "http":
@@ -166,12 +182,11 @@ func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 		case "coap":
 			coapOpts := []api.CoAPOption{api.WithCoAPAddr(proto.Addr)}
 			if proto.TLSCertFile != "" || proto.TLSKeyFile != "" {
-				tlsConfig, cache, err := loadServerTLSConfig(proto)
+				tlsConfig, err := a.serverTLS(proto)
 				if err != nil {
 					return err
 				}
 				coapOpts = append(coapOpts, api.WithCoAPDTLS(tlsConfig))
-				a.certCaches = append(a.certCaches, cache)
 			}
 			if strings.EqualFold(proto.Mode, "lwm2m") {
 				coapOpts = append(coapOpts, api.WithCoAPResponder(api.NewLwM2MCoAPResponder(lwm2mServer)))
@@ -196,12 +211,11 @@ func (a *App) registerProtocols(protocols []ProtocolConfig) error {
 			}
 			server = api.NewGRPCWebServer(opts...)
 		case "quic":
-			tlsConfig, cache, err := loadServerTLSConfig(proto, "shark-socket-quic")
+			tlsConfig, err := a.serverTLS(proto, "shark-socket-quic")
 			if err != nil {
 				return err
 			}
 			server = api.NewQUICServer(api.WithQUICAddr(proto.Addr), api.WithQUICTLS(tlsConfig), api.WithQUICHandler(echoHandler))
-			a.certCaches = append(a.certCaches, cache)
 		default:
 			return fmt.Errorf("unsupported protocol %q", proto.Name)
 		}
