@@ -3,13 +3,15 @@
 ## meta-info
 
 - 批次: V10 Review - Multi-Host Validation Batch
-- 本地基线: main @ 66e81e13c (含 D13/D14 两项修复)
+- 本地基线: main @ 659417c84 (含 D13/D14 两项修复)
 - 验证主机: srv2 47.120.44.128 (iZf8zj5ccfontaezzi4kfrZ)
             srv3 8.130.190.141 (iZ0jlcgedkf3ybet8e1quuZ)
-- 验证时间: 2026-10-16 17:42 - 18:08 (UTC+8)
+- 验证时间: 2026-10-16 17:42 - 18:16 (UTC+8), 含三轮: bd5d41a8f (首轮) /
+            d2e7b00c1 (D13 后) / 66e81e13c (D14 后) / 659417c84 (最终确认)
 - 源码交付方式: git clone (gitee), 每步前校验 HEAD 与本地一致
 - 远端路径: /root/shark-socket
-- 远端日志: /root/reports/cloud-validate-261016-180554.log (两台同名, 各自目录)
+- 远端日志: /root/reports/cloud-validate-261016-180554.log (D14 后)
+            /root/reports/cloud-validate-261016-181408.log (最终)
 
 ## 1. 主机环境
 
@@ -78,6 +80,11 @@ sha256 42d158b4d8f7b61ac0a830567c940a86098fb7aac52e467a5ebec03ef5cc2f8d
 - 集成测试: 15 个用例全 `--- PASS`, 0 失败 (含 `TestExamplesCompile` 的 11 个 example)
 - 覆盖率: srv2 **79.8%**, srv3 **79.7%** (门限 70%), 差异原因见第 4 节
 - 漏洞扫描: 两台均 `No vulnerabilities found`, 0 个可达漏洞
+
+最终 HEAD `659417c84` (仅文档改动, 代码与 `66e81e13c` 逐字节相同) 又跑了一遍作确认:
+两台仍为 10 步全绿, 覆盖率两台均为 **79.7%**, 产物 sha256 两台相同。该轮的逐步数据
+与上表一致 (integration 64s / deploy 7-9s / cover 6-7s / race 63-65s),
+日志见 meta-info 末行。
 
 `govulncheck` 在 16GB 内存的机器上以默认参数一次通过, 不需要上批次在 1.6GB 机器上
 使用的 `GOGC=20 GOMAXPROCS=1 GOMEMLIMIT=600MiB` 规避手段。
@@ -236,20 +243,26 @@ func (m *Memory) StartSweeper(ctx context.Context, interval time.Duration) {
 修复后重跑, 总覆盖率变为 srv2 79.8% / srv3 79.7%, 差异仍然存在, 但**受影响的函数
 完全换了一批**:
 
-| 轮次 | 受影响函数 |
-| --- | --- |
-| 第一轮 (`d2e7b00c1`) | `cache.StartSweeper`, `grpcweb.pingLoop`, `grpcweb.closeWebSocketSession` |
-| 第二轮 (`66e81e13c`) | `plugin/cluster.go Start`, `tcp/session.go readLoop`, `websocket/server.go pingLoop` |
+| 轮次 | 提交 | srv2 | srv3 | 受影响函数 |
+| --- | --- | --- | --- | --- |
+| 第一轮 | `d2e7b00c1` | 79.7% | 79.6% | `cache.StartSweeper`, `grpcweb.pingLoop`, `grpcweb.closeWebSocketSession` |
+| 第二轮 | `66e81e13c` | 79.8% | 79.7% | `plugin/cluster.go Start`, `tcp/session.go readLoop`, `websocket/server.go pingLoop` |
+| 第三轮 | `659417c84` | 79.7% | 79.7% | (本轮两台一致) |
 
-两轮的集合没有交集 (`cache.StartSweeper` 已修至 100%, `grpcweb.*` 在第二轮两台都是
-100%)。这一点是结论的关键: 受影响函数逐次变化, 说明它不是若干固定薄弱点, 而是同一
-类竞态在不同函数上随机显现。所有受影响函数的共同属性是**定时器驱动的 goroutine 循环
-(`Start` / `readLoop` / `pingLoop`), 其退出与测试收尾相互交错** -- 测试结束与
-goroutine 观察到 `ctx.Done()` 并执行 `return` / `defer Stop()` 之间没有同步点。
+第一轮与第二轮的集合没有交集 (`cache.StartSweeper` 已修至 100%, `grpcweb.*` 在第二轮
+两台都是 100%)。这一点是结论的关键: 受影响函数逐次变化, 说明它不是若干固定薄弱点,
+而是同一类竞态在不同函数上随机显现。所有受影响函数的共同属性是**定时器驱动的
+goroutine 循环 (`Start` / `readLoop` / `pingLoop`), 其退出与测试收尾相互交错** --
+测试结束与 goroutine 观察到 `ctx.Done()` 并执行 `return` / `defer Stop()` 之间没有
+同步点。
+
+第三轮两台读出一致值, 但这不构成反例: 该轮恰好所有相关 goroutine 都在收尾前完成。
+三次观测合起来的区间是 79.6% - 79.8%。
 
 因此:
 
-- 覆盖率在 ~79.7% - 79.8% 区间内可复现, 但**不是逐位可复现**; 期望偏差 +/-0.1 个百分点
+- 覆盖率在 **79.6% - 79.8%** 区间内可复现, 但**不是逐位可复现**; 期望偏差
+  +/-0.1 个百分点
 - 无法通过补测消除: 这些 goroutine 的完成不可观测, 要做到确定性只能改生产 API 暴露
   完成信号, 或加入概率性 sleep -- 后者本项目已经在池的丢包测试上明确否决过一次
 - 对 CI 无实际影响: 门限是 70%, 当前值高出近 10 个百分点
@@ -353,10 +366,18 @@ handler 延迟 1ms, 队列 512, 丢包策略。
 | --- | --- | --- |
 | 路径 | reports/shark-socket | reports/shark-socket |
 | 大小 | 13954176 字节 | 13954176 字节 |
-| sha256 | 61d52e8b4bce2b1c7e22be73145d2199ab8811354e656a2e3e3b3ffd22bded24 | **同左** |
+| sha256 (`66e81e13c`) | 61d52e8b4bce2b1c7e22be73145d2199ab8811354e656a2e3e3b3ffd22bded24 | **同左** |
+| sha256 (`659417c84`) | 29e267ea7eb180f461d7508706d782d7f72ab3533211819dc320f60b71c68abf | **同左** |
+| vcs.revision | 659417c844482fcbe6c605fd0f430c645f23398d | **同左** |
+| vcs.modified | false | false |
 | 链接 | ELF 64-bit LSB executable, dynamically linked (libc) | **同左** |
 
 两台独立编译出的产物字节级相同, 构建可复现。
+
+两个 HEAD 之间的 sha256 不同是预期的, 而不是复现性被破坏: Go 自 1.18 起默认把 VCS
+信息嵌入二进制, 提交号变化必然改变产物。**同一 commit 跨主机一致**才是有意义的判据,
+这一点在两轮上都成立。`vcs.modified=false` 同时说明被测工作树是干净的, 没有未提交
+改动混入测量。
 
 链接方式为动态, 与 Dockerfile 的 `CGO_ENABLED=0` 静态构建不同。这不是新发现
 (上一批次已记 D12 并在两版 README 补充前提), 本次仅作对照: 两台都装有 gcc, 因此
@@ -370,9 +391,10 @@ handler 延迟 1ms, 队列 512, 丢包策略。
 | 145 | `bd5d41a8f` | SUCCESS | 1m 59s |
 | 146 | `d2e7b00c1` (D13) | SUCCESS | 2m 7s |
 | 147 | `66e81e13c` (D14) | SUCCESS | 1m 57s |
+| 148 | `659417c84` (文档同步) | SUCCESS | 1m 51s |
 
 工作流徽章为 `CI - passing`。两个远端 (github origin / gitee) 与本地均同步于
-`66e81e13c`。
+`659417c84`。
 
 ## 9. 验证脚本自身的修正
 
@@ -395,15 +417,17 @@ handler 延迟 1ms, 队列 512, 丢包策略。
 
 1. V10 批次改动在**两台 8C/16G Ubuntu 26.04 主机上均 10 步全绿**, 编译 / 静态检查 /
    单元 / 集成 / 部署 / 覆盖率 / 竞态 / 漏洞扫描全部退出码 0, 27 个 package 竞态检测
-   零告警, 0 个可达漏洞。
+   零告警, 0 个可达漏洞。最终 HEAD `659417c84` 上重复确认一次, 结论不变。
 2. 发现并修复 2 项缺陷: D13 (部署测试可用性判定不成立, 一个根因造成 3 个步骤失败,
    提交 `d2e7b00c1`) 与 D14 (`StartSweeper` 默认间隔分支从未被覆盖, 88.9% -> 100%,
    提交 `66e81e13c`)。两项均先在云端复现、定位到具体行、修复后再双向验证。
-3. 覆盖率**不是逐位可复现**: 可复现区间为 79.7% - 79.8%。残余偏差来自定时器驱动
+3. 覆盖率**不是逐位可复现**: 可复现区间为 79.6% - 79.8%。残余偏差来自定时器驱动
    goroutine 的退出与测试收尾之间的竞态, 受影响函数逐轮变化, 无法通过补测消除。
    今后应报区间, 不应声明与本地完全一致。对 CI 无影响 (门限 70%)。
 4. 弹性池在 12000/s 供给下比固定 8 worker 多投递 54.0% (103222 vs 67007 条),
    丢包 13.55% vs 43.88%。同时如实记录: 短窗口下弹性池因扩容爬坡, 在 6000/s 供给时
    丢包反而高于固定 8 worker (4.062% vs 0.464%)。
-5. 两台独立编译的产物 sha256 相同, 构建可复现。
+5. 同一 commit 下两台独立编译的产物 sha256 相同, 构建可复现; 二进制内嵌
+   `vcs.revision`, 因此跨 HEAD 的 sha256 变化是预期的。
 6. 三处脚本缺陷已修正并记录, 其中 `${PIPESTATUS[0]}` 一项可避免"假绿"。
+7. CI run 145 - 148 全部 SUCCESS (含本批次的三个提交)。
