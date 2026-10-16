@@ -187,7 +187,7 @@ func (transport) Protocol() core.Protocol { return core.ProtocolTCP }
 ```
 
 **从 156 行降到约 45 行**, 且不再需要 `sync.Map` / `context.WithCancel` /
-`atomic.Uint32` 状态机 / `sync.Once` — 这些全部移入 `kernel.ConnBase`。
+`atomic.Uint32` 状态机 / `sync.Once` -- 这些全部移入 `kernel.ConnBase`。
 
 ---
 
@@ -485,7 +485,7 @@ func (p *ShardedPool) Submit(sess core.Session, data []byte) error {
 | M1 | `core.Conn` / `core.Session` 新契约 + `kernel.ConnBase` | 7 份 session 收敛为 1 份 | - |
 | M2 | TCP transport 迁移到新内核 | 行为等价, `tests/` 全绿 | M1 |
 | M3 | 零拷贝 Decoder + 共享 readLoop | LineFramer <200ns; TCP 63KB B/op <70K | M2 |
-| M4 | 零拷贝写路径 | TCP 63KB B/op ≈65K, syscalls -50% | M3 |
+| M4 | 零拷贝写路径 | TCP 63KB B/op ~65K, syscalls -50% | M3 |
 | M5 | 其余 6 个 transport 迁移 | session.go 全部删除 | M1 |
 | M6 | 原子化指标 + 分片注册表 + 分片池 | 高并发基准, 连接 churn 无锁竞争 | M1 |
 | M7 | `api/` 门面重写, 删除全部别名 | 公开 API 面从 40+ 别名收敛 | M1~M6 |

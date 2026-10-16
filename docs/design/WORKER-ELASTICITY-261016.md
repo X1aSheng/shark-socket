@@ -245,7 +245,7 @@ func WithElasticPool(min, max int) Option
 func WithScaleRatio(up, down float64) Option
 ```
 
-对应 §11.3.3 的 `ScalablePool` 需要新增字段:
+对应 11.3.3 的 `ScalablePool` 需要新增字段:
 
 ```go
 scaleUpRatio   float64  // 默认 0.75
@@ -288,7 +288,7 @@ if err != nil {
 
 worker 在 `net.Listen` **之前**启动。若 listen 成功但后续步骤失败并重试 `Start`, `s.pool` 会被 `NewWorkerPool` 重新赋值, 而旧的 pool 的 worker goroutine 仍在运行且**永远等不到 `Stop`** (没有任何句柄指向它了)。
 
-这不是伸缩引入的, 是既有问题, 但伸缩会放大它 —— 每个泄漏的 pool 都带着一整组 worker。修复方向: `Start` 开头先 `Stop` 旧 pool, 或把 `NewWorkerPool` 移到 listen 成功之后。
+这不是伸缩引入的, 是既有问题, 但伸缩会放大它 -- 每个泄漏的 pool 都带着一整组 worker。修复方向: `Start` 开头先 `Stop` 旧 pool, 或把 `NewWorkerPool` 移到 listen 成功之后。
 
 ---
 
@@ -322,7 +322,7 @@ L2-d  伸缩行为测试 + race 检测
 L2-e  tcp.Option 接线 (WithElasticPool / WithScaleRatio)
 ```
 
-L2-a 到 L2-d 全部是纯新增, 不修改任何现有文件, 符合 v2 §7 的 "任何提交保持 CI 绿灯" 原则。L2-e 改 `tcp/options.go` 一个文件。
+L2-a 到 L2-d 全部是纯新增, 不修改任何现有文件, 符合 v2 7 的 "任何提交保持 CI 绿灯" 原则。L2-e 改 `tcp/options.go` 一个文件。
 
 **可以与 M1/M2/M3 并行。**
 
@@ -338,4 +338,4 @@ L2-a 到 L2-d 全部是纯新增, 不修改任何现有文件, 符合 v2 §7 的
 2. **不解决 PolicyBlock 的反压风险**。伸缩让池不容易满, 但一旦满了, 阻塞读 goroutine 的行为不变 (11.1.1 已实测)。缓解此风险需改 Submit 的调用方式 (如在独立 goroutine 里 Submit), 那是 M5 的议题。
 3. **扩容有延迟**。取模触发 + goroutine 创建, 从突发到 worker 就绪有毫秒级延迟。突发持续时间短于该延迟时, 伸缩帮不上忙。
 4. **2 核环境下 maxWorker 的意义有限**。本次压测机只有 2 核, 真实效果需在多核机器复测。本节数据只能证明机制正确, 不能作为性能上限的定量依据。
-5. **参数需要按业务调**。`up/down` 阈值与 `min/max` 没有通用最优值, §11.4 的默认值只保证不会抖动, 不保证最优。
+5. **参数需要按业务调**。`up/down` 阈值与 `min/max` 没有通用最优值, 11.4 的默认值只保证不会抖动, 不保证最优。

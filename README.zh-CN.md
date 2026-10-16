@@ -146,9 +146,9 @@ docker compose -f deploy/docker/docker-compose.yml --profile test run mqtt-test
 
 | 检查项 | 命令 | 状态 |
 |-------|---------|--------|
-| 单元测试(26 套件) | `go test ./...` | [OK] |
+| 单元测试(27 套件) | `go test ./...` | [OK] |
 | 竞态检测 | `go test -race ./...` | [OK] |
-| 覆盖率(70% 门槛) | `go run scripts/run_tests.go -mode cover` | [OK] 78.6% |
+| 覆盖率(70% 门槛) | `go run scripts/run_tests.go -mode cover` | [OK] 79.6% |
 | 静态检查(golangci-lint) | `golangci-lint run` | [OK] |
 | 安全扫描(govulncheck) | `govulncheck ./...` | [OK] |
 | 部署清单 | `go run scripts/run_tests.go -mode deploy` | [OK] |

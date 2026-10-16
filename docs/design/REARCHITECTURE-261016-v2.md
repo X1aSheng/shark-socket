@@ -2,14 +2,14 @@
 
 ## meta-info
 
-version: 2.3
+version: 2.4
 date: 2026-10-16
 status: draft
 scope: 完整重架构 (不保持向后兼容)
 supersedes: REARCHITECTURE-261016.md (v1, version 0.1)
 absorbs: WORKER-ELASTICITY-261016.md (L2 层弹性伸缩, 已并入第 11 节)
-toolchain_verified: go 1.26.5 (windows/amd64) + cloud linux 120.76.44.233
-code_facts_verified_at: commit HEAD, go.mod go 1.26.5
+toolchain_verified: go 1.26.9 (windows/amd64) + cloud linux 120.76.44.233
+code_facts_verified_at: commit 93391829d, go.mod go 1.26.9
 verified_files:
   - internal/core/session.go
   - internal/core/plugin.go
@@ -66,30 +66,30 @@ reference_files:
 | 编号 | v1 的结论 | 代码事实 | v2 的结论 |
 |---|---|---|---|
 | E1 | 引入 5 方法的 `core.Conn` 作为传输层唯一契约, 7 个 transport 统一实现 | `udp/session.go:87` 与 `coap/session.go:87` 的 Send 是 `conn.WriteToUDP(payload, remote)`, 无连接级 `Write([]byte)` 语义; `http/server.go:171` 在 session 创建前已 `io.ReadAll(r.Body)`, session 无 Read 路径 | **推翻 `core.Conn`**。数据报类与请求响应类传输无法实现流式 Conn, 最多 3/7 适用。改为无 IO 方法的 `kernel.ConnState` 内嵌基座 |
-| E2 | `kernel.ConnBase` 内嵌 `core.Conn` | v1 §2.2 的 `Conn.Close() error` 与 `Session.Close(context.Context) error` 同名; §4 又在 §3.4 用第二个文件 `conn_base.go` 定义同一个 `ConnBase` | **推翻内嵌方案**, 改用未导出具名字段 `raw core.Conn`。见 §0.2 的遮蔽分析 |
+| E2 | `kernel.ConnBase` 内嵌 `core.Conn` | v1 2.2 的 `Conn.Close() error` 与 `Session.Close(context.Context) error` 同名; 4 又在 3.4 用第二个文件 `conn_base.go` 定义同一个 `ConnBase` | **推翻内嵌方案**, 改用未导出具名字段 `raw core.Conn`。见 0.2 的遮蔽分析 |
 | E3 | 零拷贝读 (帧视图指向读缓冲) 与零拷贝写 (帧含头直接回写) 是两个独立优化 | `tcp/server.go:212` 的 `pool.Submit(sess, proto, payload)` 把 payload 交给 worker goroutine, 读循环立即继续; 读缓冲被复用即**每条消息必然 use-after-free** | **合并为单一所有权转移机制** `core.Packet` + 引用计数 Chunk, 异步边界就是 Release 点。读写两侧共享同一块内存, 不能分别设计 |
 
 ### 0.2 修正
 
 | 编号 | v1 的说法 | 实际情况 | v2 |
 |---|---|---|---|
-| F1 | §9 待决策项 1: Frame 生命周期 "回调内有效 + 提供 Clone()" | 若真的回调内有效, 则 `WorkerPool.Submit` 必须同步 Clone, 零拷贝收益归零 | **不需要 Clone, 不改 Plugin 接口**。5 个内置插件全部原样 `return data, nil`, 已天然正确。见 §3.5 |
-| F2 | §4.1 `Attrs` 替代 `sync.Map` | `Attrs.Slot(owner, name) *AttrSlot` 仍需每 session 一个 map, 只是换了 key 表示法; 且 `map[attrKey]any` + RWMutex 在"1 次写 N 次读"模式下并不优于无锁读路径的 `sync.Map` | **不做 `Attrs`**, 不新增该包。`sync.Map` 保留, 仅删除零调用方的 `DelMeta`。见 §5.4 |
-| F3 | §5.3 分片工作池, 消除 channel 跨核争用 | `TaskQueueSize` 选项语义被放大 32 倍, `FullPolicy` 与 `Stop` 的排空协议需复制 32 份; 且全仓仅 1 处 Submit 调用点, 其提交已被每连接读 goroutine 串行化 | **不分片工作池**。见 §5.3 |
-| F4 | §7 基线 "LineFramerRoundTrip 223.6 ns/op" | §1.2 表中是 2394 ns/op, §3.5 又说降到约 100 ns/op。同一基准三个数, 223.6 相差 10 倍 | 统一以 `logs/2026-06-25T17-10-25_benchmark.log` 为唯一锚点, 见 §7.1 |
-| F5 | §1.1 表 "7 个 transport, 101 个方法" | 实际有 **8 个** session 实现: `grpcweb/` 下有 `session.go` 与 `websocket_session.go` 两个 | 修正为 8 个 |
-| F6 | §5.1 注册表 "分片后 Snapshot/Range/Broadcast 语义不变" | `Snapshot` 确实本来无序; 但 `Register` 的 `int64(len(m.sessions)) >= m.max` 在单锁下是**精确**的, 分片后只能读 `count` 原子量, 上限变成**近似** | 语义确实基本不变, 但必须显式文档化 "max 会话数变为近似, 最大超出 #shards"。见 §5.1 |
+| F1 | 9 待决策项 1: Frame 生命周期 "回调内有效 + 提供 Clone()" | 若真的回调内有效, 则 `WorkerPool.Submit` 必须同步 Clone, 零拷贝收益归零 | **不需要 Clone, 不改 Plugin 接口**。5 个内置插件全部原样 `return data, nil`, 已天然正确。见 3.5 |
+| F2 | 4.1 `Attrs` 替代 `sync.Map` | `Attrs.Slot(owner, name) *AttrSlot` 仍需每 session 一个 map, 只是换了 key 表示法; 且 `map[attrKey]any` + RWMutex 在"1 次写 N 次读"模式下并不优于无锁读路径的 `sync.Map` | **不做 `Attrs`**, 不新增该包。`sync.Map` 保留, 仅删除零调用方的 `DelMeta`。见 5.4 |
+| F3 | 5.3 分片工作池, 消除 channel 跨核争用 | `TaskQueueSize` 选项语义被放大 32 倍, `FullPolicy` 与 `Stop` 的排空协议需复制 32 份; 且全仓仅 1 处 Submit 调用点, 其提交已被每连接读 goroutine 串行化 | **不分片工作池**。见 5.3 |
+| F4 | 7 基线 "LineFramerRoundTrip 223.6 ns/op" | 1.2 表中是 2394 ns/op, 3.5 又说降到约 100 ns/op。同一基准三个数, 223.6 相差 10 倍 | 统一以 `logs/2026-06-25T17-10-25_benchmark.log` 为唯一锚点, 见 7.1 |
+| F5 | 1.1 表 "7 个 transport, 101 个方法" | 实际有 **8 个** session 实现: `grpcweb/` 下有 `session.go` 与 `websocket_session.go` 两个 | 修正为 8 个 |
+| F6 | 5.1 注册表 "分片后 Snapshot/Range/Broadcast 语义不变" | `Snapshot` 确实本来无序; 但 `Register` 的 `int64(len(m.sessions)) >= m.max` 在单锁下是**精确**的, 分片后只能读 `count` 原子量, 上限变成**近似** | 语义确实基本不变, 但必须显式文档化 "max 会话数变为近似, 最大超出 #shards"。见 5.1 |
 
 ### 0.3 补上的遗漏
 
 | 编号 | v1 未覆盖 | 风险 | v2 对策 |
 |---|---|---|---|
-| G1 | **client 侧完全没有迁移步骤**。`tcp/client.go:123,138` 直接使用 `Framer.WriteFrame/ReadFrame` | 替换 `Framer` 为 `Decoder` 后 client 编译失败, 且**全部 45 个 Benchmark 依赖 `tcp.NewClient`** | 新增 M5 阶段, 见 §6 |
-| G2 | HTTP/gRPC-Web 是**每请求一个 session** (`http/server.go:176-178` 每次 `NextID()` + `Register`) | `sessions_active` 与注册表承受的是**请求率** churn 而非连接率, 这才是指标热点的真正成因; v1 §1.4 归因为"连接 churn", 对 HTTP 错好几个数量级 | §5.2 明确区分两类 churn |
-| G3 | `NewConnBase` 硬编码 `context.WithCancel(context.Background())` | HTTP 的 ctx 必须派生自 `r.Context()` (`http/session.go:28`), 否则**请求级取消传播被静默打断** | `ConnState` 提供带父 ctx 的构造函数变体, 见 §2.3 |
-| G4 | `WriteFrame` 分两次 `Write` 被列为病灶, 但 §3.4 的"预留头"方案**仍然每帧分配 64KB** | v1 声称 63KB 场景降到约 65536 B/op, 实际是 1 次分配而非 0 次。63KB 场景真正的大头是 `tcp/session.go:90` 的 `append([]byte(nil), payload...)` (每消息一次全量复制), v1 完全没有针对它 | 由 `Packet` 所有权转移一并消除, 见 §3.6。目标改为 B/op 趋近 0 |
+| G1 | **client 侧完全没有迁移步骤**。`tcp/client.go:123,138` 直接使用 `Framer.WriteFrame/ReadFrame` | 替换 `Framer` 为 `Decoder` 后 client 编译失败, 且**全部 45 个 Benchmark 依赖 `tcp.NewClient`** | 新增 M5 阶段, 见 6 |
+| G2 | HTTP/gRPC-Web 是**每请求一个 session** (`http/server.go:176-178` 每次 `NextID()` + `Register`) | `sessions_active` 与注册表承受的是**请求率** churn 而非连接率, 这才是指标热点的真正成因; v1 1.4 归因为"连接 churn", 对 HTTP 错好几个数量级 | 5.2 明确区分两类 churn |
+| G3 | `NewConnBase` 硬编码 `context.WithCancel(context.Background())` | HTTP 的 ctx 必须派生自 `r.Context()` (`http/session.go:28`), 否则**请求级取消传播被静默打断** | `ConnState` 提供带父 ctx 的构造函数变体, 见 2.3 |
+| G4 | `WriteFrame` 分两次 `Write` 被列为病灶, 但 3.4 的"预留头"方案**仍然每帧分配 64KB** | v1 声称 63KB 场景降到约 65536 B/op, 实际是 1 次分配而非 0 次。63KB 场景真正的大头是 `tcp/session.go:90` 的 `append([]byte(nil), payload...)` (每消息一次全量复制), v1 完全没有针对它 | 由 `Packet` 所有权转移一并消除, 见 3.6。目标改为 B/op 趋近 0 |
 | G5 | `Message.Meta map[string]string` 全仓**无任何生产者, 也无任何读取者**; `DelMeta` 除接口与 8 处实现外**零调用方** | 死代码, 且 `Meta` 是每消息 map, 一旦有人用就是每消息分配 | 两者直接删除 |
-| G6 | `autoban.go:130-132` 与 `ratelimit.go:22-24` 的注释断言 "OnMessage 调用由传输层读循环串行化, 缓存无需加锁" | **该断言对 TCP 不成立**: `pool.Submit` 把同一 session 交给任意多个 worker goroutine 并发调用。当前因 `sync.Map` 而侥幸无 race, 但若按 v1 §4.1 换成非线程安全存储就会变成真 bug | 修正注释; 若保留 `sync.Map` (F2) 则注释改为"依赖 Session 元数据存储的并发安全保证" |
+| G6 | `autoban.go:130-132` 与 `ratelimit.go:22-24` 的注释断言 "OnMessage 调用由传输层读循环串行化, 缓存无需加锁" | **该断言对 TCP 不成立**: `pool.Submit` 把同一 session 交给任意多个 worker goroutine 并发调用。当前因 `sync.Map` 而侥幸无 race, 但若按 v1 4.1 换成非线程安全存储就会变成真 bug | 修正注释; 若保留 `sync.Map` (F2) 则注释改为"依赖 Session 元数据存储的并发安全保证" |
 
 ### 0.4 二次审查追加 (主理人补充三项事实后的结论)
 
@@ -103,11 +103,11 @@ reference_files:
 | H6 | 「M1 与 M2 是否合并提交」 | **明确结论: 不合并, 且 v1 的 M1 不应存在。** v1 的框定("分提交利于 review, 合提交利于 CI 绿灯")默认了"改契约必然中间态构建失败", 而增量过渡可让两者同时成立 | 7.2 |
 
 **H1 与 H4 是本轮最重要的两条**: 前者若被采纳会白白丢掉 WebSocket 的零拷贝机会,
-后者则揭示了 v1 与 v2 初稿共同遗漏的一类风险 —— 零拷贝把"瞬时分配"变成"常驻内存"。
+后者则揭示了 v1 与 v2 初稿共同遗漏的一类风险 -- 零拷贝把"瞬时分配"变成"常驻内存"。
 
 ### 0.5 三次审查追加 (L2 层: WorkerPool 弹性伸缩)
 
-在 v2 §5.3「工作池不分片」之后, 追加一条独立的运行时增强路径 L2。
+在 v2 5.3「工作池不分片」之后, 追加一条独立的运行时增强路径 L2。
 触发原因是两组实测 (确定性测试 + 云端双进程压测), 而非推测:
 
 | 编号 | 议题 | 结论 | 详见 |
@@ -120,46 +120,46 @@ reference_files:
 | L2-6 | 「能否与 M0-M9 并行」 | **能。** 只依赖 `core.Handler`/`Session`/`Message` 既有契约, L2-a 到 L2-d 纯新增 | 11.8 |
 
 **L2 明确的边界**: 解决「整体算力不足」, **不解决**「单个 session 抢占全部算力」。
-后者需按 session 分队列, 属分片方案,v2 §5.3 已否决。
+后者需按 session 分队列, 属分片方案,v2 5.3 已否决。
 
 ### 0.6 四次审查追加 (Go 语言与工具链特性复核, Go 1.26.5 实证)
 
-把v2 的每条决策拿回 Go 1.26.5 的实际能力里重新对账, 结论见 §12.8 汇总表。
+把v2 的每条决策拿回 Go 1.26.5 的实际能力里重新对账, 结论见 12.8 汇总表。
 三条必须知道的:
 
 | 编号 | 性质 | 结论 |
 |---|---|---|
-| G-3 | **修订 (正确性)** | L2 让 `addWorker` 并发化, **激活**了 `wg.Add(1)` / `go` 之间的竞态窗口 —— 现状之所以安全只因 `Add` 仅在 `Start` 中发生。必须改用 `sync.WaitGroup.Go`。这是本轮唯一的严重级发现 |
-| G-1 | **前提修正** | Go 1.26 起 **Green Tea GC 默认启用** (GC CPU 降 10-40%, RSS 升 8-15%)。§10.3 "库不调GC 参数" 结论不变但理由更硬; **§10.4 的内存断言必须在 Green Tea 下重采基线**。同时 Chunk slab 的"定尺寸密集"形态恰是 Green Tea 的理想负载, 两者叠加 |
-| G-2 | **前提修正** | 容器感知 GOMAXPROCS 默认启用, 但**手动设置会关闭它**。库代码新增硬约束: 不得调用 `runtime.GOMAXPROCS`。且 §11.1.2 压测基线需先确认云机 `GOMAXPROCS` 实际值 |
+| G-3 | **修订 (正确性)** | L2 让 `addWorker` 并发化, **激活**了 `wg.Add(1)` / `go` 之间的竞态窗口 -- 现状之所以安全只因 `Add` 仅在 `Start` 中发生。必须改用 `sync.WaitGroup.Go`。这是本轮唯一的严重级发现 |
+| G-1 | **前提修正** | Go 1.26 起 **Green Tea GC 默认启用** (GC CPU 降 10-40%, RSS 升 8-15%)。10.3 "库不调GC 参数" 结论不变但理由更硬; **10.4 的内存断言必须在 Green Tea 下重采基线**。同时 Chunk slab 的"定尺寸密集"形态恰是 Green Tea 的理想负载, 两者叠加 |
+| G-2 | **前提修正** | 容器感知 GOMAXPROCS 默认启用, 但**手动设置会关闭它**。库代码新增硬约束: 不得调用 `runtime.GOMAXPROCS`。且 11.1.2 压测基线需先确认云机 `GOMAXPROCS` 实际值 |
 
-另有 G-4 (`GOEXPERIMENT=goroutineleakprofile` 可自动检出 §11.6 的既有泄漏, 建议进 CI)
+另有 G-4 (`GOEXPERIMENT=goroutineleakprofile` 可自动检出 11.6 的既有泄漏, 建议进 CI)
 与 G-5 (`synctest` 让伸缩测试摆脱真实时间依赖, 但与 `-race` 兼容性待云端补测)。
 
-### 0.7 待实测项收口 (§12.9, 同日云端实测)
+### 0.7 待实测项收口 (12.9, 同日云端实测)
 
-§12.8 遗留的三项阻塞已全部收口, L2 可以落地:
+12.8 遗留的三项阻塞已全部收口, L2 可以落地:
 
 | 项 | 结论 |
 |---|---|
-| cloud1 `GOMAXPROCS` | **实测 2**, 与 `nproc` 一致且 env 未设置 → **§11.1.2 数据有效, 无需重采** |
-| `synctest` x `-race` | **完全兼容**, `-race -count=3` 全绿 →伸缩测试统一进 bubble, **不分轮** |
-| Green Tea 默认启用 | **权威确认** (GOROOT build tag 二分 + 版本串后缀机制) → §10.3/10.4/8 三处修订成立 |
+| cloud1 `GOMAXPROCS` | **实测 2**, 与 `nproc` 一致且 env 未设置 -> **11.1.2 数据有效, 无需重采** |
+| `synctest` x `-race` | **完全兼容**, `-race -count=3` 全绿 ->伸缩测试统一进 bubble, **不分轮** |
+| Green Tea 默认启用 | **权威确认** (GOROOT build tag 二分 + 版本串后缀机制) -> 10.3/10.4/8 三处修订成立 |
 
 **顺带修正一处硬件事实**: cloud1 不是"2 核"而是 **1 物理核 + 2 超线程**
-(`lscpu`: Core/Socket=1, Thread/Core=2)。数据不失效, 但 §11.9 的
-"4000 msg/s 天花板"应视为**乐观上界**。已回填 §11.1.2 与 §11.9。
+(`lscpu`: Core/Socket=1, Thread/Core=2)。数据不失效, 但 11.9 的
+"4000 msg/s 天花板"应视为**乐观上界**。已回填 11.1.2 与 11.9。
 
 **多核验证条件已具备**: cloud2 `47.120.44.128` (8 vCPU / Go 1.26.5 / 15GB / gcc)
-是最佳对照机 —— Go 版本与本地基线一致。cloud3 的 1.26.1 略旧, 不建议用于对照。
+是最佳对照机 -- Go 版本与本地基线一致。cloud3 的 1.26.1 略旧, 不建议用于对照。
 
 **剩余唯一未测项**: Green Tea 下的 `BenchmarkTCPEcho_10kIdleConnections` 基线,
 依赖 M0 先实现该基准。
 
 ### 0.8 五次审查追加 (8 核复测推翻 L2, 最重要的一次自我修正)
 
-§12收口后, 用cloud2 (8 vCPU) 做多核复测, **结果是推翻 L2 自己的立论**。
-详见 §13。
+12收口后, 用cloud2 (8 vCPU) 做多核复测, **结果是推翻 L2 自己的立论**。
+详见 13。
 
 **worker 1-> 16 对照矩阵 (handler-delay=1ms, pipeline)**: drop rate 与吞吐
 **均在噪声范围内波动**, 如1000 连接时 w=1/4/16 分别为 77.9% / 81.8% / 75.5%。
@@ -172,7 +172,7 @@ reference_files:
 (`scripts/rateclient/main.go`) 佐证: 客户端不抢核时, w=1 到 w=16 的
 `queue_full` **全为 0**。
 
-**因此 §0.6 的 G-1 到 G-10 全部成立, 但 §11 的 L2 定量立论不成立。**
+**因此 0.6 的 G-1 到 G-10 全部成立, 但 11 的 L2 定量立论不成立。**
 区分两类命题:
 
 | 命题 | 性质 | 状态 |
@@ -184,11 +184,11 @@ reference_files:
 合格压测的硬性前提固化进 `scripts/`, 再谈 L2 的收益。
 M0-M9 主序列不受影响。
 
-> **⚠ 上面的"暂缓"已被 §14 撤销。** 分离式压测 (客户端限速 + 服务端独占 8 核)
-> 实测 worker 1→16 吞吐提升 **11.96 倍**, 近线性。
-> **§13 的"worker 数无关"是归因错误**: 同机双进程下客户端抢走 CPU,
+> **[注意] 上面的"暂缓"已被 14 撤销。** 分离式压测 (客户端限速 + 服务端独占 8 核)
+> 实测 worker 1->16 吞吐提升 **11.96 倍**, 近线性。
+> **13 的"worker 数无关"是归因错误**: 同机双进程下客户端抢走 CPU,
 > 低吞吐反映的是客户端瓶颈, 不是 worker 数无关。
-> **L2 立论成立, 恢复实施。** 详见 §14.2-14.3。
+> **L2 立论成立, 恢复实施。** 详见 14.2-14.3。
 
 ---
 
@@ -251,8 +251,8 @@ channel, 由 `run()` (`worker_pool.go:185-204`) 的 worker goroutine 消费并�
 读循环在 `Submit` 返回后**立即**继续 `ReadFrame`。
 
 结论: **在 TCP 上, payload 每条消息都跨 goroutine 边界。** 一旦读缓冲被复用,
-这是确定性数据损坏, 不是概率性风险。v1 §8 把 use-after-free 列为"风险, 缓解: 文档化生命周期",
-§9 列为"待决策项", 属于对问题量级的严重低估。
+这是确定性数据损坏, 不是概率性风险。v1 8 把 use-after-free 列为"风险, 缓解: 文档化生命周期",
+9 列为"待决策项", 属于对问题量级的严重低估。
 
 ### 1.4 指标与注册表 (核实)
 
@@ -262,7 +262,7 @@ channel, 由 `run()` (`worker_pool.go:185-204`) 的 worker goroutine 消费并�
 `runtime/session_metrics.go:24,37`: 每次 `Register`/`Unregister` 各一次 `IncCounter` + 一次 `SetGauge`,
 即**每连接注册注销各 2 次带分配的加锁操作**。
 
-v1 §1.4 归因为"高连接 churn"。对 TCP/QUIC/WS 成立, 对 HTTP/gRPC-Web 不成立:
+v1 1.4 归因为"高连接 churn"。对 TCP/QUIC/WS 成立, 对 HTTP/gRPC-Web 不成立:
 `http/server.go:176-179` 每个请求都 `NextID()` + `Register`, `grpcweb/server.go:205` 同理。
 这两类传输的 churn 是**请求率**级别, 通常比连接建立率高 1-2 个数量级。
 这改变了优化优先级: 指标原子化不是"高连接场景的锦上添花", 而是 HTTP 路径上的必需项。
@@ -274,7 +274,7 @@ v1 §1.4 归因为"高连接 churn"。对 TCP/QUIC/WS 成立, 对 HTTP/gRPC-Web 
 
 `Snapshot` (`:78-86`) 本来就返回无序切片 (Go map 迭代无序)。
 `Range` (`:91-99`) 在 `RLock` 内回调, 注释已明确禁止回调内调用 Register/Unregister。
-`CloseAll` (`:118-135`) 是**基于快照的循环**: 快照为空即返回, 并非 v1 §5.1 所称的
+`CloseAll` (`:118-135`) 是**基于快照的循环**: 快照为空即返回, 并非 v1 5.1 所称的
 "直到 map 空"的单 map 语义。因此分片后 `CloseAll` 的终止条件**依然成立**。
 
 ---
@@ -283,7 +283,7 @@ v1 §1.4 归因为"高连接 churn"。对 TCP/QUIC/WS 成立, 对 HTTP/gRPC-Web 
 
 ### 2.1 为什么不引入 core.Conn
 
-v1 §2.2 的 `core.Conn` 要求传输层实现 `Read`/`Write`/`Close`/`RemoteAddr`/`LocalAddr`。逐一核实 7 类传输:
+v1 2.2 的 `core.Conn` 要求传输层实现 `Read`/`Write`/`Close`/`RemoteAddr`/`LocalAddr`。逐一核实 7 类传输:
 
 | 传输 | 能否实现 Read | 能否实现 Write([]byte) | 障碍 |
 |---|---|---|---|
@@ -297,7 +297,7 @@ v1 §2.2 的 `core.Conn` 要求传输层实现 `Read`/`Write`/`Close`/`RemoteAdd
 | grpcweb | **否** | **否** | 同 http, 另有 gRPC-Web 5 字节帧封装 |
 
 4/8 实现无法提供有意义的 `Conn`。强行实现只能写出"永远返回 `ErrUnsupportedFeature` 的假方法",
-这正是接口未按使用者定义分割的反面教材。**v1 §2.3 声称的"从 156 行降到约 45 行"只在 TCP 上成立**,
+这正是接口未按使用者定义分割的反面教材。**v1 2.3 声称的"从 156 行降到约 45 行"只在 TCP 上成立**,
 而 TCP 恰恰是不需要抽象的那一个 (它本来就持有 `net.Conn`)。
 
 ### 2.2 kernel.ConnState: 无 IO 方法的内嵌基座
@@ -370,7 +370,7 @@ func (s *ConnState) Shutdown() { s.closeOne.Do(func() { s.state.Store(uint32(cor
 
 ### 2.3 ConnBase 内嵌冲突的正确处理 (推翻 E2)
 
-v1 §4 让 `ConnBase` 内嵌 `core.Conn`。这不是编译错误, 是更隐蔽的**契约静默丢失**:
+v1 4 让 `ConnBase` 内嵌 `core.Conn`。这不是编译错误, 是更隐蔽的**契约静默丢失**:
 
 `*ConnBase` 上, `Close()` 由内嵌接口在**深度 1** 提升, `Close(context.Context) error` 若在
 `*ConnBase` 上显式声明则位于**深度 0**。Go 的方法集规则是"最浅深度者胜出",
@@ -388,7 +388,7 @@ type tcpSession struct {
 }
 ```
 
-同时纠正 v1 的文件分裂: §3.4 用 `kernel/conn_base.go` 定义 `ConnBase`, §4 又用
+同时纠正 v1 的文件分裂: 3.4 用 `kernel/conn_base.go` 定义 `ConnBase`, 4 又用
 `kernel/conn.go` 定义同名类型。v2 只保留 `kernel/conn_state.go` 一个定义点。
 
 ### 2.4 core.Session v2 契约
@@ -429,7 +429,7 @@ type Session interface {
 | 新增 `SendPacket(Packet)` | 消除 `Send` 的全帧复制, 见 3.6 |
 | 保留 `SetMeta`/`GetMeta` 的 `string` 键 | 见 F2, `Attrs` 无收益 |
 | `RemoteAddr`/`LocalAddr` 留在接口 | 各传输确实不同 (net.Addr vs `stringAddr`), 见 `http/session.go:73-76` |
-| 不引入 `Raw() any` | v1 §2.2 用它兜住 HTTP Hijack 场景; 改为可选接口 `interface{ Raw() any }` 由调用方断言, 不污染主契约 |
+| 不引入 `Raw() any` | v1 2.2 用它兜住 HTTP Hijack 场景; 改为可选接口 `interface{ Raw() any }` 由调用方断言, 不污染主契约 |
 | `Touch()` 不进接口 | 由传输内部读循环直接调用 `ConnState.Touch()`, 插件不应改活跃时间 |
 
 **删除后传输层需自行实现的方法数: 4** (`RemoteAddr`, `LocalAddr`, `Send`, `Close`),
@@ -495,7 +495,7 @@ func (p Packet) Release()
 func (p Packet) Clone() Packet
 ```
 
-`Clone` 保留但**不作为契约要求**。v1 §9 把它当成"零拷贝的代价", 实际上它是逃生舱:
+`Clone` 保留但**不作为契约要求**。v1 9 把它当成"零拷贝的代价", 实际上它是逃生舱:
 5 个内置插件已经各自处理好了跨生命周期持有的问题 (见 3.5), 常规路径不需要它。
 
 ### 3.3 Decoder 契约
@@ -543,19 +543,19 @@ DecodeFixed         HeaderSize 0   MaxHeader 0   无头, 定长
 DecodeRaw           HeaderSize 0   MaxHeader 0   无头, 读到多少算多少 (上限 MaxFrame)
 ```
 
-`DecodeLine` 是对 v1 §3.5 的确认与修正: 单次 `bytes.IndexByte` 取代逐字节读,
+`DecodeLine` 是对 v1 3.5 的确认与修正: 单次 `bytes.IndexByte` 取代逐字节读,
 但必须额外处理 "残留数据 + 新读数据跨块" 与 "分隔符在两块边界" 两种情况,
-v1 §3.5 的实现假设了单一连续缓冲, 无法在 Chunk 机制下工作。
+v1 3.5 的实现假设了单一连续缓冲, 无法在 Chunk 机制下工作。
 
 ### 3.4 读循环: 修正 v1 的四个缺陷
 
-v1 §3.3 的 `readLoop` 伪码有四个会导致错误或失效的问题:
+v1 3.3 的 `readLoop` 伪码有四个会导致错误或失效的问题:
 
 | 编号 | v1 的代码 | 缺陷 |
 |---|---|---|
-| 1 | `l.data = l.data[consumed:]` | 切片头前移但**从不回收**, `cap(l.buf)` 单调收缩, 于是 `cap - len < MaxFrame` 每轮都成立, `grow()` 每帧都调用。v1 §3.3 声称的"稳态下零分配, 缓冲只增不减"**不成立**, 实际退化为每帧一次分配 |
+| 1 | `l.data = l.data[consumed:]` | 切片头前移但**从不回收**, `cap(l.buf)` 单调收缩, 于是 `cap - len < MaxFrame` 每轮都成立, `grow()` 每帧都调用。v1 3.3 声称的"稳态下零分配, 缓冲只增不减"**不成立**, 实际退化为每帧一次分配 |
 | 2 | `if cap(l.buf)-len(l.data) < MaxFrame { grow() }` | 每次预留整整一个 `MaxFrame` (默认 1MB)。1KB 小帧稳态下, 每连接一次性占 1MB, 1 万连接即 10GB。增长策略必须按"实际需要"而非"上限"决策 |
-| 3 | `Read` 返回 `n==0, err==nil` | v1 §2.2 声称 `Conn.Read` 允许此返回。阻塞式 `net.Conn.Read` 不会这样返回, 但 UDP 路径会。读循环若无显式处理会**忙等 spins 100% CPU** |
+| 3 | `Read` 返回 `n==0, err==nil` | v1 2.2 声称 `Conn.Read` 允许此返回。阻塞式 `net.Conn.Read` 不会这样返回, 但 UDP 路径会。读循环若无显式处理会**忙等 spins 100% CPU** |
 | 4 | 无跨块搬运逻辑 | 帧横跨两块 Chunk 时无处理 |
 
 v2 的读循环骨架:
@@ -646,7 +646,7 @@ core/plugin.go:39 (BasePlugin)              return b, nil
 
 ### 3.6 零拷贝写: 消除 Send 的全帧复制 (补G4)
 
-v1 §3.4 的方案是 "预留头 + 一次 Write", 结论 "63KB 降到约 65536 B/op"。
+v1 3.4 的方案是 "预留头 + 一次 Write", 结论 "63KB 降到约 65536 B/op"。
 **这仍然是每帧一次 64KB 分配**, 只是从 3 次降到 1 次, 而 `tcp/session.go:90`
 的 `append([]byte(nil), payload...)` 完全没被触及。真正的成本在那行。
 
@@ -817,9 +817,9 @@ Context/SetMeta/GetMeta + ID/Protocol)。HTTP 真正用不上的只是第 2 层�
 - **ws: 收益与 TCP 同等, 不为零。** 因为它是长连接 (见上)。把 ws 误分类为请求响应型,
   会白白丢掉它的零拷贝改造机会, 这是本次补充说明若被采纳会引入的实质损失。
 
-### 4.2 Chunk 尺寸必须与 MaxFrame 解耦 (新增, 修正 v2 §3.4)
+### 4.2 Chunk 尺寸必须与 MaxFrame 解耦 (新增, 修正 v2 3.4)
 
-v2 §3.4 的读循环在 "剩余空间 < MaxFrame" 时换块, 而 `tcp/options.go:43` 的
+v2 3.4 的读循环在 "剩余空间 < MaxFrame" 时换块, 而 `tcp/options.go:43` 的
 `MaxFrameBytes` 默认是 **1MB**。若据此每连接预留 1MB, 则:
 
 ```
@@ -846,8 +846,8 @@ tcp.WithWriteChunkSize(n int)  // 默认 64KB
 
 **该断言必须在 Go 1.26 (Green Tea 默认) 下重采基线。** Green Tea 把基线 RSS 抬高
 8-15%, 用旧GC 采的阈值会在新工具链上误报。同时注意 Green Tea 偏好"同尺寸对象密集"
-的规整堆, 而本项目的 Chunk slab 恰是这种形态 —— **两者同向叠加, 不是互斥**。
-见 §12.1。
+的规整堆, 而本项目的 Chunk slab 恰是这种形态 -- **两者同向叠加, 不是互斥**。
+见 12.1。
 
 ---
 
@@ -862,14 +862,14 @@ tcp.WithWriteChunkSize(n int)  // 默认 64KB
 - `Snapshot` / `Range` / `Broadcast` / `CloseAll` 的语义**确实不变**。
   `Snapshot` 本来就无序 (map 迭代), 分片不引入新的不确定性。
   `CloseAll` 的终止条件是"快照为空" (`session_manager.go:124-126`), 与分片无关, 依然成立。
-  v1 §5.1 "语义不变" 的结论正确, 但它给出的理由 ("当前靠直到 map 空") 是误读。
+  v1 5.1 "语义不变" 的结论正确, 但它给出的理由 ("当前靠直到 map 空") 是误读。
 
 - `Register` 的容量检查**从精确变为近似**。当前 `int64(len(m.sessions)) >= m.max`
   在单锁内完成, 精确。分片后只能读 `count atomic.Int64`, 检查与插入之间存在窗口,
   最大超出 `#shards` 个会话。这是本次重构**唯一一处真实的行为退化**,
   必须写进 `WithMaxSessions` 的文档: "上限为近似值, 高并发注册时可能短暂超出至多 #shards 个"。
 
-- v1 §5.1 的 false sharing 填充是错的: `_ [40]byte` 使结构体变为
+- v1 5.1 的 false sharing 填充是错的: `_ [40]byte` 使结构体变为
   RWMutex(24) + map 指针(8) + 40 = 72 字节, **不是 64 的整数倍, 依然跨界**。
   正确做法是显式填充到 128 字节 (两个 cache line), 或不做填充 (见下)。
 
@@ -879,7 +879,7 @@ tcp.WithWriteChunkSize(n int)  // 默认 64KB
 填充去掉。
 
 新增基准: `BenchmarkSessionManager_RegisterGetUnregister_Parallel`, 验证分片收益确实存在。
-若该基准显示无收益, 整个 §5.1 应被删除而非保留。
+若该基准显示无收益, 整个 5.1 应被删除而非保留。
 
 ### 5.2 指标原子化
 
@@ -912,7 +912,7 @@ labels 的重复分配 (改为创建时一次) 与全局独占锁 (改为无锁 
 
 ### 5.3 工作池不分片 (推翻 F3)
 
-v1 §5.3 的 `ShardedPool` 有四个未考虑的后果:
+v1 5.3 的 `ShardedPool` 有四个未考虑的后果:
 
 1. `WithWorkers(count, queueSize, policy)` (`tcp/options.go:97-104`) 的 `queueSize`
    语义从"总队列长度"变成"每分片队列长度", 实际容量放大 32 倍。
@@ -934,7 +934,7 @@ v1 §5.3 的 `ShardedPool` 有四个未考虑的后果:
 
 ### 5.4 元数据 (推翻 F2)
 
-v1 §4.1 的 `Attrs` 方案: `Attrs.Slot(owner, name) *AttrSlot` 返回稳定句柄,
+v1 4.1 的 `Attrs` 方案: `Attrs.Slot(owner, name) *AttrSlot` 返回稳定句柄,
 声称 "热路径零字符串比较"。核实两个真实调用点:
 
 ```
@@ -1024,8 +1024,8 @@ pull 模型所以不需要跨 goroutine 传递, 实现上可以简单得多 (无
 
 | 文件 | 核实结果 | 迁移方式 |
 |---|---|---|
-| `tests/benchmark/protocol_bench_test.go` | **确需重写**。`:247` 定义 `benchSession`, 手工实现全部 13 个 `core.Session` 方法 (含 `DelMeta`) | 契约变更后需补 `SendPacket`。**更好的做法: 让它内嵌 `kernel.ConnState`** —— 从此该 fake 只需 3 个方法, 且新增接口方法时无需再改。这是本次重构的一个额外收益 (测试替身自动瘦身) |
-| `tests/stress/stress_test.go` | **无需重写**。`:278,557,582,623` 只是在 handler 闭包**消费** `core.Session` 作为参数类型, 不实现它 | 零改动 (前提: `core.Handler` 签名不变, 见 2.4 —— 确实不变) |
+| `tests/benchmark/protocol_bench_test.go` | **确需重写**。`:247` 定义 `benchSession`, 手工实现全部 13 个 `core.Session` 方法 (含 `DelMeta`) | 契约变更后需补 `SendPacket`。**更好的做法: 让它内嵌 `kernel.ConnState`** -- 从此该 fake 只需 3 个方法, 且新增接口方法时无需再改。这是本次重构的一个额外收益 (测试替身自动瘦身) |
+| `tests/stress/stress_test.go` | **无需重写**。`:278,557,582,623` 只是在 handler 闭包**消费** `core.Session` 作为参数类型, 不实现它 | 零改动 (前提: `core.Handler` 签名不变, 见 2.4 -- 确实不变) |
 | `tests/cross_protocol_test.go` | **无需重写**。`:37,472` 同样是消费方 | 零改动 |
 
 主理人担心的 "3 个文件要重写" 实际是 1 个。这个差异很重要: 它把测试迁移成本
@@ -1048,7 +1048,7 @@ pull 模型所以不需要跨 goroutine 传递, 实现上可以简单得多 (无
 
 ### 7.1 基线锚点修正 (F4)
 
-v1 §1.2/§3.5/§7 给出三个互相矛盾的 LineFramer 数字 (2394 / 223.6 / 100)。
+v1 1.2/3.5/7 给出三个互相矛盾的 LineFramer 数字 (2394 / 223.6 / 100)。
 v2 规定: **唯一锚点为 `logs/2026-06-25T17-10-25_benchmark.log`**,
 M0 阶段重新采集一次并固化到 `docs/reports/`, 之后每阶段与此对比。
 
@@ -1065,7 +1065,7 @@ M0 阶段重新采集一次并固化到 `docs/reports/`, 之后每阶段与此�
 
 ### 7.2 阶段划分: 自底向上, 增量过渡
 
-**先回答 v1 §9.3 遗留的"分提交 vs 合提交", 这是明确结论, 不再是待决策项:**
+**先回答 v1 9.3 遗留的"分提交 vs 合提交", 这是明确结论, 不再是待决策项:**
 
 **结论: 不合并。v1 的 M1 与 M2 必须拆开, 且 M1 本身不应存在。**
 
@@ -1073,7 +1073,7 @@ v1 的 M1 是"改 core.Session 契约 + kernel.ConnBase", M2 是"TCP 迁移到�
 合提交的问题是: 中间态无法构建, 长达数百行的改动混在一个 review 里, 且
 "契约变更是否正确"与"迁移是否行为等价"两个独立问题被绑死, 无法分别归因。
 
-v1 把选择框定为"分提交便于 review, 合提交便于 CI 绿灯" —— **这个框定本身就错了**,
+v1 把选择框定为"分提交便于 review, 合提交便于 CI 绿灯" -- **这个框定本身就错了**,
 因为它默认了"改契约必然导致中间态构建失败"。**增量过渡可以让两者同时成立**:
 契约不变则 CI 恒绿, 每步仍可独立 review。
 
@@ -1108,11 +1108,11 @@ L2-d 伸缩行为测试 + race 检测                 纯新增
 L2-e tcp.Option 接线 (WithElasticPool 等)    改 tcp/options.go 一个文件
 ```
 
-**L2 曾于 2026-10-16 暂缓, 当日恢复。** 同机双进程压测 (§13) 曾得出
-"worker 数无关"并建议暂缓; **分离式压测 (§14) 实测 worker 1->16 吞吐提升
+**L2 曾于 2026-10-16 暂缓, 当日恢复。** 同机双进程压测 (13) 曾得出
+"worker 数无关"并建议暂缓; **分离式压测 (14) 实测 worker 1->16 吞吐提升
 11.96 倍 (近线性, w=8 时线性度 0.91x, w=16 衰减至 0.75x)**, 立论成立。
-**实施前需按 §14.4 调整 `maxWorker` 默认值为 `2 x GOMAXPROCS`。**
-详见 §14.3与 §14.4。
+**实施前需按 14.4 调整 `maxWorker` 默认值为 `2 x GOMAXPROCS`。**
+详见 14.3与 14.4。
 
 | 阶段 | 内容 | 验收标准 | 依赖 | 风险 |
 |---|---|---|---|---|
@@ -1127,7 +1127,7 @@ L2-e tcp.Option 接线 (WithElasticPool 等)    改 tcp/options.go 一个文件
 | M8 | `infra/observability` 原子化; `runtime/session_manager` 分片 | `BenchmarkSessionManager_RegisterGetUnregister_Parallel` 提升 > 20%, 否则撤回分片; `WithMaxSessions` 文档化近似语义 (F6); HTTPEcho 不劣化 | M4 | 中 |
 | M9 | `api/api.go` 收敛; 删 `DelMeta` 与 `Message.Meta` (G5); 补 `SessionContext` 可选接口 (10.1); 修正 G6 注释; 更新所有权规则文档 (3.5) | `go build ./...` + `go vet` 绿灯; `benchSession` 内嵌 `ConnState` 后自动瘦身 (6.2); 文档与代码一致 | M5, M6, M7, M8 | 低 |
 
-**M9 之前不动 `core.Session` 的既有方法** —— 这是本方案与 v1 最大的流程差异,
+**M9 之前不动 `core.Session` 的既有方法** -- 这是本方案与 v1 最大的流程差异,
 也是"任何提交 CI 绿灯"能成立的原因。`SendPacket` 在 M6 加入是唯一的契约新增,
 且它是**加法**(新方法)而非变更, 现有实现编译失败的风险为零。
 
@@ -1168,11 +1168,11 @@ v1 把三个概念捆在 M1 里一起改契约, 使得风险最高的部分无�
 | Packet 引用计数泄漏 (worker `handle` 的早退分支) | 严重: Chunk 永不归还, 稳态内存无界增长 | M6 验收标准中列出专门的泄漏测试: 构造 `Session == nil` 与 `handler == nil` 两条路径, 断言 chunk 归池 |
 | 跨块窗口搬运的实现错误 (帧横跨两块) | 严重: 数据错乱 | M2 的 Decoder 单测必须覆盖"帧头在块尾, payload 在块首" |
 | 插件返回别名切片被误判为新分配 | 中: 提前 Release | 3.5 的别名规则用 `unsafe.SliceData` 前后比较判定, 单测覆盖 BasePlugin 与 cluster 两种形态 |
-| 注册表分片无收益 (引入 32 个 map 换不到锁收益) | 中: 净负收益 | 5.1 已规定: 若新基准显示无收益则删除整个 §5.1, 不保留 |
+| 注册表分片无收益 (引入 32 个 map 换不到锁收益) | 中: 净负收益 | 5.1 已规定: 若新基准显示无收益则删除整个 5.1, 不保留 |
 | 灰度期新旧契约并存导致实现漂移 | 低 | 过渡期仅存在于 M4-M7, M9 强制收口; 每个阶段结束检查 `grep -rn "sync.Map" internal/transport/` 应逐步归零 |
 | 无法复现基线 | 中 | M0 前置, 且 M0 独立于所有后续阶段 |
-| Go 1.26 Green Tea 默认改变 GC 与内存基线 | 中 | §10.4 的 `HeapInuse` 断言必须在 Go 1.26 下重采 (§12.1); M0 基线报告须记录工具链版本与 `GOEXPERIMENT` |
-| L2 并发 `addWorker` 激活 `wg.Add`/`go` 竞态窗口 | **严重: panic** | 必须用 `sync.WaitGroup.Go`, 不得用三段式 (§12.3, 已修订 §11.3.2) |
+| Go 1.26 Green Tea 默认改变 GC 与内存基线 | 中 | 10.4 的 `HeapInuse` 断言必须在 Go 1.26 下重采 (12.1); M0 基线报告须记录工具链版本与 `GOEXPERIMENT` |
+| L2 并发 `addWorker` 激活 `wg.Add`/`go` 竞态窗口 | **严重: panic** | 必须用 `sync.WaitGroup.Go`, 不得用三段式 (12.3, 已修订 11.3.2) |
 
 ---
 
@@ -1188,8 +1188,8 @@ v1 把三个概念捆在 M1 里一起改契约, 使得风险最高的部分无�
 | `Attrs` 元数据表 | 做 | **推翻, 不做** | 见 5.4 |
 | 分片工作池 | 做 | **推翻, 不做** | 见 5.3 |
 | `core.Conn` 统一抽象 | 做 | **推翻, 不做** | 见 2.1 |
-| 调整 GOGC / `debug.SetGCPercent` | 未提及 | **明确不做** | 库代码调用 `debug.SetGCPercent` 是进程级全局副作用, 一个被 import 的网络库无权改动宿主的 GC 参数。Go 1.26 起Green Tea GC 已默认启用且效果明显, 局部调参只会破坏它。正确做法: 在 `docs/guides/` 中给出**建议值** (零分配后堆增长趋缓, 可考虑 GOGC 200-400), 由应用在启动时自行设置; 并在 `scripts/run_benchmarks.go` 中输出 `runtime.ReadMemStats` 的 `Mallocs`/`PauseTotalNs`/`NumGC`, 使 GC 行为可测量而非靠猜 (复核: 库代码当前确实一个 GC 参数都没碰, 见 §12.1) |
-| 调用 `runtime.GOMAXPROCS` | 未提及 | **明确不做 (新增约束)** | Go 1.25 起容器感知 GOMAXPROCS 默认启用, 但**手动设置会直接关闭它**, 在 K8s 环境造成 CPU 节流。库无权替宿主决定。见 §12.2 |
+| 调整 GOGC / `debug.SetGCPercent` | 未提及 | **明确不做** | 库代码调用 `debug.SetGCPercent` 是进程级全局副作用, 一个被 import 的网络库无权改动宿主的 GC 参数。Go 1.26 起Green Tea GC 已默认启用且效果明显, 局部调参只会破坏它。正确做法: 在 `docs/guides/` 中给出**建议值** (零分配后堆增长趋缓, 可考虑 GOGC 200-400), 由应用在启动时自行设置; 并在 `scripts/run_benchmarks.go` 中输出 `runtime.ReadMemStats` 的 `Mallocs`/`PauseTotalNs`/`NumGC`, 使 GC 行为可测量而非靠猜 (复核: 库代码当前确实一个 GC 参数都没碰, 见 12.1) |
+| 调用 `runtime.GOMAXPROCS` | 未提及 | **明确不做 (新增约束)** | Go 1.25 起容器感知 GOMAXPROCS 默认启用, 但**手动设置会直接关闭它**, 在 K8s 环境造成 CPU 节流。库无权替宿主决定。见 12.2 |
 
 ---
 
@@ -1225,7 +1225,7 @@ v1 把三个概念捆在 M1 里一起改契约, 使得风险最高的部分无�
 
 ### 10.1 关于"HTTP/WS 应排除在 kernel 之外"的定论
 
-**先纠正前提: WebSocket 不是请求响应型。** 详见 4.1 的代码证据 —— 它有 Upgrade
+**先纠正前提: WebSocket 不是请求响应型。** 详见 4.1 的代码证据 -- 它有 Upgrade
 后的真 net.Conn、有 readLoop (`websocket/server.go:202`)、有 pingLoop (`:236`)、
 有写锁 (`websocket/session.go:69`)。它与 TCP 同构, 应享受与 TCP 同等的零拷贝改造。
 若按"HTTP/WS 都排除"实施, 会白白丢掉 WS 的改造机会, 这是实质损失。
@@ -1251,7 +1251,7 @@ v1 把三个概念捆在 M1 里一起改契约, 使得风险最高的部分无�
 1. **插件接口本身就要改签名。** `core.Plugin.OnAccept(Session) error`
    (`core/plugin.go:14`) 必须改成 `OnAccept(SessionContext) error`,
    于是 **5 个内置插件 + 所有用户插件全部要改**, 且这是**公开 API 破坏**。
-   而拆分的动机仅仅是"让插件不必看到完整 Session" —— 但插件本来也只用其中几个方法,
+   而拆分的动机仅仅是"让插件不必看到完整 Session" -- 但插件本来也只用其中几个方法,
    Go 的隐式接口已经天然提供了这个能力 (插件可以自己声明所需的窄接口),
    **框架不需要为此改公开契约**。
 2. **注册表被迫变成泛型或接口化。** `SessionManager.Register(Session)`
@@ -1319,24 +1319,24 @@ v2 的三层模型避免了这一点。
 
 主理人问 "零分配后是否需要 SetGCPercent / GOMEMLIMIT"。核实后**前提是反的**:
 
-v1 §3.3 的读循环缺陷 2 (已在 v2 §3.4 记录) 是"每连接预留整整一个 `MaxFrame`",
+v1 3.3 的读循环缺陷 2 (已在 v2 3.4 记录) 是"每连接预留整整一个 `MaxFrame`",
 而 `tcp/options.go:43` 的默认值是 **1MB**。若照v1 实施:
 
 ```
 10000 并发连接 x 1MB 常驻 = 10GB
 ```
 
-**这是常驻内存, 不是垃圾。GC 对常驻对象完全无效** —— 无论 GOGC 调成多少。
+**这是常驻内存, 不是垃圾。GC 对常驻对象完全无效** -- 无论 GOGC 调成多少。
 所以"零分配后调 GC 参数"是**方向性错误**: 真正的问题从"GC 压力"变成了"内存放大",
 而 GC 参数不是内存放大的解药。
 
 v2 的定论:
 
-1. **库代码不调用 `debug.SetGCPercent` 或 `debug.SetMemoryLimit`。** 理由同 v2 §8:
-   库无权改动宿主的进程级参数。这条在 v2 已经定论, 此处重申并加强 ——
+1. **库代码不调用 `debug.SetGCPercent` 或 `debug.SetMemoryLimit`。** 理由同 v2 8:
+   库无权改动宿主的进程级参数。这条在 v2 已经定论, 此处重申并加强 --
    因为零分配改造会显著改变堆曲线, 库更不应擅自替宿主决定。
    **Go 1.26 补充**: Green Tea GC 已默认启用, GC CPU 降 10-40%。有一个官方默认的、
-   明显更好的 GC 摆在面前, 更凸显"库不调参"是正确的。见 §12.1。
+   明显更好的 GC 摆在面前, 更凸显"库不调参"是正确的。见 12.1。
 2. **真正要做的是把内存占用变成显式可配置的量**, 即 4.2 的
    `WithReadChunkSize` / `WithWriteChunkSize`, 默认 64KB 而非 1MB。
    这才是把 10GB 降到 640MB 的手段。
@@ -1375,7 +1375,7 @@ v2 的定论:
 
 ## 11. L2 层: WorkerPool 弹性伸缩
 
-本节补充 v2 §5.3: 分片被否决, 但 worker **数量**固定是另一个问题。
+本节补充 v2 5.3: 分片被否决, 但 worker **数量**固定是另一个问题。
 数据来自 2026-10-16 两组实测, 不是推测。
 
 ### 11.1 设计依据: 实测数据
@@ -1398,14 +1398,14 @@ v2 的定论:
 ### 11.1.2 云端双进程压测
 
 环境 `120.76.44.233` (2 vCPU / 1.6GB / Go 1.26.9 / KVM 虚拟机 / **非容器**,
-`GOMAXPROCS(0)=2` 已实测确认, 见 §12.9), 服务端与客户端分离进程, 丢弃率取服务端自报指标
+`GOMAXPROCS(0)=2` 已实测确认, 见 12.9), 服务端与客户端分离进程, 丢弃率取服务端自报指标
 `tcp_task_queue_full_total` (server.go:213), 不靠客户端推断。
 
-> **⚠ 硬件事实修正 (2026-10-16 实测)**: 该机 `lscpu` 显示
+> **[注意] 硬件事实修正 (2026-10-16 实测)**: 该机 `lscpu` 显示
 > `Core(s) per socket: 1` + `Thread(s) per core: 2`, 即 **1 物理核 + 2 超线程**,
 > 而非文档此前理解的 "2 核"。这不使数据失效 (超线程对 IO 密集型 handler 仍提供真实并行),
-> 但**必须收紧一条推论**:§11.1.3 的"4 worker 天花板 = 4000 msg/s"在 HT 争用下会低于理论值,
-> 因此该数字是**乐观上界**, 不是可达上限。详见 §12.9.1。
+> 但**必须收紧一条推论**:11.1.3 的"4 worker 天花板 = 4000 msg/s"在 HT 争用下会低于理论值,
+> 因此该数字是**乐观上界**, 不是可达上限。详见 12.9.1。
 
 配置 4 worker / 512 queue / PolicyDrop:
 
@@ -1437,13 +1437,13 @@ v2 的定论:
 
 因此 L2 要解决的不是 "队列太浅", 而是 "worker 数固定且运行期不可调"。单池的 channel 结构本身没有问题, 问题是它背后没有调节阀门。
 
-> ### ⚠ 11.1.4 多核复测曾推翻上述判断 (2026-10-16, 8 vCPU) —— 该推翻本身已被推翻
+> ### [注意] 11.1.4 多核复测曾推翻上述判断 (2026-10-16, 8 vCPU) -- 该推翻本身已被推翻
 >
-> **本节的 11.1.3 推论经分离式压测 (§14) 复测成立。**
-> 中途曾因同机双进程压测 (§13) 得出相反结论并暂缓 L2,
+> **本节的 11.1.3 推论经分离式压测 (14) 复测成立。**
+> 中途曾因同机双进程压测 (13) 得出相反结论并暂缓 L2,
 > 查明是**归因错误** (把客户端抢CPU 导致的低吞吐误读为"worker 数无关")。
-> 分离式实测: worker 1→16 吞吐提升 **11.96 倍**, 近线性。
-> 详见 §14.3与 §14.7。
+> 分离式实测: worker 1->16 吞吐提升 **11.96 倍**, 近线性。
+> 详见 14.3与 14.7。
 
 ---
 
@@ -1544,8 +1544,8 @@ p.wg.Go(func() { p.run(w) })     // 正确: Add 与启动不可分割
 于是 `p.wg.Add(1)` 与 `go p.run(w)` 之间的窗口会被激活: 若该窗口内发生 `Stop()` 的
 `p.wg.Wait()`, 将 panic (`sync: WaitGroup misuse: Add called concurrently with Wait`)。
 现状 (`worker_pool.go:83-88`) 的三段式之所以安全, 恰恰因为 `Add` 只在 `Start` 里发生、
-而 `Start` 不会与 `Stop` 并发 —— **这个安全性是 L2 单方面破坏的**。
-`sync.WaitGroup.Go` (Go 1.25) 是唯一正确写法。详见 §12.3。
+而 `Start` 不会与 `Stop` 并发 -- **这个安全性是 L2 单方面破坏的**。
+`sync.WaitGroup.Go` (Go 1.25) 是唯一正确写法。详见 12.3。
 
 ### 11.3.3 伸缩触发: 基于队列水位
 
@@ -1620,10 +1620,10 @@ const scaleCheckInterval = 1024
 
 **Go 1.26 补充**: 容器感知 GOMAXPROCS 默认启用后, `GOMAXPROCS(0)` 在容器里返回的是
 **cgroup CPU 配额**而非宿主机核数, 上述论证在容器环境下反而更成立。**但这引出一个
-必须先确认的问题**: §11.1.2 的压测数据全部来自 `120.76.44.233`, 若该机是容器,
+必须先确认的问题**: 11.1.2 的压测数据全部来自 `120.76.44.233`, 若该机是容器,
 此前 `GOMAXPROCS` 返回的可能不是 2, 意味着那批数据需在确认实际值后重采。
-**L2 落地前必须核实该项, 否则 §11.1.2 只能作为"机制正确"的证据, 不能作为定量依据。**
-见 §12.2。
+**L2 落地前必须核实该项, 否则 11.1.2 只能作为"机制正确"的证据, 不能作为定量依据。**
+见 12.2。
 
 ---
 
@@ -1645,7 +1645,7 @@ func WithElasticPool(min, max int) Option
 func WithScaleRatio(up, down float64) Option
 ```
 
-对应 §11.3.3 的 `ScalablePool` 需要新增字段:
+对应 11.3.3 的 `ScalablePool` 需要新增字段:
 
 ```go
 scaleUpRatio   float64  // 默认 0.75
@@ -1688,18 +1688,18 @@ if err != nil {
 
 worker 在 `net.Listen` **之前**启动。若 listen 成功但后续步骤失败并重试 `Start`, `s.pool` 会被 `NewWorkerPool` 重新赋值, 而旧的 pool 的 worker goroutine 仍在运行且**永远等不到 `Stop`** (没有任何句柄指向它了)。
 
-这不是伸缩引入的, 是既有问题, 但伸缩会放大它 —— 每个泄漏的 pool 都带着一整组 worker。修复方向: `Start` 开头先 `Stop` 旧 pool, 或把 `NewWorkerPool` 移到 listen 成功之后。
+这不是伸缩引入的, 是既有问题, 但伸缩会放大它 -- 每个泄漏的 pool 都带着一整组 worker。修复方向: `Start` 开头先 `Stop` 旧 pool, 或把 `NewWorkerPool` 移到 listen 成功之后。
 
 **该泄漏可被工具自动检出。** Go 1.26 引入实验性 goroutine 泄漏 profile
 (`GOEXPERIMENT=goroutineleakprofile`, 计划 1.27 默认启用), 检测"阻塞在不可达并发原语上"
-的 goroutine —— 旧 pool 的 worker 正是永久阻塞在 `<-p.queue` 这个 channel 上, 属于该
+的 goroutine -- 旧 pool 的 worker 正是永久阻塞在 `<-p.queue` 这个 channel 上, 属于该
 profile 的目标形态。建议在 CI 加一步, 零额外代码成本:
 
 ```
 GOEXPERIMENT=goroutineleakprofile go test -race ./internal/transport/tcp/
 ```
 
-详见 §12.4。**工具价值高于修复本身**: 它把一类"只能靠人工 review 读代码发现"的缺陷
+详见 12.4。**工具价值高于修复本身**: 它把一类"只能靠人工 review 读代码发现"的缺陷
 变成 CI 常驻守卫。
 
 ---
@@ -1723,13 +1723,13 @@ GOEXPERIMENT=goroutineleakprofile go test -race ./internal/transport/tcp/
 若 CI 机器负载高, goroutine 调度抖动会让时序假设失效。`synctest.Test` 提供 bubble 内的
 假时钟与确定性调度, 可消除该脆弱性。
 
-**已实测 (`§12.9.2`): `synctest` 与 `-race` 完全兼容, `-race -count=3` 全绿。**
+**已实测 (`12.9.2`): `synctest` 与 `-race` 完全兼容, `-race -count=3` 全绿。**
 因此所有伸缩测试统一放进 `synctest.Test` bubble, 即可同时获得确定性与竞态检测,
 **不需要分轮跑**。
 
 **必须知道的语义陷阱 (实测踩到)**: bubble 内的假时钟把**并发 sleep 视为并行**。
 3 个 goroutine 各 `Sleep(1s)` 只推进假时钟 1s, 而串行 3 次推进 3s。
-若测试要断言"经过 N 个检查周期", 必须写**串行**等待 —— 写成并发则断言值会差 N 倍。
+若测试要断言"经过 N 个检查周期", 必须写**串行**等待 -- 写成并发则断言值会差 N 倍。
 
 ---
 
@@ -1747,7 +1747,7 @@ L2-d  伸缩行为测试 + race 检测
 L2-e  tcp.Option 接线 (WithElasticPool / WithScaleRatio)
 ```
 
-L2-a 到 L2-d 全部是纯新增, 不修改任何现有文件, 符合 v2 §7 的 "任何提交保持 CI 绿灯" 原则。L2-e 改 `tcp/options.go` 一个文件。
+L2-a 到 L2-d 全部是纯新增, 不修改任何现有文件, 符合 v2 7 的 "任何提交保持 CI 绿灯" 原则。L2-e 改 `tcp/options.go` 一个文件。
 
 **可以与 M1/M2/M3 并行。**
 
@@ -1762,8 +1762,8 @@ L2-a 到 L2-d 全部是纯新增, 不修改任何现有文件, 符合 v2 §7 的
 1. **不解决跨 session 饿死**。见 11.5 最后一行。
 2. **不解决 PolicyBlock 的反压风险**。伸缩让池不容易满, 但一旦满了, 阻塞读 goroutine 的行为不变 (11.1.1 已实测)。缓解此风险需改 Submit 的调用方式 (如在独立 goroutine 里 Submit), 那是 M5 的议题。
 3. **扩容有延迟**。取模触发 + goroutine 创建, 从突发到 worker 就绪有毫秒级延迟。突发持续时间短于该延迟时, 伸缩帮不上忙。
-4. **原压测机只有 2 vCPU (1 物理核 + HT)**。真实效果需在多核机器复测。本节数据只能证明机制正确, 不能作为性能上限的定量依据。**已解决**: 见 §12.9.1, 另有 2 台 8 核机可用。
-5. **参数需要按业务调**。`up/down` 阈值与 `min/max` 没有通用最优值, §11.4 的默认值只保证不会抖动, 不保证最优。
+4. **原压测机只有 2 vCPU (1 物理核 + HT)**。真实效果需在多核机器复测。本节数据只能证明机制正确, 不能作为性能上限的定量依据。**已解决**: 见 12.9.1, 另有 2 台 8 核机可用。
+5. **参数需要按业务调**。`up/down` 阈值与 `min/max` 没有通用最优值, 11.4 的默认值只保证不会抖动, 不保证最优。
 
 ---
 
@@ -1773,7 +1773,7 @@ L2-a 到 L2-d 全部是纯新增, 不修改任何现有文件, 符合 v2 §7 的
 **核实方式**: 在 `go 1.26.5` 工具链上逐项编译/运行验证, 并 grep 全仓使用现状。
 凡是"文档假设成立"的, 标注为确认;凡是"文档遗漏了新能力"的, 给出修订。
 
-### 12.1 前提修正: Green Tea GC 已是默认, §10.3 的结论需要加强而非改变
+### 12.1 前提修正: Green Tea GC 已是默认, 10.3 的结论需要加强而非改变
 
 **核实**: Go 1.25 以 `GOEXPERIMENT=greenteagc` 实验引入, **Go 1.26 起默认启用**
 (`GOEXPERIMENT=nogreenteagc` 可回退, 官方计划 1.27 移除该开关)。
@@ -1781,28 +1781,28 @@ L2-a 到 L2-d 全部是纯新增, 不修改任何现有文件, 符合 v2 §7 的
 在 Intel Ice Lake / AMD Zen 4 及更新的 amd64 上借向量指令再降约 10%。
 代价是**基线 RSS 上升 8-15%**。
 
-这对 §10.3 / §10.4 有两处直接影响:
+这对 10.3 / 10.4 有两处直接影响:
 
 | 项 | v2 原表述 | Go 1.26 事实 | 修订 |
 |---|---|---|---|
-| §10.3 "库不调 GC 参数" | 正确 | 仍正确, 且理由更硬 | **结论不变, 理由升级**: 现在有了一个官方默认的、明显更好的 GC, 库更无权替宿主在 `GOGC` / `GOMEMLIMIT` / `GOEXPERIMENT` 之间做选择。Green Tea 的收益是全局的, 局部调参只会破坏它 |
-| §10.4 "常驻内存放大" | 判据是 `HeapInuse<连接数 x ReadChunkSize x 1.2` | **判据需加基线项** | 该断言必须在 **Green Tea 已启用的 Go 1.26 下**测。因为 RSS 基线本身抬高 8-15%, 若用旧GC 采的数据设阈值, 会在新工具链上误报 |
+| 10.3 "库不调 GC 参数" | 正确 | 仍正确, 且理由更硬 | **结论不变, 理由升级**: 现在有了一个官方默认的、明显更好的 GC, 库更无权替宿主在 `GOGC` / `GOMEMLIMIT` / `GOEXPERIMENT` 之间做选择。Green Tea 的收益是全局的, 局部调参只会破坏它 |
+| 10.4 "常驻内存放大" | 判据是 `HeapInuse<连接数 x ReadChunkSize x 1.2` | **判据需加基线项** | 该断言必须在 **Green Tea 已启用的 Go 1.26 下**测。因为 RSS 基线本身抬高 8-15%, 若用旧GC 采的数据设阈值, 会在新工具链上误报 |
 
 **新增一条实测项**: Green Tea 偏好"堆结构规整、同尺寸对象密集"的场景
 (官方原话: 扫描单页 2% 即可产生收益)。本项目的 Chunk slab 恰好是**固定尺寸对象密集**,
 属于 Green Tea 的理想负载。**这是 v2 之前没有意识到的正向量**:
-§3 的 Chunk slab 设计与 Green Tea 的扫描假设同向, 两者叠加而非互斥。
+3 的 Chunk slab 设计与 Green Tea 的扫描假设同向, 两者叠加而非互斥。
 
-`grep -rn "SetGCPercent|SetMemoryLimit|GOGC|debug\." internal/` 结果为空 ——
-**核实: 库代码当前确实一个GC 参数都没碰**, §10.3 第1 条是既成事实, 不是待实施项。
+`grep -rn "SetGCPercent|SetMemoryLimit|GOGC|debug\." internal/` 结果为空 --
+**核实: 库代码当前确实一个GC 参数都没碰**, 10.3 第1 条是既成事实, 不是待实施项。
 
-### 12.2 修订: 容器感知 GOMAXPROCS 改变了 §11.3.6 的默认值论证
+### 12.2 修订: 容器感知 GOMAXPROCS 改变了 11.3.6 的默认值论证
 
 **核实**: Go 1.25 起容器感知 GOMAXPROCS 默认启用, 运行时读 cgroup CPU limit。
 **但**: 一旦手动设置 `GOMAXPROCS` 环境变量或调用 `runtime.GOMAXPROCS`,
 该行为自动停用 (可用 `GODEBUG=containermaxprocs=0` 显式关)。
 
-这直接命中 §11.3.6 的 `minWorker` 默认值设计。原文写:
+这直接命中 11.3.6 的 `minWorker` 默认值设计。原文写:
 
 > `minWorker` 默认取 `runtime.GOMAXPROCS(0)`, 而非 1。
 
@@ -1810,18 +1810,18 @@ L2-a 到 L2-d 全部是纯新增, 不修改任何现有文件, 符合 v2 §7 的
 不需要用户干预。原文"少于核心数就是纯浪费调度"的论证**在容器里反而更成立了**
 (因为拿到的是真实配额而非宿主机核数)。
 
-**但这引出一个v2 未处理的矛盾**: §11.1.2 的压测数据全部来自云主机
+**但这引出一个v2 未处理的矛盾**: 11.1.2 的压测数据全部来自云主机
 `120.76.44.233` (2 核 / 1.6GB)。若该机是容器, `GOMAXPROCS` 此前可能返回的是
 **宿主机核数而非 2**; 启用容器感知后返回值会变化, **意味着 11.1.2 的基线数据
 需要在确认GOMAXPROCS 实际值后重采**。
 
 已核实: `scripts/workerpool_server.go:178` 与 `workerpool_baseline.go:95`
 都打印了 `GOMAXPROCS`, 但**当时只作为环境信息记录, 没有进入结论**。
-**修订: L2 落地前必须记录该值, 且若与物理核数不符, §11.1.2 全部数据降级为"待复测"。**
+**修订: L2 落地前必须记录该值, 且若与物理核数不符, 11.1.2 全部数据降级为"待复测"。**
 
-**给库代码的一条硬约束** (新增, 与 §8 一致):
+**给库代码的一条硬约束** (新增, 与 8 一致):
 > **库代码不得调用 `runtime.GOMAXPROCS` 或设置 `GOMAXPROCS` 环境变量。**
-> 理由比 §8 的 GC 参数更硬: 手动设置会**直接关闭**容器感知, 在 K8s 环境造成 CPU 节流。
+> 理由比 8 的 GC 参数更硬: 手动设置会**直接关闭**容器感知, 在 K8s 环境造成 CPU 节流。
 > shark-socket 作为库, 无权替宿主做这个决定。
 
 ### 12.3 确认: `sync.WaitGroup.Go` 让 L2 的 worker 退休更简洁
@@ -1843,7 +1843,7 @@ L2 的 `addWorker` 会在运行期并发调用, `p.wg.Add(1)` 与 `go p.run(w)` 
 `Stop()`的 `p.wg.Wait()`, 就会 panic (`Add` called concurrently with Wait)。
 `wg.Go` 内部保证 Add 与启动不可分割。
 
-**修订 L2 §11.3.2 的 `run()` 设计**:
+**修订 L2 11.3.2 的 `run()` 设计**:
 
 ```go
 // 现状与修订
@@ -1859,13 +1859,13 @@ func (p *ScalablePool) run(w *workerRef) {
 这不是可选的整洁化。**L2 让 `addWorker` 从"仅Start 时调用一次"变成"运行期并发调用",
 原本不可见的 Add/Wait 竞态窗口会被激活。** `wg.Go` 是这里唯一正确的写法。
 
-### 12.4 新增能力: goroutine 泄漏检测可作为 §11.6 的守卫
+### 12.4 新增能力: goroutine 泄漏检测可作为 11.6 的守卫
 
 **核实**: Go 1.26 引入实验性 goroutine 泄漏 profile, `GOEXPERIMENT=goroutineleakprofile`
 启用 (本机验证可正常构建运行), 官方计划 **1.27 默认启用**。它检测
 "因阻塞在不可达的并发原语 (channel / mutex) 而永远无法唤醒" 的 goroutine。
 
-§11.6 记录的既有问题正是这一类:
+11.6 记录的既有问题正是这一类:
 
 ```go
 s.pool = shared.NewWorkerPool(...)
@@ -1873,10 +1873,10 @@ s.pool.Start(s.opts.WorkerCount)      // :55  worker 在此启动
 ln, err := net.Listen("tcp", s.opts.Addr)   // :56  若后续失败并重试 Start, 旧 pool 的 worker 永久阻塞在 <-p.queue
 ```
 
-旧 pool 的 worker 阻塞在 `<-p.queue` (channel), 而那个 queue 再也不会有写入也不会被关闭 ——
+旧 pool 的 worker 阻塞在 `<-p.queue` (channel), 而那个 queue 再也不会有写入也不会被关闭 --
 **这正是该profile 的目标形态**。
 
-**修订 §11.6**: 该问题从"已记录待修"升级为"**有工具可自动检出**"。
+**修订 11.6**: 该问题从"已记录待修"升级为"**有工具可自动检出**"。
 建议在 CI 加一步:
 
 ```
@@ -1886,12 +1886,12 @@ GOEXPERIMENT=goroutineleakprofile go test -race ./internal/transport/tcp/
 零额外代码成本。**这条比修复本身更有价值**: 它把一类"人工 review 靠读代码发现"的缺陷
 变成 CI 常驻守卫, 且1.27 起将成为默认行为。
 
-### 12.5 修订: `synctest` 让 §11.7 的伸缩测试不必依赖真实时间
+### 12.5 修订: `synctest` 让 11.7 的伸缩测试不必依赖真实时间
 
 **核实**: `testing/synctest` 于 Go 1.25 转正, 提供 bubble 内的**假时钟**与确定性调度。
 本机 Go 1.26.5 验证 `synctest.Test` 可用。全仓当前**零使用**。
 
-§11.7 的伸缩测试设计有一个未被承认的脆弱点: `TestScaleDownRequiresStreak` 需要
+11.7 的伸缩测试设计有一个未被承认的脆弱点: `TestScaleDownRequiresStreak` 需要
 "连续 N 次检查", 但 `scaleCheckInterval = 1024` 次提交与真实时间耦合。
 若 CI 机器负载高, goroutine 调度抖动会让测试时序假设失效。
 
@@ -1912,49 +1912,49 @@ func TestScaleDownRequiresStreak(t *testing.T) {
 
 ### 12.6 确认: 现有零拷贝设计已与 Go 分配器假设一致, 无需修订
 
-§1.2 判定"`append([]byte(nil), payload...)` 是分配热点", 结论是"消除拷贝而非池化单次分配"
-—— 依据是 per-P mcache + span 池化使小对象分配约 20ns, 因此不需要 Java 式的
+1.2 判定"`append([]byte(nil), payload...)` 是分配热点", 结论是"消除拷贝而非池化单次分配"
+-- 依据是 per-P mcache + span 池化使小对象分配约 20ns, 因此不需要 Java 式的
 `BufferPagePool`。**本轮复核未发现这个前提有任何问题**, 且 Go 1.26 的
 **slice backing store 栈分配优化**(编译器可在更多情形下把 slice 底层数组放栈上)
 进一步强化了这个方向: 栈分配路径连 mcache 都不经过。
 
-§3.6 的"`Send` 每帧分配 `MaxHeader + len(payload)` 单块"因此仍是正确的建模:
+3.6 的"`Send` 每帧分配 `MaxHeader + len(payload)` 单块"因此仍是正确的建模:
 单次分配已经足够便宜, 需要消除的是**重复的分配次数**, 不是"分配本身"。
 
 **一条反向提醒**: 不要因为"Go 分配便宜"就在零拷贝路径上放松 Chunk 归还的严格性。
-分配便宜与 **slab 泄漏** 是两件事—— §10.4 已列, 复核确认。
+分配便宜与 **slab 泄漏** 是两件事-- 10.4 已列, 复核确认。
 
 ### 12.7 确认: `new(expr)` 对 Packet 构造是纯粹的语法简化, 不改变设计
 
 **核实**: Go 1.26 的 `new(expr)` 允许 `new(Packet{Data: ..., Raw: ...})` 直接构造非零值。
 本机验证通过。
 
-v2 §3.2 的 Packet 有 `chunk any` 未导出字段且需 `Retain/Release` 生命周期管理,
-**`new(Packet{...})` 在这里并不适用** —— 因为 Packet 不该被随意按值构造。
-真正能用上的地方是 §3.2 里"overflow 路径"和 §4.2 的"大块单独分配"这类
+v2 3.2 的 Packet 有 `chunk any` 未导出字段且需 `Retain/Release` 生命周期管理,
+**`new(Packet{...})` 在这里并不适用** -- 因为 Packet 不该被随意按值构造。
+真正能用上的地方是 3.2 里"overflow 路径"和 4.2 的"大块单独分配"这类
 一次性内部构造。收益仅是省两行临变量, **不构成设计修订, 仅记录为实现时的便利**。
 
 ### 12.8 复核结论汇总: 一处前提修正, 三处修订, 五处确认
 
 | 编号 | 性质 | 内容 | 涉及章节 |
 |---|---|---|---|
-| G-1 | **前提修正** | Green Tea GC 自Go 1.26 默认启用, GC CPU 降 10-40% 但 RSS 升 8-15%。§10.3 结论不变、理由加强; **§10.4 的 `HeapInuse` 断言必须在 Green Tea 下重采基线** | 10.3, 10.4 |
-| G-2 | **前提修正** | 容器感知 GOMAXPROCS 默认启用, 但手动设置会关闭它。**库代码新增硬约束: 不得调用 `runtime.GOMAXPROCS`**。且 §11.1.2 的压测基线需确认该机 `GOMAXPROCS` 实际值 | 8, 11.1.2, 11.3.6 |
+| G-1 | **前提修正** | Green Tea GC 自Go 1.26 默认启用, GC CPU 降 10-40% 但 RSS 升 8-15%。10.3 结论不变、理由加强; **10.4 的 `HeapInuse` 断言必须在 Green Tea 下重采基线** | 10.3, 10.4 |
+| G-2 | **前提修正** | 容器感知 GOMAXPROCS 默认启用, 但手动设置会关闭它。**库代码新增硬约束: 不得调用 `runtime.GOMAXPROCS`**。且 11.1.2 的压测基线需确认该机 `GOMAXPROCS` 实际值 | 8, 11.1.2, 11.3.6 |
 | G-3 | **修订** | `wg.Go` 消除 `Add`/`go` 之间的竞态窗口。L2 的 `addWorker` 并发化会**激活**这个原本不可见的窗口, 因此 `wg.Go` 是必需而非可选 | 11.3.2 |
-| G-4 | **修订** | goroutine 泄漏 profile (1.26 实验 / 1.27 默认) 可直接检出 §11.6 的既有泄漏, 建议进 CI。**工具价值高于修复本身** | 11.6 |
+| G-4 | **修订** | goroutine 泄漏 profile (1.26 实验 / 1.27 默认) 可直接检出 11.6 的既有泄漏, 建议进 CI。**工具价值高于修复本身** | 11.6 |
 | G-5 | **修订** | `synctest` 让伸缩测试摆脱真实时间依赖。**边界: `-race` 与 `synctest` 同跑兼容性未验证**, 需云端补测后决定测试分轮策略 | 11.7 |
 | G-6 | 确认 | 零拷贝"消除拷贝而非池化分配"的判断成立; Go 1.26 栈分配优化进一步强化 | 1.2, 3.6 |
-| G-7 | 确认 | 库代码当前确实未碰任何 GC 参数 (§10.3 第 1 条是既成事实) | 10.3 |
-| G-8 | 确认 | Chunk slab 的"固定尺寸对象密集"形态恰好是 Green Tea 的理想负载, 与 §3 是叠加关系 | 3.2, 10.4 |
+| G-7 | 确认 | 库代码当前确实未碰任何 GC 参数 (10.3 第 1 条是既成事实) | 10.3 |
+| G-8 | 确认 | Chunk slab 的"固定尺寸对象密集"形态恰好是 Green Tea 的理想负载, 与 3 是叠加关系 | 3.2, 10.4 |
 | G-9 | 确认 | `new(expr)` 仅是实现便利, 不改变任何设计 | 3.2 |
 | G-10 | 确认 | 不可因"分配便宜"放松 Chunk 归还严格性; 分配成本与 slab 泄漏是两个问题 | 10.4 |
 
-**待实测项 (阻塞 L2 落地) —— 已于同日全部收口, 见 §12.9**:
-1. ~~云端 `GOMAXPROCS` 实际值~~ → **实测 2, 与物理核数一致, §11.1.2 数据有效, 无需重采**
-2. ~~`synctest` 与 `-race` 同跑兼容性~~ → **完全兼容, `-race -count=3` 全绿, 伸缩测试无需分轮**
-3. Green Tea 下的 `BenchmarkTCPEcho_10kIdleConnections` 基线 → **仍未做** (该项需先实现基准, 见 M0)
+**待实测项 (阻塞 L2 落地) -- 已于同日全部收口, 见 12.9**:
+1. ~~云端 `GOMAXPROCS` 实际值~~ -> **实测 2, 与物理核数一致, 11.1.2 数据有效, 无需重采**
+2. ~~`synctest` 与 `-race` 同跑兼容性~~ -> **完全兼容, `-race -count=3` 全绿, 伸缩测试无需分轮**
+3. Green Tea 下的 `BenchmarkTCPEcho_10kIdleConnections` 基线 -> **仍未做** (该项需先实现基准, 见 M0)
 
-### 12.9 §12.8 三个待实测项的收口结果 (2026-10-16 云端实测)
+### 12.9 12.8 三个待实测项的收口结果 (2026-10-16 云端实测)
 
 三项全部完成。核实方式: SSH 上机, `root@120.76.44.233` (密钥免密), 实测运行。
 
@@ -1964,7 +1964,7 @@ v2 §3.2 的 Packet 有 `chunk any` 未导出字段且需 `Retain/Release` 生�
 |---|---|---|---|
 | OS | Ubuntu (未取版本) | Ubuntu 26.04.1 LTS | Ubuntu 26.04.1 LTS |
 | **vCPU** | 2 | **8** | **8** |
-| **物理核** | **1 core + 2 HT** ⚠ | 4 core + 2 HT | 4 core + 2 HT |
+| **物理核** | **1 core + 2 HT** [注意] | 4 core + 2 HT | 4 core + 2 HT |
 | RAM | 1.6 GB | 15 GB | 15 GB |
 | 虚拟化 | kvm (裸虚拟机) | kvm | kvm |
 | 容器 | **否** (`/proc/1/cgroup` = `0::/init.scope`, 无 `/.dockerenv`, 无 `cpu.max`) | 同左 | 同左 |
@@ -1975,49 +1975,49 @@ v2 §3.2 的 Packet 有 `chunk any` 未导出字段且需 `Retain/Release` 生�
 
 **三个直接结论**:
 
-1. **§11.1.2 的数据有效, 无需重采。** `GOMAXPROCS(0)=2` 与 `nproc=2` 一致,
-   环境变量未设置因此容器感知未被关闭。§12.8 的 G-2 担忧解除。
-2. **但 "2 核" 的表述不准确 —— 那是 1 物理核 + 2 超线程。** 这不使数据失效
+1. **11.1.2 的数据有效, 无需重采。** `GOMAXPROCS(0)=2` 与 `nproc=2` 一致,
+   环境变量未设置因此容器感知未被关闭。12.8 的 G-2 担忧解除。
+2. **但 "2 核" 的表述不准确 -- 那是 1 物理核 + 2 超线程。** 这不使数据失效
    (超线程对 IO 密集型 handler 仍提供真实指令级并行), 但收紧了一条推论:
-   §11.9 局限 4 说的 "4 worker / 1ms handler 天花板 = 4000 msg/s" 在 HT 争用下
-   **会低于该理论值**, 应视为**乐观上界而非可达上限**。已回填至 §11.1.2 与 §11.9。
+   11.9 局限 4 说的 "4 worker / 1ms handler 天花板 = 4000 msg/s" 在 HT 争用下
+   **会低于该理论值**, 应视为**乐观上界而非可达上限**。已回填至 11.1.2 与 11.9。
 3. **多核验证条件已具备。** cloud2 是最佳目标 (Go 1.26.5 与本地基线版本一致, 8 vCPU)。
-   cloud3 的 Go 1.26.1 略旧, 且 §12.1 的 Green Tea 行为需统一版本才可比, **不建议用于
-   与 §11.1.2 的对照**。
+   cloud3 的 Go 1.26.1 略旧, 且 12.1 的 Green Tea 行为需统一版本才可比, **不建议用于
+   与 11.1.2 的对照**。
 
-**库代码新增约束已在 §8 定论, 此处给出实测支撑**: 三台机器的 cgroup v1/v2 **均无 CPU 配额**
+**库代码新增约束已在 8 定论, 此处给出实测支撑**: 三台机器的 cgroup v1/v2 **均无 CPU 配额**
 (`cpu.max` 与 `cpu.cfs_quota_us` 都不存在), 因此若库代码调用 `runtime.GOMAXPROCS` 强设,
 在这些机器上**不会立刻暴露问题, 但会在真实 K8s 环境静默关闭容器感知**。
-这正是"库不该替宿主决定"的现实理由 —— 错误的默认值在测试环境往往看不出来。
+这正是"库不该替宿主决定"的现实理由 -- 错误的默认值在测试环境往往看不出来。
 
-#### 12.9.2 `synctest` 与 `-race` 同跑: 完全兼容 (§12.8 G-5 收口)
+#### 12.9.2 `synctest` 与 `-race` 同跑: 完全兼容 (12.8 G-5 收口)
 
 实测于 cloud1 (Go 1.26.9 + gcc), 3 项测试:
 
 | 测试 | 结果 |
 |---|---|
 | `TestFakeClockSerial` (串行 3x 1s 睡眠, 假时钟应推进 3s, 真实 0s) | PASS |
-| `TestFakeClockConcurrent` (3 goroutine 各 1s, 假时钟推进 1s —— 并发即并行) | PASS |
+| `TestFakeClockConcurrent` (3 goroutine 各 1s, 假时钟推进 1s -- 并发即并行) | PASS |
 | `TestConcurrentShared` (bubble 内 8 goroutine 加锁累加) | PASS |
 
 `go test -count=1` / `-race -count=1` / `-race -count=3` **全部 ok, 无兼容性报错**。
 
-**结论: §11.7 的伸缩测试可直接在 `synctest` + `-race` 下同跑, 不需要分轮。**
-这消除了 §11.7 表格中 `TestScaleUnderRace` 与时序类测试的割裂 ——
+**结论: 11.7 的伸缩测试可直接在 `synctest` + `-race` 下同跑, 不需要分轮。**
+这消除了 11.7 表格中 `TestScaleUnderRace` 与时序类测试的割裂 --
 **所有伸缩测试统一放进 `synctest.Test` bubble, 即可同时获得确定性与竞态检测。**
 
 **一处必须知道的语义细节** (实测踩到): bubble 内的假时钟把**并发 sleep 视为并行**。
 3 个 goroutine 各 `Sleep(1s)` 只推进假时钟 1s, 而串行 3 次推进 3s。
 若测试要断言"经过 N 个检查周期", 必须写**串行**等待; 写成并发则断言值会差 N 倍。
-这是 `synctest` 最容易用错的一处, 已在 §11.7 记录。
+这是 `synctest` 最容易用错的一处, 已在 11.7 记录。
 
-#### 12.9.3 Green Tea GC 默认启用: 权威确认 (§12.8 G-1 收口)
+#### 12.9.3 Green Tea GC 默认启用: 权威确认 (12.8 G-1 收口)
 
 `gctrace` 输出里不含 GC 名称, 因此改用两条权威证据:
 
 1. **`GOEXPERIMENT=nogreenteagc go run` 的版本串带后缀**:
-   - 默认 → `runtime.Version() = go1.26.9` (**无后缀**, 即 greenteagc 实验已默认开启)
-   - 回退 → `runtime.Version() = go1.26.9-X:nogreenteagc` (后缀出现)
+   - 默认 -> `runtime.Version() = go1.26.9` (**无后缀**, 即 greenteagc 实验已默认开启)
+   - 回退 -> `runtime.Version() = go1.26.9-X:nogreenteagc` (后缀出现)
 
    该后缀机制本身就证明了默认值: 只有显式回退才打 `-X:` 标记。
 
@@ -2031,12 +2031,12 @@ v2 §3.2 的 Packet 有 `chunk any` 未导出字段且需 `Retain/Release` 生�
    两个互斥文件按 build tag 二选一, `mgcmark_nogreenteagc.go` 全文仅 5 行(build tag + 包声明),
    即默认分支只剩壳, 实现全在 `greenteagc` 侧。
 
-**因此 §10.3 / §10.4 / §8 的三处修订全部成立且无需再验证**:
-- Green Tea 已在三台机器默认启用 (§10.3 "库不调 GC 参数" 理由更硬)
-- §10.4 的 `HeapInuse` 断言必须在新基线下重采阈值
+**因此 10.3 / 10.4 / 8 的三处修订全部成立且无需再验证**:
+- Green Tea 已在三台机器默认启用 (10.3 "库不调 GC 参数" 理由更硬)
+- 10.4 的 `HeapInuse` 断言必须在新基线下重采阈值
 - Chunk slab 的"定尺寸对象密集"形态与 Green Tea 的页级扫描假设同向叠加
 
-**剩余**: Green Tea 下的 `BenchmarkTCPEcho_10kIdleConnections` 实际基线仍未测 ——
+**剩余**: Green Tea 下的 `BenchmarkTCPEcho_10kIdleConnections` 实际基线仍未测 --
 该项依赖 M0 先实现该基准, 不属于本轮复核范围。
 
 ---
@@ -2101,7 +2101,7 @@ v2 §3.2 的 Packet 有 `chunk any` 未导出字段且需 `Retain/Release` 生�
 **pipeline 客户端在同一台机器上成为了瓶颈。** 客户端 8 核全速 `Write`,
 与服务端 4 worker 争抢 CPU; 且客户端的 `sent` 计数远大于服务端处理的量
 (单连接场景: sent=1,024,513 而 recv=955)。在这种条件下, 服务端 worker 数
-不是限制因素 —— **能拿到多少 CPU 才是**。
+不是限制因素 -- **能拿到多少 CPU 才是**。
 
 **因此前两轮压测 (含 cloud1 的全部数据) 测的都不是 "worker 够不够",
 而是 "pipeline 客户端能灌多快"。** 11.1.3 把这个测量结果误读为前者。
@@ -2113,14 +2113,14 @@ v2 §3.2 的 Packet 有 `chunk any` 未导出字段且需 `Retain/Release` 生�
 
 ### 13.5 结论: L2 应当暂缓, 不是照做
 
-> **⚠ 本节的暂缓决定已被 §14 撤销。**
-> §13 的测量方法 (同机双进程 + pipeline 客户端) 存在系统性缺陷,
+> **[注意] 本节的暂缓决定已被 14 撤销。**
+> 13 的测量方法 (同机双进程 + pipeline 客户端) 存在系统性缺陷,
 > 导致"worker 数无关"的结论是**归因错误**而非事实。
 > **分离式压测 (客户端限速 + 服务端独占 8 核) 实测: worker 从 1 到 16,
 > 吞吐提升 11.96 倍, 近线性。L2 立论成立, 应继续实施。**
-> 本节保留作为**方法论教训**: 见 §14.7。
+> 本节保留作为**方法论教训**: 见 14.7。
 
-**§11 的 L2 弹性伸缩设计, 其定量立论不成立, 不应进入实施。**
+**11 的 L2 弹性伸缩设计, 其定量立论不成立, 不应进入实施。**
 
 必须明确区分两件事:
 
@@ -2150,7 +2150,7 @@ v2 §3.2 的 Packet 有 `chunk any` 未导出字段且需 `Retain/Release` 生�
 推翻结论之外, 有两项东西是有价值的:
 
 1. **`scripts/rateclient/main.go` (新增)**: 一个可限速的压测客户端。
-   它暴露了 pipeline 客户端的 CPU 争抢问题 —— **这是原压测工具的固有限制**,
+   它暴露了 pipeline 客户端的 CPU 争抢问题 -- **这是原压测工具的固有限制**,
    此前一直未被发现, 因为所有测量都在同机进行。
 2. **服务端进程管理方式的修正**: `pkill -x` / `pgrep -f` 都会误杀 SSH 会话自身
    (命令行含目标进程名)。唯一可靠方式是 `systemd-run` 启动 + 按监听端口反查 pid。
@@ -2163,7 +2163,7 @@ cloud2: 98% -> 77%)。这不是笔误, 但原因未查明。
 
 最可能的解释: 连接数多时, 每个连接的 socket 发送缓冲区成为第一道限流,
 客户端实际 `Write` 速率被内核 TCP 层压住, 反而低于单连接时。
-**若成立, 则drop rate 主要由客户端到服务端的 TCP 流控决定, 与 worker 数无关 ——
+**若成立, 则drop rate 主要由客户端到服务端的 TCP 流控决定, 与 worker 数无关 --
 与 13.3 的结论一致。**
 
 **这一条是推断, 不是实测结论**, 需要在客户端与服务端分离的条件下验证。
@@ -2171,12 +2171,12 @@ cloud2: 98% -> 77%)。这不是笔误, 但原因未查明。
 
 ---
 
-## 14. 分离式压测: L2 立论重新成立 (2026-10-16, 推翻 §13)
+## 14. 分离式压测: L2 立论重新成立 (2026-10-16, 推翻 13)
 
-§13 用同机双进程压测, 得出 "worker 数不是丢弃率的决定因素", 并据此暂缓 L2。
-**§14 修正那个测量方法后, 得到相反的结论: L2 的立论成立。**
+13 用同机双进程压测, 得出 "worker 数不是丢弃率的决定因素", 并据此暂缓 L2。
+**14 修正那个测量方法后, 得到相反的结论: L2 的立论成立。**
 
-§13 的错误不是结论错误, 而是**归因错误** —— 它把"客户端抢CPU"造成的
+13 的错误不是结论错误, 而是**归因错误** -- 它把"客户端抢CPU"造成的
 低吞吐, 误读成了"worker 数无关"。本节用分离式压测排除该干扰项。
 
 ### 14.1 拓扑与隔离措施
@@ -2228,47 +2228,47 @@ cloud2: 98% -> 77%)。这不是笔误, 但原因未查明。
 衰减原因明确: w=16 已超过 8 vCPU 的核数, worker 转为上下文切换开销。
 **这恰好给出 `maxWorker` 默认值的依据: 不应超过 GOMAXPROCS。**
 
-### 14.3 结论: §13 的归因是错的, §11 的立论成立
+### 14.3 结论: 13 的归因是错的, 11 的立论成立
 
-| | §13 (同机双进程) | §14 (分离式) |
+| | 13 (同机双进程) | 14 (分离式) |
 |---|---|---|
 | 客户端与服务端 | 同机, 抢 CPU | 物理分离 + 限速 |
 | w=1 -> w=16 吞吐变化 | 118 -> 117 msg/s (**无变化**) | 78 -> 234 msg/s (**11.96x**) |
 | 结论 | "worker 数不是决定因素" | "worker 数是决定因素, 近线性" |
 
-**§13 的测量方法存在系统性问题**: pipeline 客户端全速 `Write` 时,
+**13 的测量方法存在系统性问题**: pipeline 客户端全速 `Write` 时,
 即使服务端与客户端是不同进程, 客户端的 goroutine 调度、socket 缓冲填充、
 以及内核 TCP 发送路径都会成为瓶颈, 使服务端拿不到足够 CPU。
-§13 的 `sent=1024513 而 recv=955` 正是这个现象的直接证据。
+13 的 `sent=1024513 而 recv=955` 正是这个现象的直接证据。
 
-**§14 用限速客户端消除了该变量**, 于是 worker 数的影响显现出来:
+**14 用限速客户端消除了该变量**, 于是 worker 数的影响显现出来:
 **1 -> 8 近线性, 16 开始衰减。**
 
 因此:
-- **§11.1.3 的立论("丢弃率的决定因素是 handler 耗时 / worker 数")成立**
-- **§13.5 的"L2 暂缓"结论撤销**
-- §13 的价值在于: 它暴露了压测方法的缺陷, 而这个缺陷同样是 §13 之前所有
-  压测(包括 §11.1.2 的 cloud1 数据)的共同问题
+- **11.1.3 的立论("丢弃率的决定因素是 handler 耗时 / worker 数")成立**
+- **13.5 的"L2 暂缓"结论撤销**
+- 13 的价值在于: 它暴露了压测方法的缺陷, 而这个缺陷同样是 13 之前所有
+  压测(包括 11.1.2 的 cloud1 数据)的共同问题
 
-**但 §13 也留下一个仍然有效的发现**: `queue_full` 在所有 worker 配置下
+**但 13 也留下一个仍然有效的发现**: `queue_full` 在所有 worker 配置下
 都稳定在 2.2M-2.3M 区间, 说明**在饱和条件下队列深度与 worker 数无关地决定了
-丢弃总量** —— 队列只是缓冲区, 不是瓶颈。
+丢弃总量** -- 队列只是缓冲区, 不是瓶颈。
 
 ### 14.4 对 L2 设计的直接影响
 
-§11.3 的设计需要在实测数据基础上调整两处:
+11.3 的设计需要在实测数据基础上调整两处:
 
-1. **`maxWorker` 默认值**: §11.3.6 说 "若 handler 是 IO 密集, 用户应通过
+1. **`maxWorker` 默认值**: 11.3.6 说 "若 handler 是 IO 密集, 用户应通过
    `WithWorkers` 显式调大"。**实测给出更硬的依据**: w=16 线性度掉到 0.75x,
    超过 GOMAXPROCS 后收益递减。**建议 `maxWorker` 默认值取 `2 x GOMAXPROCS`**,
    允许小幅超订但不鼓励。这个数字现在有实测支撑, 而不只是推理。
 
 2. **扩容的收益上界是可预测的**: 吞吐近似 `min(workers, GOMAXPROCS) x 1000 msg/s`
    (1ms handler)。弹性伸缩能把"固定下限"变成"跟随负载", 但**天花板由核数决定,
-   弹性无法突破**。因此 §11.3.4 的取模触发间隔(1024 次)在低负载时合理,
-   在接近天花板时收益趋零 —— **不建议在高水位持续时反复扩缩**。
+   弹性无法突破**。因此 11.3.4 的取模触发间隔(1024 次)在低负载时合理,
+   在接近天花板时收益趋零 -- **不建议在高水位持续时反复扩缩**。
 
-§11 的其余设计(workerRef 身份、可退休 run()、水位判据、收缩需连续 3 次)
+11 的其余设计(workerRef 身份、可退休 run()、水位判据、收缩需连续 3 次)
 **不受本次数据影响, 继续有效**。
 
 ### 14.5 三台机器的定位据此更新
@@ -2288,7 +2288,7 @@ cloud2: 98% -> 77%)。这不是笔误, 但原因未查明。
    压测端口 28000 不在安全组内, 因此**必须用 SSH 端口转发**, 不要去改安全组
    或占用已有端口。
 2. **服务端绑 127.0.0.1 而非 0.0.0.0**。绑 0.0.0.0 时 `Addr()` 返回 `[::]:port`
-   (IPv6 通配), 在部分环境下不可达 —— 这是 §11.1 记录的同一个坑, 再次踩到。
+   (IPv6 通配), 在部分环境下不可达 -- 这是 11.1 记录的同一个坑, 再次踩到。
 3. **metrics 端点有"惰性注册"行为**: 首次连接之前, `/metrics` 返回 HTTP 200
    但**响应体为空**; 且 `tcp_task_queue_full_total` 这类 counter **在被事件
    触碰过之前根本不出现**。因此基线读取必须先跑一次饱和 warmup,
@@ -2302,21 +2302,21 @@ cloud2: 98% -> 77%)。这不是笔误, 但原因未查明。
    (实测目标 5000/s 只跑出 1900/s)。**必须批量发送**: 每 tick 发 N 条,
    使 tick 间隔保持在毫秒量级。
 
-### 14.7 §13 与 §14 的关系
+### 14.7 13 与 14 的关系
 
-不是"§13 错了所以 §14 对", 而是:
+不是"13 错了所以 14 对", 而是:
 
-- **§13 正确识别了测量方法有问题** —— 这是它的贡献
-- **§13 错在把方法缺陷导致的低吞吐归因为"worker 数无关"**
-- **§14 用分离式 + 限速排除了该缺陷**, 得到可信数据
-- **§11 的 L2 立论最终成立**, §13.5 的暂缓决定撤销
+- **13 正确识别了测量方法有问题** -- 这是它的贡献
+- **13 错在把方法缺陷导致的低吞吐归因为"worker 数无关"**
+- **14 用分离式 + 限速排除了该缺陷**, 得到可信数据
+- **11 的 L2 立论最终成立**, 13.5 的暂缓决定撤销
 
 **教训**: 压测数据只能支撑它能支撑的结论。同机双进程测量 "X 的影响"
 时, 必须先证明负载确实落在 X 上, 否则得到的是"客户端有多快"。
 
 ### 14.8 L2-a / L2-b 实施记录 (2026-10-16)
 
-§14 确认立论成立后, L2-a 与 L2-b 已实施完毕。
+14 确认立论成立后, L2-a 与 L2-b 已实施完毕。
 
 #### 产出与规模
 
@@ -2345,7 +2345,7 @@ cloud2: 98% -> 77%)。这不是笔误, 但原因未查明。
 `WorkerPool` 的既有 10 项测试 (5 项原有 + 5 项饱和测试) 在重构后全部保持绿,
 这是"重构不改变行为"的直接证据。
 
-#### §11.3.2 的`wg.Go` 要求已落地
+#### 11.3.2 的`wg.Go` 要求已落地
 
 ```go
 // ScalablePool.addWorker
@@ -2359,7 +2359,7 @@ ScalablePool 不可以**: `WorkerPool` 的 `Add` 只发生在 `Start`, 而 `Star
 该测试**刻意不主动触发 panic** (那会让套件天然flaky), 而是断言使 `wg.Go` 路径
 安全的两个性质:
 
-1. `beginClose` 之后 `addWorker` 完全惰性 —— 不存在"计数已加而 goroutine 未启动"
+1. `beginClose` 之后 `addWorker` 完全惰性 -- 不存在"计数已加而 goroutine 未启动"
    的可能
 2. `Stop` 与 `addWorker` 并发时正常终止而非死锁, 且每个被等待的 worker 都已计数
 
@@ -2371,7 +2371,7 @@ ScalablePool 不可以**: `WorkerPool` 的 `Add` 只发生在 `Start`, 而 `Star
 统一走 retire 后, 只有 `Stop` 结束后的 `drainQueue` 一条排空路径。
 
 **决策 2: `ScalablePool.Submit` 尚不评估伸缩。**
-§11.3.4 要求的"每 1024 次提交触发一次 `maybeScale`"属**L2-c**, 尚未实施。
+11.3.4 要求的"每 1024 次提交触发一次 `maybeScale`"属**L2-c**, 尚未实施。
 当前 `Submit` 只是 `poolCore.submit` 的直通, 这是刻意的: 伸缩决策必须在
 `submitMu.RLock` **之外**执行, 而 `poolCore.submit` 的读锁覆盖整个入队过程。
 把 `maybeScale` 塞进现有 `Submit` 会延长每个并发 Submit 的持锁时间, 正好放大
@@ -2383,7 +2383,7 @@ ScalablePool 不可以**: `WorkerPool` 的 `Add` 只发生在 `Start`, 而 `Star
 - **L2-d**: 伸缩行为测试 (队列水位上升/下降 -> worker 数相应变化)
 - **L2-e**: `tcp.Option` 接线 (`WithElasticPool` / `WithScaleRatio`)
 
-**尚未验证**: L2-c 完成后需在 cloud2 上复跑 §14.2 的分离式压测, 对比
+**尚未验证**: L2-c 完成后需在 cloud2 上复跑 14.2 的分离式压测, 对比
 "固定 4 worker" 与 "弹性 2-8 worker" 的实际吞吐差异。**那是 L2 收益的最终证明,
 本节只证明了机制正确。**
 
@@ -2408,10 +2408,10 @@ func (p *ScalablePool) Submit(...) error {
 
 `pool_scale_behavior_test.go` 新增 6 项测试 (4 项原有 + 2 项修订)。
 
-#### §11.3.4 的约束如何满足
+#### 11.3.4 的约束如何满足
 
-§11.3.4 要求"Submit 内每 N 次触发一次", 但同时 §11.5 要求
-"`maybeScale` 不得在 `submitMu.RLock` 内执行"—— 这两条看似冲突,
+11.3.4 要求"Submit 内每 N 次触发一次", 但同时 11.5 要求
+"`maybeScale` 不得在 `submitMu.RLock` 内执行"-- 这两条看似冲突,
 因为 `poolCore.submit` 的读锁覆盖整个入队 (含 `PolicyBlock` 阻塞路径)。
 
 解法是**把 Submit 拆成两步**: 先 `poolCore.submit` (内部加解锁),
@@ -2420,7 +2420,7 @@ func (p *ScalablePool) Submit(...) error {
 `TestMaybeScaleDoesNotHoldSubmitLock` 专门断言该性质 (从测试 goroutine
 取写锁, 若 Submit 仍持读锁则会阻塞)。
 
-**所有返回路径都 tick, 包括 `ErrWriteQueueFull`** —— 被拒绝的提交
+**所有返回路径都 tick, 包括 `ErrWriteQueueFull`** -- 被拒绝的提交
 正是最需要扩容的信号, 不能跳过。
 
 #### 测试中踩到并修正的两个设计约束
@@ -2458,7 +2458,7 @@ func (p *ScalablePool) Submit(...) error {
 | `go test ./...` 全仓 | 通过, 无回归 |
 | **云端 `-race -count=3`** (Go 1.26.5 + gcc 15.2) | **通过, 无竞态** |
 
-`synctest` 与 `-race` 同跑无兼容性问题 (与 §12.9.2 的结论一致),
+`synctest` 与 `-race` 同跑无兼容性问题 (与 12.9.2 的结论一致),
 伸缩测试因此可同时获得确定性与竞态检测, 无需分轮。
 
 #### 下一步
@@ -2469,13 +2469,13 @@ func (p *ScalablePool) Submit(...) error {
 - **收益证明**: L2-e 后在 cloud2 复跑分离式压测, 对比固定 4 worker 与
   弹性 2-8 worker。**这是 L2 价值的最终证明, 当前只证明机制正确。**
 
-以上三项已于 2026-10-16 完成, 见 §14.10 与 §14.11。
+以上三项已于 2026-10-16 完成, 见 14.10 与 14.11。
 
 ### 14.10 L2-d / L2-e 实施记录 (2026-10-16)
 
 #### L2-d: 两项缺失断言
 
-补齐 §11.7 测试计划里 L2-c 未覆盖的两项, 加 `TestSetScaleRatioAcceptsValidPair`
+补齐 11.7 测试计划里 L2-c 未覆盖的两项, 加 `TestSetScaleRatioAcceptsValidPair`
 与 `TestSetScaleRatioRejectsInvertedPair` (5 个子用例)。
 
 `TestScaleDownFloor` **两次写错, 都是测试手法而非池的缺陷**:
@@ -2483,7 +2483,7 @@ func (p *ScalablePool) Submit(...) error {
 1. 第一次用 parked handler (仿`TestScaleDownRequiresStreak`)。parked handler
    不消费任务, 队列占用率每个 tick 累积, 第 4 个 tick 越过 0.25 阈值把
    `downStreak` 重置, 永远到不了地板。
-2. 第二次换成立即返回的 handler, **仍然失败** —— 紧密 submit 循环的提交速度
+2. 第二次换成立即返回的 handler, **仍然失败** -- 紧密 submit 循环的提交速度
    超过 worker 消费速度, 队列照样填满。
 
 结论: **地板属性应直接驱动 `maybeScale` 并使用空队列**, 而不是试图用 Submit
@@ -2501,13 +2501,13 @@ func (p *ScalablePool) Submit(...) error {
 
 | 成员 | 所属 | 用途 |
 |---|---|---|
-| `SetScaleRatio(up, down)` | ScalablePool | 拒绝倒置/越界比例, **不静默重排** —— 重排会把调用方的笔误变成一份他没要求的策略 |
+| `SetScaleRatio(up, down)` | ScalablePool | 拒绝倒置/越界比例, **不静默重排** -- 重排会把调用方的笔误变成一份他没要求的策略 |
 | `WorkerCount()` / `WorkerBounds()` | 两种池 | 固定池也实现, 否则两者无法比较 |
 | `Server.WorkerCount()` / `WorkerBounds()` | tcp.Server | 转发, 压测脚本据此观察伸缩是否发生 |
 
-**顺带修复 §11.6 记录的既有泄漏**: `Start` 改为 `net.Listen` 成功后才建池。
+**顺带修复 11.6 记录的既有泄漏**: `Start` 改为 `net.Listen` 成功后才建池。
 原顺序先起 worker, listen 失败再 Stop; 若 `Start` 被重试, 旧 pool 被覆盖而其
-worker goroutine 仍在运行且无句柄可达 —— 改为「监听成功才建池」是消除该路径,
+worker goroutine 仍在运行且无句柄可达 -- 改为「监听成功才建池」是消除该路径,
 而不是事后清理。
 
 #### 两处格式问题 (非本次逻辑改动)
@@ -2518,7 +2518,7 @@ worker goroutine 仍在运行且无句柄可达 —— 改为「监听成功才�
 
 ### 14.11 L2 收益证明: 固定池 vs 弹性池 (2026-10-16 云端实测)
 
-§14.8 末尾写明"**尚未验证**", §14.9 结尾仍写着收益待证。本节是那次验证。
+14.8 末尾写明"**尚未验证**", 14.9 结尾仍写着收益待证。本节是那次验证。
 
 #### 环境与方法
 
@@ -2528,16 +2528,16 @@ worker goroutine 仍在运行且无句柄可达 —— 改为「监听成功才�
 | 客户端 | srv3 `8.130.190.141`, 8 vCPU / 16G, **独立物理机** |
 | 链路 | srv2 -> srv3 SSH 隧道 (srv2 安全组仅放行 22/80/443 + 18000/19000, 18000 被既有进程占用) |
 | 负载 | 4/8 连接, 限速客户端, handler 延迟 1ms, queue 512, policy drop, 每配置 10s |
-| 每配置独立重启服务端 | 是 —— 指标惰性注册, 复用会让计数累积 |
+| 每配置独立重启服务端 | 是 -- 指标惰性注册, 复用会让计数累积 |
 
 **四处方法学要点**, 每一条都对应此前某一轮的错误:
 
-1. **客户端与服务端分机** —— §13 同机双进程下客户端抢CPU, 测的是客户端。
-2. **客户端限速** —— 不限速则客户端填满自己的 socket 缓冲, 服务端感受不到压力。
-3. **queue_full 取增量**, 不用客户端 recv 做分母 —— 计数是累计的; 分母必须是
+1. **客户端与服务端分机** -- 13 同机双进程下客户端抢CPU, 测的是客户端。
+2. **客户端限速** -- 不限速则客户端填满自己的 socket 缓冲, 服务端感受不到压力。
+3. **queue_full 取增量**, 不用客户端 recv 做分母 -- 计数是累计的; 分母必须是
    **sent** (每个 sent 帧恰好对应一次 pool Submit), 用 recv 会算出 **>100%** 的
    丢弃率 (本轮首跑 fixed_w2 算出 236%, 即此错误暴露)。
-4. **服务端 worker 数从 journal 读**, 不从重定向文件读 —— `systemd-run` 把
+4. **服务端 worker 数从 journal 读**, 不从重定向文件读 -- `systemd-run` 把
    stdout 送进 journal, 文件恒为空 (首跑 worker 数全空即此因)。
 
 #### 数据
@@ -2553,17 +2553,17 @@ worker goroutine 仍在运行且无句柄可达 —— 改为「监听成功才�
 
 #### 三条结论
 
-**1. §14.2 的近线性在独立复测中复现。** 固定池 w=2 -> w=4 -> w=8:
-1782 -> 3467 -> 5926 msg/s, 相邻提升 **1.95x / 1.71x**。这与 §14.2
-(w=1->8 线性度 0.91x) 一致, 证明 §13 "worker 数无关" 确属归因错误。
+**1. 14.2 的近线性在独立复测中复现。** 固定池 w=2 -> w=4 -> w=8:
+1782 -> 3467 -> 5926 msg/s, 相邻提升 **1.95x / 1.71x**。这与 14.2
+(w=1->8 线性度 0.91x) 一致, 证明 13 "worker 数无关" 确属归因错误。
 
 **2. 弹性池在同等 offered load 下追平按峰值配好的固定池。**
 6000/s 下弹性 2-8 达 5746 msg/s (3.75% drop), 对比固定 w=8 的 5926 msg/s
-(0.75% drop)。**弹性略逊** —— 这是采样滞后: 它要靠 backlog 累积才扩, 而固定池
+(0.75% drop)。**弹性略逊** -- 这是采样滞后: 它要靠 backlog 累积才扩, 而固定池
 从第一刻就是 8 个 worker。**弹性的价值不在峰值, 在于无需预先知道峰值**。
 
 **3. 突发场景下差距拉开。** 12000/s 时固定 w=8 是 6712 msg/s / 43.8% drop,
-弹性 2-16 达 10336 msg/s / 13.4% drop —— **吞吐 1.54x, 丢弃率降 69.3%**。
+弹性 2-16 达 10336 msg/s / 13.4% drop -- **吞吐 1.54x, 丢弃率降 69.3%**。
 固定池的天花板是配置值; 弹性池在 12k/s 下实测涨到 15, 仍在 max=16 之内。
 **这正是 L2 立论的直接兑现: 天花板从 `固定 worker 数 / handler 耗时`
 变为 `maxWorker / handler 耗时`。**
@@ -2582,8 +2582,8 @@ worker goroutine 仍在运行且无句柄可达 —— 改为「监听成功才�
 - **客户端限速 12000/s 是本机 ticker 能稳定发出的量级**, 不代表真实上限;
   突发组的 offered load 未高到让固定池也逼近 8 worker 的理论上限
   (8 worker x 1ms = 8000 msg/s), 但网络 RTT 与隧道开销使实测天花板低于此。
-- **L2 不解决单session 饿死**: 队列全局共享, 一个噪声 session 仍可耗尽队列 (§11.5)。
-- 收缩方向未在本轮验证 —— 本轮只测增长。`TestScaleDownFloor` 覆盖了地板,
+- **L2 不解决单session 饿死**: 队列全局共享, 一个噪声 session 仍可耗尽队列 (11.5)。
+- 收缩方向未在本轮验证 -- 本轮只测增长。`TestScaleDownFloor` 覆盖了地板,
   但真实负载下的收缩时机与振荡抑制未实测。
 
 **结论: L2 立论成立, 收益已实测。** 建议 `WithElasticPool` 保持默认关闭,

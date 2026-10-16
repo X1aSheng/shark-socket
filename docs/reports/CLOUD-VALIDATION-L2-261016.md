@@ -21,9 +21,9 @@ hosts: srv2 47.120.44.128 (服务端) + srv3 8.130.190.141 (客户端), 均 8 vC
 | `go test -race -count=3` shared 包 (两机) | 通过, 无竞态 |
 | `go test -race -count=3` tcp 包 (两机) | 通过, 无竞态 |
 | `go test ./...` 全仓 (srv2) | 通过, 27 包全绿 |
-| `go test ./...` 全仓 (srv3) | 1 项失败, **环境原因** (见 §4) |
+| `go test ./...` 全仓 (srv3) | 1 项失败, **环境原因** (见 4) |
 | goroutine 泄漏探针 (GOEXPERIMENT) | 通过 |
-| **L2 收益实测** | **成立** (见 §5) |
+| **L2 收益实测** | **成立** (见 5) |
 
 ---
 
@@ -55,10 +55,10 @@ srv3 原本是 go1.26.1, 低于 go.mod 要求的 1.26.5, 默认 `proxy.golang.or
 | `gofmt -l internal/ api/ examples/` | 无输出 | 无输出 |
 | `go test -race -count=3 ./internal/transport/shared/` | 通过 12.0s | 通过 12.0s |
 | `go test -race -count=3 ./internal/transport/tcp/` | 通过 7.6s | 通过 6.7s |
-| `go test ./...` | 通过 27 包 | 见 §4 |
+| `go test ./...` | 通过 27 包 | 见 4 |
 | `GOEXPERIMENT=goroutineleakprofile` 探针 | 通过 | 通过 |
 
-泄漏探针覆盖 §11.6 记录的那类缺陷 (worker 永久阻塞在 `<-p.queue` 上)。
+泄漏探针覆盖 11.6 记录的那类缺陷 (worker 永久阻塞在 `<-p.queue` 上)。
 它现在是常驻检查项, 零额外代码成本。
 
 ---
@@ -92,12 +92,12 @@ srv3 原本是 go1.26.1, 低于 go.mod 要求的 1.26.5, 默认 `proxy.golang.or
 
 四处方法学要点, 每条对应此前某一轮的错误:
 
-1. **分机** —— 同机双进程下客户端抢 CPU, 测的是客户端 (设计文档 §13 的错误)。
-2. **限速** —— 不限速则客户端填满自身 socket 缓冲, 服务端感受不到压力。
-3. **queue_full 取增量, 分母用 sent** —— 计数是累计的; 每个 sent 帧恰好对应一次
+1. **分机** -- 同机双进程下客户端抢 CPU, 测的是客户端 (设计文档 13 的错误)。
+2. **限速** -- 不限速则客户端填满自身 socket 缓冲, 服务端感受不到压力。
+3. **queue_full 取增量, 分母用 sent** -- 计数是累计的; 每个 sent 帧恰好对应一次
    pool Submit。**用 recv 做分母会算出 >100% 的丢弃率**, 这是首跑
    fixed_w2 报出 236% 的原因。
-4. **worker 数从 journal 读** —— `systemd-run` 把 stdout 送进 journal 而非重定向
+4. **worker 数从 journal 读** -- `systemd-run` 把 stdout 送进 journal 而非重定向
    文件, 首跑因此 worker 数全空。
 
 ### 5.2 数据
@@ -114,7 +114,7 @@ srv3 原本是 go1.26.1, 低于 go.mod 要求的 1.26.5, 默认 `proxy.golang.or
 ### 5.3 三条结论
 
 **1. 近线性在独立复测中复现。** 固定池 w=2 -> 4 -> 8 为 1782 -> 3467 -> 5926 msg/s,
-相邻提升 1.95x / 1.71x, 与设计文档 §14.2 一致。这证明 §13 "worker 数无关"
+相邻提升 1.95x / 1.71x, 与设计文档 14.2 一致。这证明 13 "worker 数无关"
 确属归因错误, 而非代码性质。
 
 **2. 同等 offered load 下, 弹性追平按峰值配好的固定池。** 6000/s 时弹性 2-8
@@ -122,7 +122,7 @@ srv3 原本是 go1.26.1, 低于 go.mod 要求的 1.26.5, 默认 `proxy.golang.or
 它要靠 backlog 累积才扩, 固定池从第一刻就是满编。
 
 **3. 突发下差距拉开, 这是 L2 价值的直接兑现。** 12000/s 时固定 w=8 为
-6712 msg/s / 43.8% drop, 弹性 2-16 为 10336 msg/s / 13.4% drop ——
+6712 msg/s / 43.8% drop, 弹性 2-16 为 10336 msg/s / 13.4% drop --
 **吞吐 1.54x, 丢弃率降 69.3%**。实测涨到 15 个 worker, 仍在 max=16 内。
 天花板从 `固定 worker 数 / handler 耗时` 变为 `maxWorker / handler 耗时`。
 
@@ -130,7 +130,7 @@ srv3 原本是 go1.26.1, 低于 go.mod 要求的 1.26.5, 默认 `proxy.golang.or
 
 六行的 drop% 与 loss% **逐行吻合到小数点后三位**。二者独立: 前者来自服务端
 `queue_full` 增量, 后者来自客户端 sent/recv 差值。一致说明丢弃确实发生在池的
-拒绝路径上, 未在 socket 缓冲或客户端读取环节丢失 —— 这是判定该批数据可信的依据。
+拒绝路径上, 未在 socket 缓冲或客户端读取环节丢失 -- 这是判定该批数据可信的依据。
 
 ### 5.5 局限
 
@@ -155,7 +155,7 @@ srv3 原本是 go1.26.1, 低于 go.mod 要求的 1.26.5, 默认 `proxy.golang.or
 | 4 | worker 数从重定向文件读 | `systemd-run` 输出在 journal, 读到全空 |
 
 另修复代码中两处既有问题: `pool_scale_test.go` / `worker_pool_saturation_test.go`
-的 gofmt 违规 (本次提交前就存在), 以及 §11.6 记录的 `tcp.Server.Start`
+的 gofmt 违规 (本次提交前就存在), 以及 11.6 记录的 `tcp.Server.Start`
 pool 泄漏路径 (改为 listen 成功后才建池)。
 
 ---

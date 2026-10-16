@@ -7,6 +7,49 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### V10 Review - CI Restore Batch (2026-10-16)
+
+V10 全量审查(逐项复现 - 修复 - 验证 - 提交)后的修复批次.详见
+`docs/PROJECT-REVIEW-261016-163106.md`.审查结论:8 个 CI job 中 6 个为绿
+(validate-ubuntu / validate-windows / race / coverage / docker-build / 以及
+ubuntu 侧集成),红灯只来自两个静态检查 job;另有一个时序竞态测试会让 race job
+随机转红.本轮修复 4 项.
+
+**CI 阻断 - 静态检查**:
+
+- **lint job 全红**:`golangci-lint` 5 处未通过(注意默认 `max-same-issues=3` 会
+  掩盖同类项,该批实际为 9 处) -- `ScalablePool.shouldScale` 是死函数(判定逻辑
+  已完整内联进 `maybeScale`,只剩注释提到它);7 处 QF1008 冗余内嵌字段限定符
+  (`p.poolCore.x` -> `p.x`;`WorkerPool.Handler` / `Enabled` 因自身同名而保留
+  限定符,否则会递归);1 处 SA2001 空临界区.删除死函数并把其"为何只用队列占用率"
+  的设计说明并入 `maybeScale`;测试中的空 `Lock`/`Unlock` 对是断言本身,改为用
+  atomic 显式记录持锁事实并在 select 之后断言
+- **security job 全红**:`govulncheck` 命中 11 个可达漏洞.`go` 指令 1.26.5 ->
+  1.26.9(9 个,net/http / crypto/tls / net/textproto / encoding/asn1),
+  `golang.org/x/net` v0.47.0 -> v0.61.0(4 个),`pion/dtls/v3` v3.1.2 ->
+  v3.1.12(GO-2026-6165,解析畸形 ECDHE_PSK ServerKeyExchange 时 panic,可达路径
+  `udp.session.Send -> dtls.Conn.Write -> handshake.Handshake.Unmarshal`).两个
+  模块直接取最新已发布版本而非"刚好够"的下界,避免下个补丁版再改一次.修复后
+  `govulncheck ./...` 报告 `No vulnerabilities found`
+- **`scripts/workerpool_baseline.go` 未过 gofmt**:var 块错位一空格 + 文件末尾缺
+  换行.该文件带 `//go:build ignore`,不属于任何 package,因此 lint 的 formatter
+  扫不到它 -- 这正是它漂移的原因,只能靠手工保持
+
+**CI 可靠性**:
+
+- **`TestWorkerPoolDropPolicyRejectsWhenFull` 时序竞态**:池配置为 1 worker +
+  深度 1 队列,handler 睡 100ms.测试连发两次 Submit 并期望第二次撞满队列,但唯一
+  worker 可能在第二次 Submit 之前就把首任务取走,队列因而为空,Submit 成功返回.
+  "队列已满"是概率而非事实,`-race` 的插桩改变了调度时序,把这个潜在竞态暴露成
+  race job 的间歇性红灯.改为由 handler 信号确认它已接手首任务(此时队列必为空),
+  再断言下一次 Submit 被拒;信号用非阻塞带缓冲发送,因为 `Stop` 之后还会 drain
+  队列并再次调用 handler
+
+**验证**:7 种模式(unit / vet / integration / deploy / cover / race / benchmark)
+全部退出码 0,覆盖率 79.6%(门限 70%),`golangci-lint` 0 issues,
+`govulncheck` 0 漏洞.修复后 `go.mod` 的 `go` 指令为 1.26.9.
+
+
 ### V9 Review - Correctness and CI Batch (2026-10-15)
 
 V9 全量审查(逐项复现 - 写失败用例确认 - 修复 - 验证 - 提交)后的修复批次.详见
