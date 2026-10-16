@@ -54,9 +54,9 @@ TLS 在 **TCP** 与 **QUIC** 上支持(QUIC 强制要求),DTLS 在 **UDP** 与 *
 **UDP/CoAP DTLS 与 mTLS 注意**:应用配置路径(JSON / `SHARK_*` 环境变量)的证书经
 `GetCertificate` 桥接进 pion/dtls(配置 `Certificates` 恒为空),映射层负责在
 Accept 后按 `tls_client_auth` 策略强制校验客户端证书(缺失/链不可信即关闭连接).
-该强制不依赖 pion/dtls 自身的客户端认证流程--其 v3.1.2 在部分路径上不会可靠执行
-链校验,客户端认证握手也可能停滞,因此接入真实 DTLS 客户端栈(libcoap,openssl
-等)时需做互操作验证.
+该强制不依赖 pion/dtls 自身的客户端认证流程--历史版本(含 v3.1.2)在部分路径上
+不会可靠执行链校验,客户端认证握手也可能停滞,因此接入真实 DTLS 客户端栈
+(libcoap,openssl 等)时仍需做互操作验证.当前锁定版本为 v3.1.12.
 
 ### 2.2 配置方式
 
