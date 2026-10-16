@@ -66,7 +66,21 @@
 
 ## 资源需求
 
-`shark-socket` 静态链接,无外部运行时依赖,可部署于资源受限的边缘节点.
+`shark-socket` 除 libc 外无运行时依赖,可编译为单个静态二进制,可部署于资源受限的边缘节点.
+
+**要得到静态二进制,请这样构建**
+
+```bash
+CGO_ENABLED=0 go build -o shark-socket ./cmd/shark-socket
+```
+
+这个限定条件很重要.仓库中没有任何代码需要 cgo,但在装有 C 工具链的主机上,
+默认的 `CGO_ENABLED=1` 会启用 cgo 版 DNS 解析器,产物因而动态链接到
+`libc.so.6` 与 `/lib64/ld-linux-x86-64.so.2`.两者在 glibc 主机上都能运行,
+但只有 `CGO_ENABLED=0` 的产物能直接跑在 Alpine 这类 musl 镜像上,不需要额外
+的 glibc 兼容包.仓库自带的 Dockerfile 已设置该变量(`alpine:3.22` 运行时),
+裸跑 `go build` 则不会.注意 `-race` 校验仍需要 `CGO_ENABLED=1`,那是另一件事,
+与交付产物无关.
 
 **实测占用**(空闲,本地开发机)
 
@@ -79,7 +93,7 @@
 | 制品 | 大小 | 说明 |
 | --- | --- | --- |
 | Docker 镜像 | ~40 MB | 多阶段构建,`alpine:3.22` 运行时,`CGO_ENABLED=0` 静态编译 |
-| 可执行文件 | 单个二进制 | 无运行时依赖,可独立部署 |
+| 可执行文件 | 单个二进制 | 需以 `CGO_ENABLED=0` 构建才是静态;默认构建会动态链接 libc |
 
 **Kubernetes 默认资源规格(随附清单)**
 

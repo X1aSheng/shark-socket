@@ -103,8 +103,33 @@ chain, and one observability plane.
 
 ## Resource Requirements
 
-`shark-socket` is statically linked with no external runtime dependency, so it
-deploys on resource-constrained edge nodes.
+`shark-socket` has no runtime dependency beyond libc, and builds to a single
+static binary, so it deploys on resource-constrained edge nodes.
+
+**Build this way to get the static binary**
+
+```bash
+CGO_ENABLED=0 go build -o shark-socket ./cmd/shark-socket
+```
+
+The qualifier matters. Nothing in the tree requires cgo, but on a host with a C
+toolchain the default `CGO_ENABLED=1` turns on the cgo-enabled DNS resolver and
+the result is dynamically linked against `libc.so.6` and
+`/lib64/ld-linux-x86-64.so.2`:
+
+```
+$ go build -o shark-socket ./cmd/shark-socket && file shark-socket
+shark-socket: ELF 64-bit LSB executable, x86-64, dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2
+
+$ CGO_ENABLED=0 go build -o shark-socket ./cmd/shark-socket && file shark-socket
+shark-socket: ELF 64-bit LSB executable, x86-64, statically linked
+```
+
+Both work on a glibc host, but only the `CGO_ENABLED=0` build runs on a musl
+image such as Alpine without glibc compatibility packages. The bundled
+Dockerfile already sets it (`alpine:3.22` runtime); a bare `go build` does not.
+`CGO_ENABLED=1` is still required for `-race` validation, which is a separate
+concern from the shipped artifact.
 
 **Measured footprint** (idle, local dev machine)
 
@@ -120,7 +145,7 @@ deploys on resource-constrained edge nodes.
 | Artifact | Size | Notes |
 | --- | --- | --- |
 | Docker image | ~40 MB | Multi-stage build, `alpine:3.22` runtime, `CGO_ENABLED=0` static binary |
-| Executable | single file | No runtime dependencies, deployable standalone |
+| Executable | single file | Build with `CGO_ENABLED=0` for a static binary; the default build is dynamically linked against libc |
 
 **Kubernetes defaults (bundled manifests)**
 
