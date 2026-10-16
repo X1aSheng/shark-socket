@@ -3,7 +3,7 @@
 ## meta-info
 
 - 批次: V10 Review - Multi-Host Validation Batch
-- 本地基线: main @ 659417c84 (云端实际验证的 HEAD; 其后两笔提交只改文档)
+- 本地基线: main @ 659417c84 (云端实际验证的 HEAD; 其后五笔提交均只改文档)
 - 验证主机: srv2 47.120.44.128 (iZf8zj5ccfontaezzi4kfrZ)
             srv3 8.130.190.141 (iZ0jlcgedkf3ybet8e1quuZ)
 - 验证时间: 2026-10-16 17:42 - 18:16 (UTC+8), 含三轮: bd5d41a8f (首轮) /
@@ -398,10 +398,14 @@ handler 延迟 1ms, 队列 512, 丢包策略。
 | 147 | `66e81e13c` (D14) | SUCCESS | 1m 57s |
 | 148 | `659417c84` (文档同步) | SUCCESS | 1m 51s |
 | 149 | `168cba3b9` (覆盖率区间修正) | SUCCESS | 2m 5s |
+| 150 | `1512e3e70` (登记 run 149) | SUCCESS | 1m 53s |
+| 151 | `4de86fb39` (明确验证 HEAD) | SUCCESS | 2m 6s |
+| 152 | `a6ef2742b` (记录主机释放) | SUCCESS | 1m 58s |
 
 工作流徽章为 `CI - passing`。两个远端 (github origin / gitee) 与本地均同步。
 本报告自身的提交也会触发一次 CI; 纯文档提交不改变被测代码, 因此上式只登记到
-最后一个影响记录的提交。
+最后一个影响记录的提交 `a6ef2742b`。其后的 run 153 (`8ce76a4e5`, 报告归位与建
+索引) 只改路径与链接, 不改动本批次记录的验证结论, 故不入表。
 
 ## 9. 验证脚本自身的修正
 
@@ -437,4 +441,4 @@ handler 延迟 1ms, 队列 512, 丢包策略。
 5. 同一 commit 下两台独立编译的产物 sha256 相同, 构建可复现; 二进制内嵌
    `vcs.revision`, 因此跨 HEAD 的 sha256 变化是预期的。
 6. 三处脚本缺陷已修正并记录, 其中 `${PIPESTATUS[0]}` 一项可避免"假绿"。
-7. CI run 145 - 149 全部 SUCCESS。
+7. CI run 145 - 152 全部 SUCCESS。
