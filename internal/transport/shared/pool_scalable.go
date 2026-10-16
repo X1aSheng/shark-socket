@@ -118,6 +118,37 @@ func (p *ScalablePool) Start() {
 	}
 }
 
+// SetScaleRatio overrides the queue-occupancy thresholds.
+//
+// A high up threshold (0.8) is conservative: the queue has to fill well before
+// the pool grows, which is stable but slow to react. A low one (0.2) reacts to
+// a light backlog, at the cost of overshooting. Only the pair matters -- down
+// must sit below up or the pool oscillates around a single boundary -- so an
+// invalid pair is rejected outright rather than silently reordered, which would
+// turn a caller's mistake into a policy they did not ask for.
+//
+// Values outside (0, 1) are ignored: a threshold at or beyond the ends of the
+// occupancy range would make one branch unreachable.
+func (p *ScalablePool) SetScaleRatio(up, down float64) {
+	if up <= 0 || up > 1 || down <= 0 || down >= up {
+		return
+	}
+	p.scaleUpRatio = up
+	p.scaleDownRatio = down
+}
+
+// WorkerCount reports the number of workers currently running.
+//
+// Exposed because an elastic pool's whole point is a worker count that moves:
+// without this there is no way to observe the pool doing what it was added for,
+// neither from a test nor from an operator watching a live server.
+func (p *ScalablePool) WorkerCount() int { return p.workerCount() }
+
+// WorkerBounds returns the configured min and max worker counts.
+func (p *ScalablePool) WorkerBounds() (min, max int) {
+	return int(p.minWorker.Load()), int(p.maxWorker.Load())
+}
+
 // Submit enqueues one message for the user handler, then evaluates scaling.
 //
 // The scaling check runs AFTER poolCore.submit has returned, which is the whole

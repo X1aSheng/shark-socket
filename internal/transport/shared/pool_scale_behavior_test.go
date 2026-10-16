@@ -366,6 +366,47 @@ func TestRetireWorkerDrainsNothing(t *testing.T) {
 	}
 }
 
+// TestSetScaleRatioAcceptsValidPair covers the override path used by the tcp
+// option wiring: a well-ordered pair is taken.
+func TestSetScaleRatioAcceptsValidPair(t *testing.T) {
+	p := NewScalablePool(func(core.Session, core.Message) error { return nil }, nil, 1, 2, 8, PolicyDrop)
+	defer p.Stop()
+
+	p.SetScaleRatio(0.6, 0.2)
+	if p.scaleUpRatio != 0.6 || p.scaleDownRatio != 0.2 {
+		t.Fatalf("ratios = (%v, %v), want (0.6, 0.2)", p.scaleUpRatio, p.scaleDownRatio)
+	}
+}
+
+// TestSetScaleRatioRejectsInvertedPair asserts a down threshold at or above the
+// up threshold is refused. Accepting it would leave the pool oscillating
+// around a single boundary: each reading would qualify for one verdict and then
+// the other.
+func TestSetScaleRatioRejectsInvertedPair(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		up, down float64
+	}{
+		{"down above up", 0.3, 0.8},
+		{"equal", 0.5, 0.5},
+		{"up out of range", 1.5, 0.2},
+		{"down at zero", 0.6, 0},
+		{"both negative", -0.5, -0.1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := NewScalablePool(func(core.Session, core.Message) error { return nil }, nil, 1, 2, 8, PolicyDrop)
+			defer p.Stop()
+
+			p.SetScaleRatio(tc.up, tc.down)
+			if p.scaleUpRatio != DefaultScaleUpRatio || p.scaleDownRatio != DefaultScaleDownRatio {
+				t.Fatalf("SetScaleRatio(%v, %v) applied: ratios = (%v, %v), want defaults (%v, %v)",
+					tc.up, tc.down, p.scaleUpRatio, p.scaleDownRatio,
+					DefaultScaleUpRatio, DefaultScaleDownRatio)
+			}
+		})
+	}
+}
+
 // TestScalingUnderSynctest runs the same shrink cycle inside a synctest bubble
 // so the tick accounting is deterministic rather than dependent on how fast the
 // test machine happens to schedule goroutines.

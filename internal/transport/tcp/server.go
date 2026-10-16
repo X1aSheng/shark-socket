@@ -15,6 +15,18 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/transport/shared"
 )
 
+// taskPool is the dispatch surface the TCP server needs from a worker pool.
+//
+// It exists because there are two implementations with different sizing
+// policies: WorkerPool (fixed) and shared.ScalablePool (elastic). Declaring the
+// two methods the server actually calls keeps the choice between them in
+// Start, instead of duplicating the pool field or type-switching at each of the
+// three call sites.
+type taskPool interface {
+	Submit(sess core.Session, protocol core.Protocol, payload []byte) error
+	Stop()
+}
+
 type Server struct {
 	opts     Options
 	rt       core.Runtime
@@ -25,7 +37,10 @@ type Server struct {
 	acceptWG sync.WaitGroup
 	connWG   sync.WaitGroup
 	sessions sync.Map
-	pool     *shared.WorkerPool
+	pool     taskPool
+	// elastic is the running elastic pool, kept only so tests and operators can
+	// read its live worker count. Nil when the fixed pool is in use.
+	elastic *shared.ScalablePool
 }
 
 func NewServer(opts ...Option) *Server {
@@ -51,11 +66,14 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 	s.closed.Store(false)
 	s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate)
-	s.pool = shared.NewWorkerPool(s.opts.Handler, s.rt.Logger(), s.opts.WorkerCount, s.opts.TaskQueueSize, s.opts.FullPolicy)
-	s.pool.Start(s.opts.WorkerCount)
+	// Listen before creating the pool. The pool used to be built and started
+	// first, which meant a failed listen had to stop it again -- and if Start
+	// were ever retried, the previous pool was overwritten while its workers
+	// kept running with no handle left to stop them. Creating the pool only
+	// once the listener exists removes that failure mode instead of cleaning up
+	// after it.
 	ln, err := net.Listen("tcp", s.opts.Addr)
 	if err != nil {
-		s.pool.Stop()
 		s.started.Store(false)
 		return fmt.Errorf("tcp listen %s: %w", s.opts.Addr, err)
 	}
@@ -63,10 +81,37 @@ func (s *Server) Start(ctx context.Context) error {
 		ln = tls.NewListener(ln, s.opts.TLSConfig)
 	}
 	s.listener = ln
+	s.pool, s.elastic = s.buildPool()
 
 	s.acceptWG.Add(1)
 	go s.acceptLoop(ctx)
 	return nil
+}
+
+// buildPool picks the worker pool implementation from the options.
+func (s *Server) buildPool() (taskPool, *shared.ScalablePool) {
+	logger := s.rt.Logger()
+	cfg := s.opts.ElasticPool
+	if cfg == nil {
+		p := shared.NewWorkerPool(s.opts.Handler, logger, s.opts.WorkerCount, s.opts.TaskQueueSize, s.opts.FullPolicy)
+		p.Start(s.opts.WorkerCount)
+		return p, nil
+	}
+	p := shared.NewScalablePool(s.opts.Handler, logger, cfg.MinWorker, cfg.MaxWorker, s.opts.TaskQueueSize, s.opts.FullPolicy)
+	// Only override what the caller set: a zero value means "package default",
+	// and passing it through would be rejected by the ratio validation.
+	if cfg.ScaleUpRatio != 0 || cfg.ScaleDownRatio != 0 {
+		up, down := cfg.ScaleUpRatio, cfg.ScaleDownRatio
+		if up == 0 {
+			up = shared.DefaultScaleUpRatio
+		}
+		if down == 0 {
+			down = shared.DefaultScaleDownRatio
+		}
+		p.SetScaleRatio(up, down)
+	}
+	p.Start()
+	return p, p
 }
 
 func (s *Server) Stop(ctx context.Context) error {
