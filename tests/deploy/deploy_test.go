@@ -129,28 +129,28 @@ func TestHelmChartSemantics(t *testing.T) {
 
 func TestDeployToolRenderingWhenAvailable(t *testing.T) {
 	root := projectRoot(t)
-	if _, err := exec.LookPath("kubectl"); err == nil {
+	if toolRuns("kubectl", "version", "--client") {
 		out := runCommand(t, root, "kubectl", "kustomize", "deploy/k8s")
 		assertContains(t, out, "kind: Deployment")
 		assertContains(t, out, "kind: Service")
 	} else {
-		t.Log("kubectl not found; skipping kustomize render validation")
+		t.Log("kubectl not available; skipping kustomize render validation")
 	}
 
-	if _, err := exec.LookPath("helm"); err == nil {
+	if toolRuns("helm", "version") {
 		out := runCommand(t, root, "helm", "template", "shark-socket", "deploy/helm/shark-socket")
 		assertContains(t, out, "kind: Deployment")
 		assertContains(t, out, "kind: Service")
 	} else {
-		t.Log("helm not found; skipping helm template validation")
+		t.Log("helm not available; skipping helm template validation")
 	}
 
-	if _, err := exec.LookPath("docker"); err == nil {
+	if toolRuns("docker", "compose", "version") {
 		out := runCommand(t, root, "docker", "compose", "-f", "deploy/docker/docker-compose.yml", "config")
 		assertContains(t, out, "shark-socket")
 		assertContains(t, out, "GOPROXY")
 	} else {
-		t.Log("docker not found; skipping docker compose config validation")
+		t.Log("docker compose not available; skipping docker compose config validation")
 	}
 }
 
@@ -234,6 +234,22 @@ func projectRoot(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return filepath.Clean(filepath.Join(wd, "..", ".."))
+}
+
+// toolRuns reports whether a CLI is installed AND the given invocation works.
+//
+// exec.LookPath on its own is an unsound availability gate for a subcommand.
+// Ubuntu packages docker.io without the compose plugin, so `docker` resolves
+// while `docker compose` exits 125 with "unknown command"; a host that merely
+// packaged its tools differently was then reported as a test failure instead of
+// the skip it is. Probing answers the question the test actually asks -- can
+// this host run the command -- rather than the weaker question of whether a
+// file with that name exists on PATH.
+func toolRuns(name string, args ...string) bool {
+	if _, err := exec.LookPath(name); err != nil {
+		return false
+	}
+	return exec.Command(name, args...).Run() == nil
 }
 
 func runCommand(t *testing.T, dir, name string, args ...string) string {
