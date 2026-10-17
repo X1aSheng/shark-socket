@@ -1,0 +1,98 @@
+package stress
+
+import (
+	"context"
+	"net"
+	"testing"
+	"time"
+
+	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/runtime"
+	"github.com/X1aSheng/shark-socket/internal/transport/grpcweb"
+	"github.com/X1aSheng/shark-socket/internal/transport/quic"
+	quicgo "github.com/quic-go/quic-go"
+)
+
+func TestDiagQUIC(t *testing.T) {
+	cfg := stressQUICConfig()
+	server := quic.NewServer(
+		quic.WithAddr("127.0.0.1:0"),
+		quic.WithTLS(cfg),
+		quic.WithHandler(func(sess core.Session, msg core.Message) error {
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gw := runtime.NewGateway()
+	if err := gw.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	if err := gw.Start(ctx); err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	defer func() { _ = gw.Stop(context.Background()); cancel() }()
+
+	addr := server.Addr().String()
+	t.Logf("server addr=%s", addr)
+	conn, err := quicgo.DialAddr(context.Background(), addr, cfg, nil)
+	if err != nil {
+		t.Fatalf("dial err=%v", err)
+	}
+	defer conn.CloseWithError(0, "")
+	stream, err := conn.OpenStreamSync(context.Background())
+	if err != nil {
+		t.Fatalf("open stream err=%v", err)
+	}
+	payload := []byte("hello-quic-payload")
+	if _, err := stream.Write(payload); err != nil {
+		t.Fatalf("write err=%v", err)
+	}
+	buf := make([]byte, len(payload))
+	_ = stream.SetReadDeadline(time.Now().Add(3 * time.Second))
+	n, err := readFullStream(stream, buf)
+	t.Logf("read %d err=%v data=%q", n, err, buf[:n])
+}
+
+func TestDiagGRPCWeb(t *testing.T) {
+	server := grpcweb.NewServer(
+		grpcweb.WithAddr("127.0.0.1:0"),
+		grpcweb.WithPath("/grpc/ws"),
+		grpcweb.WithHandler(func(sess core.Session, msg core.Message) error {
+			t.Logf("HANDLER got %d bytes", len(msg.Payload))
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gw := runtime.NewGateway()
+	if err := gw.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	if err := gw.Start(ctx); err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	defer func() { _ = gw.Stop(context.Background()); cancel() }()
+
+	addr := server.Addr().String()
+	t.Logf("server addr=%s", addr)
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatalf("dial err=%v", err)
+	}
+	defer conn.Close()
+
+	frame := make([]byte, 5+5)
+	frame[0] = 0
+	frame[1], frame[2], frame[3], frame[4] = 0, 0, 0, 5
+	copy(frame[5:], []byte("hello"))
+	n, err := conn.Write(frame)
+	t.Logf("wrote %d err=%v", n, err)
+
+	buf := make([]byte, 64)
+	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	n, err = conn.Read(buf)
+	t.Logf("read %d err=%v data=%q", n, err, buf[:max0(n)])
+}
+
+func max0(a int) int { if a > 0 { return a }; return 0 }

@@ -31,6 +31,7 @@
 | `GAP-ANALYSIS` | 差距分析 |
 | `COMPARISON` | 横向对比与基线补齐 (含资源占用数据) |
 | `STRESS-LADDER` | 压测与承载能力测定 |
+| `PROTOCOL-TEST` | 协议标准规范与使用测试 (规范符合性 + 功能 + 压测) |
 
 **压测系列的阅读顺序**: `STRESS-LADDER` (公网) 先修掉 `rateclient` 的 OOM 缺陷
 并建立阶梯方法, 但其 80k 档崩塌含带宽因素, 结论标注为待定;
@@ -57,6 +58,7 @@
 | 差距分析 | `GAP-ANALYSIS-260614.md` | - |
 | 横向对比 | `COMPARISON-261017-SMARTBOOT.md` (smart-socket 对比 + 资源基线) | - |
 | 压测 | `STRESS-INTRANET-261017.md` (内网重测 + 弹性池对比) | `STRESS-LADDER-261017.md` (公网压测) |
+| 协议测试 | `PROTOCOL-TEST-261017.md` (规范符合性 + 压测, 7 协议) | - |
 
 ### 2.1 资源占用数据的归属
 
