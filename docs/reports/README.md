@@ -29,6 +29,7 @@
 | `ARCHITECTURE-METHODOLOGY` | 架构方法论 |
 | `BENCHMARK` | 性能基准 |
 | `GAP-ANALYSIS` | 差距分析 |
+| `COMPARISON` | 横向对比与基线补齐 (含资源占用数据) |
 
 `PROJECT-REVIEW` 沿用项目既有规则 `PROJECT-REVIEW-YYMMDD-HHMMSS`, 不变。日期相同时
 按时间后缀排序即可, 不需要标签。
@@ -48,6 +49,16 @@
 | 方法论 | `ARCHITECTURE-METHODOLOGY-260626.md` | - |
 | 性能基准 | `BENCHMARK-260614-102513.md` | - |
 | 差距分析 | `GAP-ANALYSIS-260614.md` | - |
+| 横向对比 | `COMPARISON-261017-SMARTBOOT.md` (smart-socket 对比 + 资源基线) | - |
+
+### 2.1 资源占用数据的归属
+
+`COMPARISON-261017-SMARTBOOT.md` 补齐了 `BENCHMARK-260614-102513.md` 缺失的资源维度:
+每连接常驻堆 6647 B、每连接 2 goroutine、10k 连接栈内存 164.5 MB。
+
+`BENCHMARK-260614-102513.md` 第六节名为"云服务器资源使用", 但记的是主机级指标
+(MemAvailable / Load1), 不是被测程序的占用。该节数据本身有效, 只是不能读作资源基线;
+资源基线以上述横向对比报告为准。
 
 ## 3. 云端验证与主机的对应关系
 

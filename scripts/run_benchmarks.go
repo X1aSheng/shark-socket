@@ -31,6 +31,11 @@ type benchmarkGroup struct {
 	timeout   time.Duration
 	cloud     bool
 	medium    bool
+	// iterations overrides -benchtime with a count (e.g. "1x") for groups
+	// whose unit of work is a one-off measurement rather than a loop. Without
+	// it such a group inherits benchtime and the benchmark re-dials its whole
+	// connection ladder on every iteration.
+	iterations string
 }
 
 type resourceState struct {
@@ -67,8 +72,16 @@ func main() {
 			groups = out
 		}
 		for _, g := range groups {
+			// Show the value runGroup will actually pass, not benchtime alone:
+			// a group using iterations prints "1ns" here otherwise, which
+			// contradicts the "-benchtime=1x" it runs and sends whoever is
+			// diagnosing a slow benchmark to the wrong field.
+			shown := g.benchtime.String()
+			if g.iterations != "" {
+				shown = g.iterations
+			}
 			fmt.Printf("  %-30s  pattern=%-50s  benchtime=%-10s  cloud=%v  medium=%v\n",
-				g.name, g.pattern, g.benchtime, g.cloud, g.medium)
+				g.name, g.pattern, shown, g.cloud, g.medium)
 		}
 		return
 	}
@@ -245,6 +258,37 @@ func allBenchmarkGroups() []benchmarkGroup {
 			cloud:     false,
 			medium:    true,
 		},
+		// --- Resource footprint benchmarks ---
+		//
+		// Registered ahead of the network groups so a smoke run reports the
+		// per-connection residency budget alongside the first latency figures:
+		// the two answer the same question from opposite ends, and a run that
+		// shows only one of them invites the wrong conclusion about the other.
+		//
+		// The idle-footprint group is cloud-eligible because its figures are the
+		// ones worth comparing against a production-shaped host.
+		{
+			name:      "resource-idle-footprint",
+			pattern:   "BenchmarkTCPIdleConnectionFootprint",
+			packages:  []string{"./tests/benchmark"},
+			benchtime: time.Nanosecond,
+			// The connection ladder is the unit of work: each rung opens its
+			// connections, measures, and reports. b.N=1 per rung; letting the
+			// benchmark loop would re-dial the whole ladder every iteration.
+			iterations: "1x",
+			timeout:    900 * time.Second,
+			cloud:      true,
+			medium:     true,
+		},
+		{
+			name:      "resource-allocation",
+			pattern:   "BenchmarkReadLoopFrameAllocation|BenchmarkSendCopy|BenchmarkFrameSplitAcrossSegments",
+			packages:  []string{"./tests/benchmark"},
+			benchtime: 300 * time.Millisecond,
+			timeout:   300 * time.Second,
+			cloud:     true,
+			medium:    true,
+		},
 	}
 
 }
@@ -284,12 +328,16 @@ func selectGroups(profile, stage, benchFilter string) []benchmarkGroup {
 
 func runGroup(root, logs, ts string, group benchmarkGroup) error {
 	logFile := filepath.Join(logs, ts+"_bench_"+group.name+".log")
+	benchArg := "-benchtime=" + group.benchtime.String()
+	if group.iterations != "" {
+		benchArg = "-benchtime=" + group.iterations
+	}
 	args := []string{
 		"test",
 		"-run=^$",
 		"-bench=" + group.pattern,
 		"-benchmem",
-		"-benchtime=" + group.benchtime.String(),
+		benchArg,
 		"-count=1",
 		"-timeout=" + group.timeout.String(),
 	}

@@ -182,6 +182,28 @@ concern from the shipped artifact.
 - Plugin-chain overhead: 4 real plugins add only ~1.7% latency (<5%)
 - Connection churn: 50-way concurrency, 859k connect/disconnect cycles in 10s, 0 errors
 
+**Resource footprint per idle TCP connection**
+
+Measured on two Aliyun Linux hosts (2 vCPU / 3622 MB each, Xeon 6982P-C,
+Ubuntu 26.04.1, go1.26.9), `ReadTimeout=0`, 6 independent runs with < 0.3% spread.
+`HeapInuse` excludes kernel socket buffers, so process RSS is the number to size
+deployments against; both are given.
+
+- Resident heap: **6,219 B/connection** at 10k connections (linear: 6,266 B at 1k)
+- Goroutines: **2 per connection** (`readLoop` + `writeLoop`), 20,008 at 10k
+- Goroutine stacks: **40.3 MB at 10k** (2,112 B per goroutine), i.e. **0.66x the heap**
+- Process RSS: **~87 MB at 10k** (peak during connect is 175-184 MB; read RSS at steady state)
+- Frame decode: 2 allocs/frame (payload + a 4-byte header that escapes to the heap)
+- Guard: a benchmark fails if resident heap exceeds 64 KiB per connection
+
+At this footprint, 100k connections need ~1.03 GB and 1M connections ~10.3 GB,
+of which the heap is 60%. Stack size is platform-dependent and this figure is
+Linux-only: Windows reserves 8 KB per goroutine against Linux's 2 KB, a 3.89x
+difference, so stack figures collected on Windows do not transfer.
+
+Full data, method and comparison against smart-socket:
+[`docs/reports/COMPARISON-261017-SMARTBOOT.md`](docs/reports/COMPARISON-261017-SMARTBOOT.md).
+
 ## Run
 
 ```bash

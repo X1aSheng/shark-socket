@@ -130,6 +130,26 @@ CGO_ENABLED=0 go build -o shark-socket ./cmd/shark-socket
 - 插件链开销:4 个真实插件仅增加 ~1.7% 延迟(<5%)
 - 连接抖动:50 路并发,10s 内 85.9 万次连接/断开循环零错误
 
+**每空闲 TCP 连接的资源占用**
+
+实测于两台阿里云 Linux 主机(各 2 vCPU / 3622 MB,Xeon 6982P-C,Ubuntu 26.04.1,
+go1.26.9),`ReadTimeout=0`,6 轮独立运行离散度< 0.3%。堆常驻量为连接阶梯前后的
+`HeapInuse` 差值,不含内核态socket 缓冲,因此容量规划应看进程 RSS,两者均列出。
+
+- 常驻堆:10k 连接时 **6219 B/连接**(线性:1k 时 6266 B)
+- goroutine: **每连接 2 个**(`readLoop` + `writeLoop`),10k 时共 20008 个
+- goroutine 栈:10k 连接时 **40.3 MB**(每 goroutine 2112 B),即**堆的 0.66 倍**
+- 进程 RSS:10k 连接时 **约 87 MB**(建连期峰值 175-184 MB,应在稳态下读 RSS)
+- 帧解码:每帧 2 次分配(payload 1 次,外加 1 个逃逸到堆的 4 字节 header)
+- 守卫:常驻堆超过 64 KiB/连接 时基准判定失败
+
+按此占用,10 万连接约需 1.03 GB,百万连接约 10.3 GB,其中堆占 60%。栈大小与平台
+相关,以上仅为 Linux 数值:Windows 上每个 goroutine 预留 8 KB 而 Linux 为 2 KB,
+相差 3.89 倍,因此在 Windows 上采集的栈数据不可用于 Linux 部署。
+
+完整数据、方法与针对 smart-socket 的对比见
+[`docs/reports/COMPARISON-261017-SMARTBOOT.md`](docs/reports/COMPARISON-261017-SMARTBOOT.md)。
+
 ## 运行
 
 ```bash
