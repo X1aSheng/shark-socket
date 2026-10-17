@@ -30,6 +30,7 @@
 | `BENCHMARK` | 性能基准 |
 | `GAP-ANALYSIS` | 差距分析 |
 | `COMPARISON` | 横向对比与基线补齐 (含资源占用数据) |
+| `STRESS-LADDER` | 压测与承载能力测定 |
 
 `PROJECT-REVIEW` 沿用项目既有规则 `PROJECT-REVIEW-YYMMDD-HHMMSS`, 不变。日期相同时
 按时间后缀排序即可, 不需要标签。
@@ -50,6 +51,7 @@
 | 性能基准 | `BENCHMARK-260614-102513.md` | - |
 | 差距分析 | `GAP-ANALYSIS-260614.md` | - |
 | 横向对比 | `COMPARISON-261017-SMARTBOOT.md` (smart-socket 对比 + 资源基线) | - |
+| 压测 | `STRESS-LADDER-261017.md` (供给阶梯 + 承载能力) | - |
 
 ### 2.1 资源占用数据的归属
 
