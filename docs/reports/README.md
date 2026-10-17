@@ -33,6 +33,7 @@
 | `STRESS-LADDER` | 压测与承载能力测定 |
 | `PROTOCOL-TEST` | 协议标准规范与使用测试 (规范符合性 + 功能 + 压测) |
 | `PROTOCOL-CAPACITY` | 跨主机多协议承载能力对比 |
+| `TCP-SATURATION` | 承载拐点测定与瓶颈定性 |
 
 **压测系列的阅读顺序**: `STRESS-LADDER` (公网) 先修掉 `rateclient` 的 OOM 缺陷
 并建立阶梯方法, 但其 80k 档崩塌含带宽因素, 结论标注为待定;
@@ -61,6 +62,7 @@
 | 压测 | `STRESS-INTRANET-261017.md` (内网重测 + 弹性池对比) | `STRESS-LADDER-261017.md` (公网压测) |
 | 协议测试 | `PROTOCOL-TEST-261017.md` (规范符合性 + 压测, 7 协议) | - |
 | 协议承载 | `PROTOCOL-CAPACITY-261017.md` (跨主机多协议承载对比) | - |
+| 饱和点 | `TCP-SATURATION-261017.md` (TCP 满负荷值) | - |
 
 ### 2.1 资源占用数据的归属
 
