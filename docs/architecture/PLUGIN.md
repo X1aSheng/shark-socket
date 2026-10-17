@@ -193,7 +193,7 @@ data = originalPayload
 
 > **说明:** 第 4 至 11 节的插件实现是**设计示意片段**,用于说明插件如何组织;
 > 实际落地的内置插件只使用两个控制信号 `core.ErrPluginDrop` / `core.ErrPluginBlock`,
-> 且不自行写指标(指标录制点见 `docs/guides/Architecture.md` 9.1 节).
+> 且不自行写指标(指标录制点见 `docs/architecture/OBSERVABILITY.md` 3.3 节).
 > 片段中的缓存/存储调用已按 `internal/infra` 的真实接口(`Cache.Get` 返回 `(val, ok)`,
 > `Store.Load` 返回 `(val, found, err)`)校正.
 
@@ -1503,5 +1503,5 @@ ObserveHistogram(name string, value float64, labels ...string)
 `labels` 以 key/value 交替传入.本文档中的指标名是**示意名**,用于说明接入方式的形状;
 框架自身实际录制的指标只有 5 个(`sessions_accepted_total` / `sessions_closed_total` /
 `sessions_active` / `sessions_reclaimed_total` / `tcp_task_queue_full_total`),
-清单见 `docs/guides/Architecture.md` 9.1 节.实现参考
+清单见 `docs/architecture/OBSERVABILITY.md` 3.3 节.实现参考
 `internal/infra/observability/prometheus.go`.

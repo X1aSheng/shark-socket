@@ -26,5 +26,5 @@
 
 ## 关联文档
 
-- [CONTRACTS.md](../CONTRACTS.md)
-- [PERFORMANCE.md (规划中)](../PERFORMANCE.md)
+- [CONTRACTS.md](../architecture/CONTRACTS.md)
+- [BENCHMARK-260614-102513.md](../reports/BENCHMARK-260614-102513.md) (性能基准; 原规划的 PERFORMANCE.md 未落地)

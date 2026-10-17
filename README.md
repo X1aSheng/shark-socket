@@ -285,6 +285,7 @@ Raw JSON and readable reports are written to `logs/`.
 
 ## Documentation
 
+- [Documentation Index](docs/README.md)
 - [Architecture](docs/architecture/ARCHITECTURE.md)
 - [Contracts & Interfaces](docs/architecture/CONTRACTS.md)
 - [Gateway & Runtime](docs/architecture/GATEWAY.md)
@@ -300,6 +301,6 @@ Raw JSON and readable reports are written to `logs/`.
 - [Project Review (V9)](docs/reports/PROJECT-REVIEW-261015-172344.md)
 - [Latest Deployment Validation](docs/reports/DEPLOYMENT-VALIDATION-261016-011918.md)
 - [Latest Cloud Validation](docs/reports/CLOUD-VALIDATION-261016-SRV23.md)
-- [Latest Network Validation (direct)](docs/reports/NETWORK-VALIDATION-DIRECT-261016-092259.md)
+- [Latest Network Validation (direct)](docs/reports/NETWORK-VALIDATION-261016-092259-DIRECT.md)
 - [Report Index](docs/reports/README.md)
 - [Changelog](CHANGELOG.md)

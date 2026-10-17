@@ -360,5 +360,5 @@ ObserveHistogram(name string, value float64, labels ...string)
 `labels` 以 key/value 交替传入.本文档中的指标名是**示意名**,用于说明接入方式的形状;
 框架自身实际录制的指标只有 5 个(`sessions_accepted_total` / `sessions_closed_total` /
 `sessions_active` / `sessions_reclaimed_total` / `tcp_task_queue_full_total`),
-清单见 `docs/guides/Architecture.md` 9.1 节.实现参考
+清单见 `docs/architecture/OBSERVABILITY.md` 3.3 节.实现参考
 `internal/infra/observability/prometheus.go`.

@@ -37,6 +37,6 @@ Shark-Socket 需要与 MQTT Broker 互通以接入 IoT 设备和管理系统.ADR
 
 ## 关联文档
 
-- [MQTT-INTEGRATION.md](../../MQTT-INTEGRATION.md)
+- [MQTT-INTEGRATION.md](../guides/MQTT-INTEGRATION.md)
 - [ADR-008-mqtt-external-broker.md](ADR-008-mqtt-external-broker.md)
 - [ADR-009-protocol-integration-boundary.md](ADR-009-protocol-integration-boundary.md)

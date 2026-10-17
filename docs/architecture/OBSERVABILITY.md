@@ -194,7 +194,7 @@ handler_duration_seconds_sum 12.345
 
 框架自身目前只写入 5 个指标(`sessions_accepted_total` / `sessions_closed_total` /
 `sessions_active` / `sessions_reclaimed_total` / `tcp_task_queue_full_total`),完整清单见
-`docs/guides/Architecture.md` 9.1 节.
+`docs/architecture/OBSERVABILITY.md` 3.3 节.
 
 ### 5.2 HTTP 端点
 

@@ -26,5 +26,5 @@ Gateway 需要统一管理不同协议的会话.若核心 Session 引入泛型,�
 
 ## 关联文档
 
-- [CONTRACTS.md](../CONTRACTS.md)
+- [CONTRACTS.md](../architecture/CONTRACTS.md)
 - [ADR-005-codec-adaptation-layer.md](ADR-005-codec-adaptation-layer.md)

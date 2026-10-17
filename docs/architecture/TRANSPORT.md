@@ -3608,7 +3608,7 @@ MaxMessageSize 通过 conn.SetReadLimit 在协议层强制:
 | 消息边界 | Framer 处理 | 数据报天然边界 | 数据报天然边界 | 协议内置帧 |
 | 可靠性 | OS 保证 | 无保证 | CON 类型可靠 | OS 保证 |
 | 顺序性 | 有序 | 无序 | 无序(NON)/ 有序(CON+Token) |有序 |
-| 双向通信 | [OK] | [OK](应用层实现) | [OK](有限) | [OK](全双工) |
+| 双向通信 | [OK] | OK (应用层实现) | OK (有限) | OK (全双工) |
 | 心跳机制 | 应用层(HeartbeatPlugin) | TTL 扫描(sweepLoop) | TTL 扫描 | 协议内置 Ping/Pong |
 | 标准端口 | 自定义(18000) | 自定义(18001) | 5683 | 自定义(18700) |
 
@@ -3616,13 +3616,13 @@ MaxMessageSize 通过 conn.SetReadLimit 在协议层强制:
 
 | 特性 | TCP | UDP | CoAP | WebSocket |
 |------|-----|-----|------|-----------|
-| 写队列 | [OK](有界 channel) | [X](直接写) | [X](直接写) | [X](mutex 同步写) |
-| Drain 关闭 | [OK](六步状态机) | [X](立即关闭) | [X](立即关闭) | [X](Close 帧协商) |
-| WorkerPool | [OK] | [X](同步 Handler) | [X](同步 Handler) | [X](handleSession goroutine) |
-| Framer | [OK](4 种) | [X](数据报边界) | [X](数据报边界) | [X](gorilla 内置) |
+| 写队列 | OK (有界 channel) | X (直接写) | X (直接写) | X (mutex 同步写) |
+| Drain 关闭 | OK (六步状态机) | X (立即关闭) | X (立即关闭) | X (Close 帧协商) |
+| WorkerPool | [OK] | X (同步 Handler) | X (同步 Handler) | X (handleSession goroutine) |
+| Framer | OK (4 种) | X (数据报边界) | X (数据报边界) | X (gorilla 内置) |
 | 伪会话 | [X] | [OK] | [OK] | [X] |
 | StagedServer | [OK] | [X] | [X] | [OK] |
-| retransmitLoop | [X] | [X] | [OK](CON 重传) | [X] |
+| retransmitLoop | [X] | [X] | OK (CON 重传) | [X] |
 | MessageID 去重 | [X] | [X] | [OK] | [X] |
 | Origin 检查 | [X] | [X] | [X] | [OK] |
 
@@ -3768,7 +3768,7 @@ CloseAll 阶段(串行,在所有协议阶段完成后执行):
 | `id` | [OK] | [OK] | [OK] | [OK] |
 | `remoteAddr` | `net.Addr` | `*net.UDPAddr` | `*net.UDPAddr` | `net.Addr` |
 | `conn` | `net.Conn` | `*net.UDPConn`(共享) | `*net.UDPConn`(共享) | `*websocket.Conn` |
-| `writeQueue` | [OK](`chan []byte`) | [X] | [X] | [X] |
+| `writeQueue` | OK (`chan []byte`) | [X] | [X] | [X] |
 | `writeMu` | [X] | [OK] | [OK] | [OK] |
 | `draining/drained` | [OK] | [X] | [X] | [X] |
 | `messageCache` | [X] | [X] | [OK] | [X] |
@@ -3791,8 +3791,8 @@ CloseAll 阶段(串行,在所有协议阶段完成后执行):
 | 行为 | TCP | UDP | CoAP | WebSocket |
 |------|-----|-----|------|-----------|
 | 状态转换 | Active->Draining->Closed | Active->Closed | Active->Closed | Connecting/Active->Closed |
-| Drain | [OK](等待写队列排空) | [X] | [X] | [X] |
-| 发送关闭信号 | 无(连接直接关闭) | 无 | 无 | [OK](Close 帧) |
+| Drain | OK (等待写队列排空) | [X] | [X] | [X] |
+| 发送关闭信号 | 无(连接直接关闭) | 无 | 无 | OK (Close 帧) |
 | 关闭共享资源 | 关闭独占 conn | 不关闭共享 UDPConn | 不关闭共享 UDPConn | 关闭独占 wsConn |
 | 幂等保证 | `sync.Once` | `sync.Once` | `sync.Once` | `sync.Once` |
 
@@ -4196,7 +4196,7 @@ ObserveHistogram(name string, value float64, labels ...string)
 `labels` 以 key/value 交替传入.本文档中的指标名是**示意名**,用于说明接入方式的形状;
 框架自身实际录制的指标只有 5 个(`sessions_accepted_total` / `sessions_closed_total` /
 `sessions_active` / `sessions_reclaimed_total` / `tcp_task_queue_full_total`),
-清单见 `docs/guides/Architecture.md` 9.1 节.实现参考
+清单见 `docs/architecture/OBSERVABILITY.md` 3.3 节.实现参考
 `internal/infra/observability/prometheus.go`.
 
 ---

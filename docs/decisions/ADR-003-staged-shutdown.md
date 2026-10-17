@@ -27,5 +27,5 @@
 
 ## 关联文档
 
-- [GATEWAY.md](../GATEWAY.md)
-- [TRANSPORT.md](../TRANSPORT.md)
+- [GATEWAY.md](../architecture/GATEWAY.md)
+- [TRANSPORT.md](../architecture/TRANSPORT.md)

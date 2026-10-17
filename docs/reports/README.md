@@ -14,8 +14,8 @@
 ```
 
 **日期在前、标签在后。** 日期在前使目录按时间自然成序; 标签在末尾, 用于区分同一天的
-多轮。既有文件名中把标签放在日期之前 (如 `NETWORK-VALIDATION-DIRECT-261016-092259`)
-是历史遗留, 见第 6 节。
+多轮。标签放在日期之前的历史文件名已改回 (`NETWORK-VALIDATION-261016-092259-DIRECT.md`)。
+非报告文档的命名规则见 [`docs/README.md`](../README.md) 第 2 节。
 
 类别清单:
 
@@ -30,8 +30,8 @@
 | `BENCHMARK` | 性能基准 |
 | `GAP-ANALYSIS` | 差距分析 |
 
-`PROJECT-REVIEW` 沿用项目既有规则 `PROJECT-REVIEW-YYMMDD-HHMMSS`, 不变 (该规则见
-`docs/guides/Architecture.md`)。日期相同时按时间后缀排序即可, 不需要标签。
+`PROJECT-REVIEW` 沿用项目既有规则 `PROJECT-REVIEW-YYMMDD-HHMMSS`, 不变。日期相同时
+按时间后缀排序即可, 不需要标签。
 
 ## 2. 当前与历史
 
@@ -43,7 +43,7 @@
 | 项目审查 | `PROJECT-REVIEW-261016-163106.md` (V10) | V9 `261015-172344` / V8 `260809-091049` / V7 `260808-220224` / V6 `260806-230955` / V5 `260806-034632` / V4 `260626-163000` / V3 `260626-V3` / V2 `260626-230000` / `260615-211500` / `260614-102231` (综合) |
 | 云端验证 | `CLOUD-VALIDATION-261016-SRV23.md` | `CLOUD-VALIDATION-261016-V10.md`, `CLOUD-VALIDATION-261016-L2.md` |
 | 部署验证 | `DEPLOYMENT-VALIDATION-261016-011918.md` | `260809-085443`, `260807-010639`, `260806-044737`, `260626-173000`, `260626-093000`, `260614-085103` |
-| 网络验证 | `NETWORK-VALIDATION-DIRECT-261016-092259.md` (直连) | `NETWORK-VALIDATION-261016-014530.md` (SSH 隧道) |
+| 网络验证 | `NETWORK-VALIDATION-261016-092259-DIRECT.md` (直连) | `NETWORK-VALIDATION-261016-014530.md` (SSH 隧道) |
 | 架构分析 | `ARCHITECTURE-ANALYSIS-260626.md` | - |
 | 方法论 | `ARCHITECTURE-METHODOLOGY-260626.md` | - |
 | 性能基准 | `BENCHMARK-260614-102513.md` | - |
@@ -86,7 +86,9 @@ meta-info 可照 `CLOUD-VALIDATION-261016-SRV23.md` 的写法。
 
 ## 6. 待统一项
 
-- `NETWORK-VALIDATION-DIRECT-261016-092259.md`: 标签 `DIRECT` 在日期之前, 与本目录
-  规则不符。下次动到该文件时一并改为 `NETWORK-VALIDATION-261016-092259-DIRECT.md`。
 - 部分报告 meta-info 内有 `报告编号:` 行, 部分没有。编号与文件名重复, 意义不大,
   新报告可不写。
+- 早期报告正文里出现过 `docs/guides/Architecture.md` 与
+  `docs/architecture/ARCHITECTURE-FILE-STRUCT.md` 这两个路径。前者已移入
+  `docs/archive/`, 后者已改写为 `docs/README.md`; 两处原路径都留了跳转说明,
+  历史报告的记载保持原样不做回填。

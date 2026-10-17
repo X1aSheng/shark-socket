@@ -27,5 +27,5 @@ PluginRunner 是插件执行的唯一入口.协议不得绕过 PluginRunner 直�
 
 ## 关联文档
 
-- [PLUGIN.md](../PLUGIN.md)
-- [GATEWAY.md](../GATEWAY.md)
+- [PLUGIN.md](../architecture/PLUGIN.md)
+- [GATEWAY.md](../architecture/GATEWAY.md)

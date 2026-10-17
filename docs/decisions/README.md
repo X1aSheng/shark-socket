@@ -26,16 +26,19 @@
 
 | 编号 | 标题 | 状态 | 摘要 |
 | --- | --- | --- | --- |
-| ADR-001 | 核心 Session 保持原始字节 | 已采纳 | `Session.Send` 只接收 `[]byte` |
-| ADR-002 | Gateway 拥有共享 Runtime | 已采纳 | Gateway 创建或接收 Runtime 并注入协议 |
-| ADR-003 | 分阶段优雅关闭 | 已采纳 | StopAccept,Drain,CloseSessions,CloseAll |
-| ADR-004 | 插件 panic 隔离 | 已采纳 | PluginRunner 统一 recover |
-| ADR-005 | Codec 适配层 | 已采纳 | 类型化消息通过 Codec 和 AdaptTyped 实现 |
-| ADR-006 | benchmark 驱动优化 | 已采纳 | BufferPool,分片锁,时间轮由证据驱动 |
-| ADR-007 | 构建代理可配置 | 已采纳 | Docker 构建通过 `GOPROXY` build arg 配置 |
-| ADR-008 | MQTT 外部 Broker | 已采纳 | MQTT 由 shark-MQTT 独立提供 |
-| ADR-009 | 协议整合边界 | 已采纳 | 统一业务运行时,不替代通用代理 |
-| ADR-011 | MQTT 外部适配器 | 已采纳 | 通过 paho 客户端连接外部 MQTT Broker |
+| [ADR-001](ADR-001-session-raw-bytes.md) | 核心 Session 保持原始字节 | 已采纳 | `Session.Send` 只接收 `[]byte` |
+| [ADR-002](ADR-002-gateway-owns-runtime.md) | Gateway 拥有共享 Runtime | 已采纳 | Gateway 创建或接收 Runtime 并注入协议 |
+| [ADR-003](ADR-003-staged-shutdown.md) | 分阶段优雅关闭 | 已采纳 | StopAccept,Drain,CloseSessions,CloseAll |
+| [ADR-004](ADR-004-plugin-panic-isolation.md) | 插件 panic 隔离 | 已采纳 | PluginRunner 统一 recover |
+| [ADR-005](ADR-005-codec-adaptation-layer.md) | Codec 适配层 | 已采纳 | 类型化消息通过 Codec 和 AdaptTyped 实现 |
+| [ADR-006](ADR-006-benchmark-driven-optimization.md) | benchmark 驱动优化 | 已采纳 | BufferPool,分片锁,时间轮由证据驱动 |
+| [ADR-007](ADR-007-build-proxy-configurable.md) | 构建代理可配置 | 已采纳 | Docker 构建通过 `GOPROXY` build arg 配置 |
+| [ADR-008](ADR-008-mqtt-external-broker.md) | MQTT 外部 Broker | 已采纳 | MQTT 由 shark-MQTT 独立提供 |
+| [ADR-009](ADR-009-protocol-integration-boundary.md) | 协议整合边界 | 已采纳 | 统一业务运行时,不替代通用代理 |
+| [ADR-011](ADR-011-mqtt-adapter.md) | MQTT 外部适配器 | 已采纳 | 通过 paho 客户端连接外部 MQTT Broker |
+
+编号从 001 直接到 011, 缺 010。仓库中从未存在 `ADR-010` 文件 (查过全部提交历史),
+V9 审查 H12 曾记录某处引用了这个不存在的编号, 现已无残留引用。新 ADR 顺延 012 起编。
 
 ---
 

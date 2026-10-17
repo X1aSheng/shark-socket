@@ -232,6 +232,7 @@ docker compose -f deploy/docker/docker-compose.yml up -d --build
 
 ## 文档
 
+- [文档索引](docs/README.md)
 - [架构](docs/architecture/ARCHITECTURE.md)
 - [契约与接口](docs/architecture/CONTRACTS.md)
 - [网关与运行时](docs/architecture/GATEWAY.md)
@@ -247,6 +248,6 @@ docker compose -f deploy/docker/docker-compose.yml up -d --build
 - [项目审查 (V9)](docs/reports/PROJECT-REVIEW-261015-172344.md)
 - [最新部署验证](docs/reports/DEPLOYMENT-VALIDATION-261016-011918.md)
 - [最新云端验证](docs/reports/CLOUD-VALIDATION-261016-SRV23.md)
-- [最新网络验证 (直连)](docs/reports/NETWORK-VALIDATION-DIRECT-261016-092259.md)
+- [最新网络验证 (直连)](docs/reports/NETWORK-VALIDATION-261016-092259-DIRECT.md)
 - [报告索引](docs/reports/README.md)
 - [更新日志](CHANGELOG.md)

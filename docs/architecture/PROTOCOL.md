@@ -40,10 +40,10 @@ internal/protocol/lwm2m/     <- 应用协议层(本文档)
 
 | 边界 | CoAP transport 负责 | LwM2M protocol 负责 |
 |------|-------------------|-------------------|
-| 帧解析 | [OK](Parse / Marshal) | [X] |
-| CON/ACK 可靠性 | [OK](retransmitLoop) | [X] |
-| MessageID 去重 | [OK](messageCache) | [X] |
-| Uri-Path 解析 | 提供辅助函数 | [OK](解释语义) |
+| 帧解析 | OK (Parse / Marshal) | [X] |
+| CON/ACK 可靠性 | OK (retransmitLoop) | [X] |
+| MessageID 去重 | OK (messageCache) | [X] |
+| Uri-Path 解析 | 提供辅助函数 | OK (解释语义) |
 | 注册生命周期 | [X] | [OK] |
 | 资源模型 | [X] | [OK] |
 | 设备管理命令 | [X] | [OK] |

@@ -27,5 +27,5 @@ Gateway 创建或接收 Runtime,并通过 `UseRuntime` 注入协议服务.
 
 ## 关联文档
 
-- [GATEWAY.md](../GATEWAY.md)
-- [LAYERING.md (规划中)](../LAYERING.md)
+- [GATEWAY.md](../architecture/GATEWAY.md)
+- [ARCHITECTURE.md](../architecture/ARCHITECTURE.md) (分层与依赖矩阵; 原规划的 LAYERING.md 未落地)

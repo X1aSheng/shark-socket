@@ -7,6 +7,30 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### Documentation Reorganization (2026-10-17)
+
+全仓 67 份说明文档做了一次结构整理.新增 [`docs/README.md`](docs/README.md) 作为文档
+总入口,规定各目录职责与两套命名规则;新增 `docs/architecture/README.md` 给此前互不
+引用、无索引的 12 份专题文档建导航.详见这两份索引.
+
+**归档与归位**(原路径均留跳转 stub,历史引用不断链):
+
+- `docs/guides/Architecture.md` -> `docs/archive/Architecture.md`:与 `docs/architecture/`
+  下的分专题文档重复(V9 审查 H15 / L9)
+- `docs/design/REARCHITECTURE-261016.md`(v1)-> 归档,已由 `-v2.md` 取代
+- `docs/design/WORKER-ELASTICITY-261016.md` -> 归档,内容已并入 v2 第 11 节
+- `docs/architecture/OUTPUT-PLAN.md` -> 归档,输出计划已执行完毕
+- `docs/architecture/ARCHITECTURE-FILE-STRUCT.md` -> 改写为 `docs/README.md`
+
+**命名**:`NETWORK-VALIDATION-DIRECT-261016-092259.md` ->
+`NETWORK-VALIDATION-261016-092259-DIRECT.md`,标签回到日期之后.
+
+**链接**:修复 18 处真断链(11 个 ADR 仍指向迁移前的 `../CONTRACTS.md` 一类旧路径,
+其中 3 处指向从未落地的 `LAYERING.md` / `PERFORMANCE.md` / `TESTING.md`),并把
+`PROTOCOL.md` / `TRANSPORT.md` 表格里 26 处会被渲染成超链接的 OK / X 标注改回纯文本
+(本意是"OK,由 retransmitLoop 实现"这类补充说明,不是链接).复检后断链 0,
+字符违规 0,无孤儿文档.
+
 ### V10 Review - Multi-Host Validation Batch (2026-10-16)
 
 在两台 8C/16G 云主机(srv2 / srv3, Ubuntu 26.04)上复验 V10 批次.同一 commit

@@ -27,5 +27,5 @@ P0 允许使用更简单实现.P2 根据实测引入六级 BufferPool,分片 Ses
 
 ## 关联文档
 
-- [PERFORMANCE.md (规划中)](../PERFORMANCE.md)
-- [TESTING.md (规划中)](../TESTING.md)
+- [BENCHMARK-260614-102513.md](../reports/BENCHMARK-260614-102513.md) (性能基准; 原规划的 PERFORMANCE.md 未落地)
+- [TEST-STRATEGY-20260529.md](../guides/TEST-STRATEGY-20260529.md) (原规划的 TESTING.md 未落地)

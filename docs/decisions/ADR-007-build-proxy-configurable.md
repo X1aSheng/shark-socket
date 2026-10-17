@@ -26,5 +26,5 @@ Dockerfile 暴露 `GOPROXY` build arg,docker-compose 可以提供默认代理值
 
 ## 关联文档
 
-- [DEPLOYMENT.md](../DEPLOYMENT.md)
-- [CONFIGURATION.md (见 guides/CONFIGURATION-20260530.md)](../CONFIGURATION.md)
+- [DEPLOYMENT.md](../architecture/DEPLOYMENT.md)
+- [CONFIGURATION-20260530.md](../guides/CONFIGURATION-20260530.md)
