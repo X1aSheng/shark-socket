@@ -32,6 +32,11 @@
 | `COMPARISON` | 横向对比与基线补齐 (含资源占用数据) |
 | `STRESS-LADDER` | 压测与承载能力测定 |
 
+**压测系列的阅读顺序**: `STRESS-LADDER` (公网) 先修掉 `rateclient` 的 OOM 缺陷
+并建立阶梯方法, 但其 80k 档崩塌含带宽因素, 结论标注为待定;
+`STRESS-INTRANET` (内网) 消除带宽变量后确认该崩塌是链路所致, 并补上池配置
+对照。内网结论可独立引用, 公网报告的历史价值在于方法与缺陷修复记录。
+
 `PROJECT-REVIEW` 沿用项目既有规则 `PROJECT-REVIEW-YYMMDD-HHMMSS`, 不变。日期相同时
 按时间后缀排序即可, 不需要标签。
 
@@ -51,7 +56,7 @@
 | 性能基准 | `BENCHMARK-260614-102513.md` | - |
 | 差距分析 | `GAP-ANALYSIS-260614.md` | - |
 | 横向对比 | `COMPARISON-261017-SMARTBOOT.md` (smart-socket 对比 + 资源基线) | - |
-| 压测 | `STRESS-LADDER-261017.md` (供给阶梯 + 承载能力) | - |
+| 压测 | `STRESS-INTRANET-261017.md` (内网重测 + 弹性池对比) | `STRESS-LADDER-261017.md` (公网压测) |
 
 ### 2.1 资源占用数据的归属
 

@@ -61,6 +61,9 @@ var (
 	flagElasticMax = flag.Int("elastic-max", 8, "elastic pool ceiling")
 	flagScaleUp    = flag.Float64("scale-up", 0, "queue occupancy that adds a worker (0 = package default)")
 	flagScaleDown  = flag.Float64("scale-down", 0, "queue occupancy below which a worker may retire (0 = package default)")
+
+	flagStatsInterval = flag.Duration("stats-interval", time.Second,
+		"how often to print the STATS resource line")
 )
 
 func main() {
@@ -141,7 +144,15 @@ func main() {
 	// a saturated server from a saturated client.
 	stop := make(chan struct{})
 	go func() {
-		t := time.NewTicker(10 * time.Second)
+		// The interval is a flag because the load tests this server was built
+		// for run for 10 seconds per rung. At a fixed 10s ticker a whole rung
+		// could complete without the pool ever reporting, which is exactly the
+		// figure the fixed-versus-elastic comparison turns on.
+		iv := *flagStatsInterval
+		if iv <= 0 {
+			iv = time.Second
+		}
+		t := time.NewTicker(iv)
 		defer t.Stop()
 		for {
 			select {
