@@ -7,6 +7,30 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### 写批处理: 补上"真实负载下确实会合批"的端到端证明 (2026-10-18)
+
+报告 B2 的挂账是"端到端收益未证明". 复核时先发现更基本的问题: **原来的验证证明不了
+批处理会触发**. `TestWriteLoopBatchesQueuedFrames` 在 `writeLoop` 启动前就把三帧排进
+队列, 于是"合批"是构造出来的; 真实负载下 `writeLoop` 可能在第二帧入队前就已经 flush,
+开关等于没开 -- 而 ADR-013 自己的重新评估条件正是"若没有收益就删掉开关".
+
+**新用例 `TestWriteBatchingEngagesUnderRealIO` 用真实链路回答这个问题**: 真实客户端经
+真实 socket 连发 64 帧, handler 收齐后一口气回发, 再用注入的 `Framer` 数"每次进入时
+`bufio.Writer.Buffered()` 是否为 0"(= 批次边界). 结果 **64 帧 -> 1 批**; 无缓冲的对照
+臂拿到的是裸 conn, 每帧各自一条写路径, 因此这个用例同时是"批处理停止生效"的回归守卫.
+
+**顺带修正一个验收口径**: B2 原写"写 syscall 从 2/帧 降到 1/帧", 那是非 unix 形态.
+unix 上 `framedWrite` 已经用 writev 把长度头与载荷合成**一次**系统调用, 所以真实口径是
+**1 次/帧 -> 1 次/批**. 这也解释了此前 Windows 上的"无可分辨差异": 在两条都是逐帧的
+路径之间比较, 批处理的收益根本不在比较范围内.
+
+**墙钟数字仍未取得**(本机无 Docker, WSL 被安全策略拦截, 云主机口令已不在环境变量).
+缺的那个数字现在是一条命令: `bash scripts/probe-write-batching.sh` -- 在 Linux 上用
+`strace` 统计 `write`/`writev` 调用数(先 `go test -c` 再 trace 测试二进制, 避免把
+编译器的写操作算进来), 两侧各给 3 轮 ns/op, 并写明预期形状: writev/帧 2.0 -> 1.0,
+write/帧 -> 约 1/16. 若它显示批处理在真实负载下不触发, 按 ADR-013 应删掉
+`WriteBufferBytes`.
+
 ### Tracer: 明确定位为嵌入方扩展点, 并停止宣称"关键路径有 trace" (2026-10-18)
 
 对比报告 D4: `core.Tracer` / `NopTracer` / OpenTelemetry 适配器 / `WithTracer` 全都在,

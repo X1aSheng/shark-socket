@@ -34,18 +34,32 @@
 
 - 开启后每连接常驻堆增加 `WriteBufferBytes` 字节, 与读缓冲同量级.
 - 写超时的粒度从帧变批: 一批的总耗时受同一个 deadline 约束, 而不是每帧各自计时.
-- 实测 (开发机 Windows, 3 帧排队): 底层 `Write` 次数 6 -> 1; 数据不丢不乱序
-  (有测试校验解码出的每一帧).
-- Windows 回环的流水线 echo (`BenchmarkTCPEchoWriteBuffer`, 16 帧突发) 两组无
-  可分辨差异 (677-936 us 对 724-855 us, 调度主导), 且 writev 在 Windows 上不生效.
-  因此本项的收益**尚未被端到端数字证明**, 需要在 Linux 云主机上用 `strace -c`
-  或阶梯压测复核后才能写进 README.
+- **机制已端到端证明** (`internal/transport/tcp/writebuf_e2e_test.go`): 之前
+  的验证是会话级 -- 帧在 `writeLoop` 启动前就排好队, 批处理"必然"生效, 证明不了
+  真实负载下队列里是否真的会有第二帧. 现在由一个真实客户端经真实 socket 连发 64 帧,
+  handler 收齐后一口气回发, 再由注入的 `Framer` 数"每次进入时缓冲是否为空"
+  (= 批次边界): **64 帧 -> 1 批**, 数据逐帧校验无丢失/截断. 同一用例的无缓冲对照臂
+  看到的是裸 conn, 每帧各自一条写路径 -- 这也说明若批处理哪天不再触发, 该用例会失败.
+- **墙钟收益仍未证明, 但缺的那个数字现在有一条命令**: Windows 回环的流水线 echo
+  (`BenchmarkTCPEchoWriteBuffer`, 16 帧突发) 两组无可分辨差异 (677-936 us 对
+  724-855 us, 调度主导), 且 writev 在 Windows 上不生效 -- 在 Windows 上比较"两次
+  write"与"一次 write"本身就无法代表生产路径. 需在 Linux 上跑
+  `bash scripts/probe-write-batching.sh`: 它 `strace` 统计 `write`/`writev` 调用数,
+  同时给两侧各 3 轮 ns/op, 并写清预期形状 (unix 上未开缓冲是 **1 writev/帧**,
+  不是 2 次 write; 开缓冲后应变成 **1 flush/批**, 即约 1/16 帧).
+- **验收口径因此要改**: 报告 B2 原本写"写 syscall 从 2/帧 降到 1/帧", 那是非 unix
+  的形态. unix 的真实口径是"1 次 syscall/帧 -> 1 次/批".
 
 ## 重新评估条件
 
 若流水线场景的云主机数据表明批处理没有收益, 应删除 `WriteBufferBytes` 而不是
 保留一个无人启用的开关; 若 writev 在 unix 上被证明有效但合并写仍无明显收益,
-也应退回两次写.
+也应退回两次写. 判定数据由 `scripts/probe-write-batching.sh` 产生; 若它在 Linux 上
+也显示批处理不触发 (writev/帧 没有从 2 降到 1, 或 write/帧 未降到约 1/16),
+应当直接删掉开关.
+
+另: 若将来把 `bufio.Writer` 换成自管的切片缓冲, "批次边界"的观测手段需要同步换 --
+现在的度量依赖 `bufio.Writer.Buffered()`.
 
 ## 关联文档
 

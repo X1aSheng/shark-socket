@@ -279,8 +279,22 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
   `net.Buffers` / `writev` 的批量收益 (需先有 syscall 数据)
 - 验收: 写 syscall 从 2/帧 降到 1/帧; `BenchmarkSendCopy` 的 B/op 不升
 - **已实施 (2026-10-18, ADR-013)**: 合并写按平台生效 (unix writev), 批处理默认
-  关闭. 会话级实测 3 帧排队时底层 `Write` 6 -> 1; 端到端收益**未证明** --
-  Windows 回环流水线 echo 两组无可分辨差异, 需 Linux 云主机复核
+  关闭. 会话级实测 3 帧排队时底层 `Write` 6 -> 1
+- **机制已端到端证明 (2026-10-18 补)**: 会话级验证的漏洞是"帧在 `writeLoop` 启动前
+  已排队, 批处理必然生效", 证明不了真实负载下队列里是否真有第二帧. 新用例
+  (`internal/transport/tcp/writebuf_e2e_test.go`) 用真实客户端 + 真实 socket 连发
+  64 帧, handler 收齐后一口气回发, 注入的 `Framer` 以"进入时缓冲是否为空"数批次边界:
+  **64 帧 -> 1 批**, 逐帧校验无丢失截断; 无缓冲对照臂看到裸 conn, 每帧各自一条写路径
+- **验收口径要修正**: 本条原写"2 syscall/帧 -> 1/帧", 那是**非 unix** 形态. unix 上
+  `framedWrite` 已经用 writev 把头和载荷合成一次, 所以真实口径是
+  **1 syscall/帧 -> 1 syscall/批**. 这也解释了 Windows 上为什么测不出差异:
+  在两个都是"逐帧"的路径上比较, 批处理的收益根本不在比较范围内
+- **墙钟收益仍未证明**(环境受限): 本机无 Docker, WSL 被策略拦截, 云主机口令已不在
+  环境变量 (`remote.py` 依赖 `SRV2_PASSWORD`). 缺的数字已收成一条命令:
+  `bash scripts/probe-write-batching.sh` -- 在 Linux 上 `strace` 统计
+  `write`/`writev` 调用数并给两侧各 3 轮 ns/op, 同时写明预期形状
+  (writev/帧 2.0 -> 1.0, write/帧 -> ~1/16). 若该脚本在 Linux 上显示批处理不触发,
+  按 ADR-013 的重新评估条件应直接删掉 `WriteBufferBytes`
 
 **B3 每帧一次分配, header 逃逸, 全仓无池**
 
@@ -674,7 +688,8 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
 进度 (2026-10-18): 批 2 的 B1 B2(部分) B3(a) B4 B5 B6 B7 已完成 (ADR-012 至
 ADR-015), 批 3 的 C1 C2 C4 C5 C7 E2 已完成 (ADR-016), 批 1 的 A1-A5 已完成
 (ADR-017), C3 (ADR-018) 与 C6 (ADR-019) 已完成, D1/D2/D3 (ADR-020) 与 D4 (ADR-021)
-已完成. 仅剩 B2 的端到端证明, 见该条目下的备注.
+已完成. B2 的机制已端到端证明, 只剩 Linux 上的墙钟数字 -- 本机无 Linux 环境,
+数据由 `scripts/probe-write-batching.sh` 一条命令产出, 见该条目下的备注.
 
 不做: B8 (已记录决策), C3 的 Block1 (见 ADR-018 重新评估条件), C6 只做可热更子集.
 
