@@ -1,0 +1,15 @@
+# Line endings.
+#
+# core.autocrlf=true is the default on Windows checkouts, and it also rewrites
+# files that `git archive` produces. A CRLF shell script unpacked on Linux fails
+# on its first line ("set: pipefail: invalid option name"), and a CRLF
+# Dockerfile or YAML entrypoint comment does the same inside a container -- so
+# these formats are pinned to LF regardless of the host that packs them.
+#
+# Everything else is left alone: source files are already normalised by the
+# checkout, and forcing LF on them would churn the tree for no gain.
+
+*.sh           text eol=lf
+Dockerfile*    text eol=lf
+*.yml          text eol=lf
+*.yaml         text eol=lf
