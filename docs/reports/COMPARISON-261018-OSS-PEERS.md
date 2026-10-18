@@ -333,6 +333,14 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
   (按 IP), 审计全部失效. 这是**上生产才暴露**的问题
 - 改法: per-listener 开关, 在 `handleConn` 首帧前解析, 与 `Framer` 解耦
 - 验收: 发送 PROXY v1 头后, `sess.RemoteAddr()` 返回真实客户端; 未开启时行为不变
+- **已实施 (2026-10-18, ADR-016)**: 解析放在 **listener** 而非 `handleConn` --
+  后者只覆盖 TCP, 而 HTTP / WebSocket / gRPC-Web 的 accept 循环在 `net/http` 手里,
+  同一段逻辑要写三遍且容易在读缓冲与 `Serve` 之间丢字节. `shared.NewProxyListener`
+  一份实现四路共用; v1 与 v2 两种格式, 零值即关闭 (原样返回 listener), 头在 TLS
+  之下. 缺头一律拒绝而非放行, 拒绝在 `Accept` 内部循环处理 (向上返回错误会让
+  `http.Server.Serve` 停掉整个服务). 两条验收均有用例: TCP 与 WebSocket 各一个,
+  外加"未开启时 `RemoteAddr` 仍是 socket 对端". 未做来源 CIDR 白名单, 信任模型
+  是网络拓扑, 记在 ADR 的重新评估条件里
 
 **C5 无 SO_REUSEPORT / ListenConfig**
 
@@ -454,8 +462,8 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
 | 批 3 (P2 能力) | C1 C2 C4 C5 C7 E2 | CoAP 状态机, listener, admin, CI | 批 2 有基准数据后 |
 
 进度 (2026-10-18): 批 2 的 B1 B2(部分) B3(a) B4 B5 B6 B7 已完成 (ADR-012 至
-ADR-015), 批 3 的 C1 C2 C5 已完成. 其余 (A 类 5 项, B2 的端到端证明, C3 C4 C6
-C7, D1 D2, E2) 未开始, 见各条目下的备注.
+ADR-015), 批 3 的 C1 C2 C4 C5 已完成 (ADR-016). 其余 (A 类 5 项, B2 的端到端
+证明, C3 C6 C7, D1 D2, E2) 未开始, 见各条目下的备注.
 
 不做: B8 (已记录决策), C3 视 LwM2M 业务需求, C6 只做可热更子集.
 

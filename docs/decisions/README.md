@@ -40,6 +40,7 @@
 | [ADR-013](ADR-013-write-batching.md) | 写路径批处理可选 | 已采纳 | 写缓冲默认关闭, 合并写按平台生效 (unix writev) |
 | [ADR-014](ADR-014-shared-broadcast-frame.md) | 广播使用共享帧 | 已采纳 | 引用计数的 SharedFrame + 可选 SharedSender 接口 |
 | [ADR-015](ADR-015-remove-shared-hot-path-overhead.md) | 消除共享热路径开销 | 已采纳 | 对端键零分配, 插件链无锁读 + 链级 recover, 会话表 64 分片 |
+| [ADR-016](ADR-016-proxy-protocol.md) | 监听层支持 PROXY protocol | 已采纳 | listener 包装在 TLS 之下读头, 缺头拒绝而非放行 |
 
 编号从 001 直接到 011, 缺 010。仓库中从未存在 `ADR-010` 文件 (查过全部提交历史),
 V9 审查 H12 曾记录某处引用了这个不存在的编号, 现已无残留引用。新 ADR 顺延 012 起编。
@@ -58,3 +59,4 @@ V9 审查 H12 曾记录某处引用了这个不存在的编号, 现已无残留�
 - 修改 TCP 写路径或写批处理策略前先查 ADR-013.
 - 修改广播或会话发送的所有权语义前先查 ADR-001,ADR-014.
 - 修改会话表, 插件链读取或对端键的构造方式前先查 ADR-015.
+- 修改监听层包装, PROXY protocol 或 `RemoteAddr` 语义前先查 ADR-016.

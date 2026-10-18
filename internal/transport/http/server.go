@@ -75,6 +75,9 @@ func (s *Server) Start(context.Context) error {
 		s.started.Store(false)
 		return fmt.Errorf("http listen %s: %w", s.opts.Addr, err)
 	}
+	if s.opts.Proxy.Mode != shared.ProxyProtocolOff {
+		ln = shared.NewProxyListener(ln, s.opts.Proxy.WithRejectHook(s.rt.Logger(), s.rt.Metrics()))
+	}
 	s.listener = ln
 	s.wg.Add(1)
 	go func() {

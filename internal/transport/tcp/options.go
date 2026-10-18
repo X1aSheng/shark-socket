@@ -30,6 +30,10 @@ type Options struct {
 	// Listen configures socket-level listener behaviour (SO_REUSEPORT, TCP
 	// keepalive). The zero value produces exactly what net.Listen does.
 	Listen shared.ListenOptions
+	// Proxy makes the listener expect a PROXY protocol header ahead of each
+	// connection's payload, so RemoteAddr reports the client the load balancer
+	// saw rather than the balancer itself. Zero value means off.
+	Proxy shared.ProxyConfig
 	// ElasticPool swaps the fixed WorkerPool for a ScalablePool. Nil by default:
 	// a pool that grows and shrinks its own worker count should be an explicit
 	// choice, not a side effect of upgrading.
@@ -278,5 +282,34 @@ func WithKeepAlive(idle, interval time.Duration, count int) Option {
 		o.Listen.KeepAliveIdle = idle
 		o.Listen.KeepAliveInterval = interval
 		o.Listen.KeepAliveCount = count
+	}
+}
+
+// WithProxyProtocol makes the listener require a PROXY protocol header on
+// every connection and report the address it carries as the session's
+// RemoteAddr.
+//
+// This is not a security feature by itself: whoever can reach the port can
+// claim any source address it likes. It is correct only when the listener is
+// reachable exclusively from the load balancer -- typically a separate port,
+// bound to a private interface, with the balancer's health check using the
+// LOCAL command (v2) or the UNKNOWN family (v1). A listener that accepts both
+// "with header" and "without" would let a client pick its own attribution,
+// which is why every mode here requires the header rather than treating it as
+// optional.
+func WithProxyProtocol(mode shared.ProxyProtocolMode) Option {
+	return func(o *Options) { o.Proxy.Mode = mode }
+}
+
+// WithProxyHeaderTimeout bounds how long a newly accepted connection may take
+// to send its PROXY header. Zero or negative keeps
+// shared.DefaultProxyHeaderTimeout (5s); there is deliberately no way to wait
+// forever, because a connection that never sends a header would then hold an
+// accepted slot for as long as it stays open.
+func WithProxyHeaderTimeout(timeout time.Duration) Option {
+	return func(o *Options) {
+		if timeout > 0 {
+			o.Proxy.Timeout = timeout
+		}
 	}
 }

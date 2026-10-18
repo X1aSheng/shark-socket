@@ -26,6 +26,10 @@ type Options struct {
 	// Listen configures socket-level listener behaviour (SO_REUSEPORT, TCP
 	// keepalive). The zero value produces exactly what net.Listen does.
 	Listen shared.ListenOptions
+	// Proxy makes the listener expect a PROXY protocol header ahead of each
+	// connection, so RemoteAddr reports the client the load balancer saw.
+	// Zero value means off.
+	Proxy shared.ProxyConfig
 }
 
 type Option func(*Options)
@@ -118,5 +122,23 @@ func WithKeepAlive(idle, interval time.Duration, count int) Option {
 		o.Listen.KeepAliveIdle = idle
 		o.Listen.KeepAliveInterval = interval
 		o.Listen.KeepAliveCount = count
+	}
+}
+
+// WithProxyProtocol requires a PROXY protocol header on every connection.
+// The trust requirements are the same as tcp.WithProxyProtocol: the port must
+// be reachable only from the balancer, because any client that reaches it can
+// claim any source address. See tcp.WithProxyProtocol.
+func WithProxyProtocol(mode shared.ProxyProtocolMode) Option {
+	return func(o *Options) { o.Proxy.Mode = mode }
+}
+
+// WithProxyHeaderTimeout bounds how long a connection may take to send its
+// header. Zero or negative keeps shared.DefaultProxyHeaderTimeout (5s).
+func WithProxyHeaderTimeout(timeout time.Duration) Option {
+	return func(o *Options) {
+		if timeout > 0 {
+			o.Proxy.Timeout = timeout
+		}
 	}
 }

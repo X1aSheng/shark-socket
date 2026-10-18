@@ -7,6 +7,48 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### PROXY Protocol Listener (2026-10-18)
+
+批 3 的 C4: 在监听层支持 PROXY protocol v1/v2, 让部署在 L4 负载均衡器后面的服务
+能拿到真实客户端地址. 决策记录为
+[`ADR-016`](docs/decisions/ADR-016-proxy-protocol.md), 说明见
+[`TRANSPORT.md`](docs/architecture/TRANSPORT.md) TCP 部分第 6.4 节.
+
+**问题**: `RemoteAddr` 直接取 `conn.RemoteAddr()`, LB 后恒为 LB 地址. 黑名单,
+per-IP 限流, 审计会同时失效, 而且不报错. 这是"上生产才暴露"的一类.
+
+**改动**:
+
+- 新增 `shared.NewProxyListener` / `ProxyConfig` / `ProxyProtocolMode`
+  (`Off` / `V1` / `V2` / `Auto`), 头部解析在 `Accept` 返回之前完成,
+  `Framer` 与 `Session` 一行未改
+- v1 用 `ReadSlice` 而非 `ReadString` (后者对不换行的对端会无限分配);
+  v2 载荷上限 2048 字节 (规范允许 65535, 按对端声明分配等于白送放大攻击),
+  TLV 一并吞掉而不是留给 framer
+- `proxyConn` 覆盖 `Read` / `RemoteAddr` / `CloseWrite`; 少了最后一项,
+  半关闭会退化成整条 `Close` 并截断对端在途响应
+- 包装顺序固定为 `shared.Listen` -> `NewProxyListener` -> `tls.NewListener`:
+  头在 TLS 之下, 均衡器写的是明文
+- 缺少或错误的头一律拒绝 (关闭 + `proxy_header_rejected_total` 计数), 不向上
+  返回 Accept 错误 -- `net/http.Server.Serve` 会因非 `ErrClosed` 的 Accept 错误
+  停掉整个服务. 拒绝在 `Accept` 内部循环处理
+- 没有"头可选"模式: 若既有头又允许无头, 直连客户端就能自己决定身份归属
+- TCP / HTTP / WebSocket / gRPC-Web 新增 `Options.Proxy` 与
+  `WithProxyProtocol(mode)` / `WithProxyHeaderTimeout(d)`
+
+**语义变化 (仅开启时)**: `RemoteAddr()` 返回头里声明的客户端地址,
+`LocalAddr()` 仍是本端 socket 地址, 两者不再来自同一个 socket. 未开启时行为不变
+(`TestServerWithoutProxyProtocolKeepsSocketPeer` 锁住这条).
+
+**未做**: 来源 CIDR 白名单. 信任模型是网络拓扑 (端口只对均衡器可达), 理由与
+重新评估条件写在 ADR-016. UDP / CoAP / QUIC 不在本轮范围.
+
+**验证**: 新增 12 个测试 -- v1 十一行表 (含 UNKNOWN, 非 CRLF, 家族与字面量不符,
+超长行), v2 八行表 (含 TLV, LOCAL, UNSPEC, 版本 nibble, 超限载荷, 截断载荷),
+版本不匹配, listener 重写 `RemoteAddr` 且 payload 不丢, 坏头被跳过而服务继续,
+静默客户端超时; 传输级 4 个 (TCP 三个 + WebSocket 握手一个, 后者证明在
+`net/http` 下也成立). `go test -race` 通过, linux/darwin 交叉编译通过.
+
 ### Listener Socket Options (2026-10-18)
 
 批 3 的 C5: 把 SO_REUSEPORT 与 TCP keepalive 节奏变成 listener 级配置, 四路 TCP 系

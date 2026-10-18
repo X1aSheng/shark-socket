@@ -68,12 +68,17 @@ func (s *Server) Start(context.Context) error {
 	// TLSConfig is still not set on http.Server, which would negotiate HTTP/2
 	// and conflict with the WebSocket upgrade.
 	ln, err := shared.Listen("tcp", s.opts.Addr, s.opts.Listen)
-	if err == nil && s.opts.TLSConfig != nil {
-		ln = tls.NewListener(ln, s.opts.TLSConfig)
-	}
 	if err != nil {
 		s.started.Store(false)
 		return fmt.Errorf("websocket listen %s: %w", s.opts.Addr, err)
+	}
+	// PROXY before TLS: the balancer writes plaintext bytes, so the header
+	// cannot be inside the encrypted stream.
+	if s.opts.Proxy.Mode != shared.ProxyProtocolOff {
+		ln = shared.NewProxyListener(ln, s.opts.Proxy.WithRejectHook(s.rt.Logger(), s.rt.Metrics()))
+	}
+	if s.opts.TLSConfig != nil {
+		ln = tls.NewListener(ln, s.opts.TLSConfig)
 	}
 	s.listener = ln
 	s.wg.Add(1)

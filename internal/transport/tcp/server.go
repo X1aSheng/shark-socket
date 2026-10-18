@@ -99,6 +99,11 @@ func (s *Server) Start(ctx context.Context) error {
 		s.started.Store(false)
 		return fmt.Errorf("tcp listen %s: %w", s.opts.Addr, err)
 	}
+	// The PROXY header sits outside TLS: the balancer speaks plaintext, and an
+	// encrypted record cannot precede the handshake that would decrypt it.
+	if s.opts.Proxy.Mode != shared.ProxyProtocolOff {
+		ln = shared.NewProxyListener(ln, s.opts.Proxy.WithRejectHook(s.rt.Logger(), s.rt.Metrics()))
+	}
 	if s.opts.TLSConfig != nil {
 		ln = tls.NewListener(ln, s.opts.TLSConfig)
 	}

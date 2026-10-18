@@ -1094,6 +1094,9 @@ type Options struct {
 
     // 监听层 socket 选项(SO_REUSEPORT, TCP keepalive), 见 sec.6.3
     Listen shared.ListenOptions
+
+    // PROXY protocol, 见 sec.6.4;零值即关闭
+    Proxy shared.ProxyConfig
 }
 ```
 
@@ -1117,7 +1120,8 @@ type Options struct {
 
 `Listen` 与上面几项的区别是它不属于传输层语义,而是 socket 层的开关:传输层只负责
 "把它原样交给 `shared.Listen`",是否使用 SO_REUSEPORT, keepalive 取什么节奏由部署形态决定,
-见 `sec.6.3`.
+见 `sec.6.3`. `Proxy` 同理,差别在于它改的是 `RemoteAddr` 的语义而不只是 socket 选项,
+见 `sec.6.4`.
 
 ### 6.2 Server Functional Options
 
@@ -1138,6 +1142,8 @@ func WithMaxConnections(max int64) Option              // <= 0 不限制
 func WithAcceptRate(rate float64) Option               // <= 0 不限制
 func WithReusePort() Option                            // SO_REUSEPORT,仅 linux/darwin
 func WithKeepAlive(idle, interval time.Duration, count int) Option // idle < 0 关闭探活
+func WithProxyProtocol(mode shared.ProxyProtocolMode) Option        // 零值即关闭
+func WithProxyHeaderTimeout(timeout time.Duration) Option           // <= 0 用默认 5s
 
 func defaultOptions() Options {
     return Options{
@@ -1206,6 +1212,84 @@ func Listen(network, addr string, opts ListenOptions) (net.Listener, error)
 
 UDP / CoAP 不走这条路径:它们用 `net.ListenUDP` 与 `dtls.Listen`,SO_REUSEPORT 对
 无连接 socket 的负载分担语义与 TCP 不同,不在本轮范围.
+
+### 6.4 PROXY protocol(ADR-016)
+
+部署在 L4 负载均衡器后面的服务,`conn.RemoteAddr()` 是均衡器的地址.凡是按对端
+地址做判断的地方 -- 黑名单, per-IP 限流, 审计 -- 都会安静地退化成"只有一个客户端".
+
+PROXY protocol 是均衡器在 payload 之前发的一小段明文头, 声明这条连接的真实两端.
+它在 **listener 层**解决, 不动 `Framer` 也不动 `Session`:
+
+```go
+// internal/transport/shared/proxyproto.go
+type ProxyProtocolMode uint8
+
+const (
+    ProxyProtocolOff  ProxyProtocolMode = iota // 默认
+    ProxyProtocolV1                            // 只接受文本头
+    ProxyProtocolV2                            // 只接受二进制头
+    ProxyProtocolAuto                          // 两种都接受, 按前缀识别
+)
+
+type ProxyConfig struct {
+    Mode     ProxyProtocolMode
+    Timeout  time.Duration              // <= 0 用 DefaultProxyHeaderTimeout (5s)
+    OnReject func(net.Addr, error)      // 每次拒绝的回调
+}
+
+func NewProxyListener(ln net.Listener, cfg ProxyConfig) net.Listener
+```
+
+`Mode` 为 `Off` 时 `NewProxyListener` **原样返回** `ln`, 所以调用方可以无条件包装.
+
+**包装顺序是固定的**: `shared.Listen` -> `NewProxyListener` -> `tls.NewListener`.
+均衡器写的是明文, 加密记录无法先于握手, 头只能在 TLS 之下:
+
+```go
+ln, err := shared.Listen("tcp", s.opts.Addr, s.opts.Listen)
+if err != nil { ... }
+if s.opts.Proxy.Mode != shared.ProxyProtocolOff {
+    ln = shared.NewProxyListener(ln, s.opts.Proxy.WithRejectHook(s.rt.Logger(), s.rt.Metrics()))
+}
+if s.opts.TLSConfig != nil {
+    ln = tls.NewListener(ln, s.opts.TLSConfig)
+}
+```
+
+`Accept` 的行为有两处与直觉不同, 都是刻意的:
+
+- **拒绝的连接不向上返回错误.** `net/http.Server.Serve` 收到非 `net.ErrClosed`
+  的 Accept 错误会停掉整个服务, TCP 的 acceptLoop 会走退避. 一个坏客户端不该
+  影响其他连接, 所以 `Accept` 内部关掉它 (`OnReject` 计数并记日志) 后继续接受.
+- **没有"头可选"的模式.** 若既有头又允许无头, 直连的客户端就能自己决定身份归属.
+  四种模式都要求头存在, 差别只在版本.
+
+支持的头部:
+
+| 形式 | 最小长度 | 说明 |
+|------|----------|------|
+| v1 `PROXY TCP4 <src> <dst> <sport> <dport>\r\n` | 15 B | 仅 TCP4 / TCP6 / UNKNOWN |
+| v1 `PROXY UNKNOWN ...\r\n` | 15 B | 均衡器自身发起的连接, 无地址 |
+| v2 二进制头 | 16 B + 载荷 | TCP4 / UDP4 / TCP6 / UDP6, LOCAL 无地址 |
+| v2 载荷上限 | 2048 B | 规范允许 65535, 按对端声明分配等于白送放大攻击 |
+
+两处易错的字节归属:
+
+- **v1 用 `ReadSlice` 而不是 `ReadString`.** 后者会一直追加到换行符, 对端不换行
+  就能让分配无限增长; 前者受缓冲区限制, 返回 `ErrBufferFull`.
+- **v2 的 TLV 必须吞掉.** TLVs 属于头部, 留在流里会喂给 `Framer`.
+
+`proxyConn` 只覆盖三件事: `Read` 从头部解析用的 `bufio.Reader` 走(里面通常还剩
+payload 的前几个字节), `RemoteAddr` 汇报头里的地址, `CloseWrite` 转发给底层
+-- 少了最后一项, 半关闭会退化成整条 `Close`, 截断对端在途的响应.
+
+**信任模型是网络拓扑, 不是配置.** 谁能连上这个端口, 谁就能声明任意源地址.
+正确用法是单独端口 + 只对均衡器可达. 本轮不提供来源 CIDR 白名单,
+理由与重新评估条件见 ADR-016.
+
+开启后 `RemoteAddr()` 与 `LocalAddr()` 不再来自同一个 socket 的两端:
+前者是头里声明的客户端, 后者仍是本端地址.
 
 ---
 
@@ -3361,16 +3445,20 @@ func (s *Server) Start(context.Context) error {
         WriteTimeout: s.opts.WriteTimeout,
         IdleTimeout:  s.opts.IdleTimeout,
     }
-    // 先建 socket 再按需包 TLS: tls.Listen 会自己建 socket,
-    // 从而把 ListenOptions(SO_REUSEPORT, keepalive)丢掉.
+    // 先建 socket, 再按需包 PROXY 与 TLS: tls.Listen 会自己建 socket,
+    // 从而把 ListenOptions(SO_REUSEPORT, keepalive)丢掉; PROXY 头必须在
+    // TLS 之下, 因为均衡器写的是明文.
     // TLSConfig 仍然不设在 http.Server 上, 否则会协商 HTTP/2 与升级冲突.
     ln, err := shared.Listen("tcp", s.opts.Addr, s.opts.Listen)
-    if err == nil && s.opts.TLSConfig != nil {
-        ln = tls.NewListener(ln, s.opts.TLSConfig)
-    }
     if err != nil {
         s.started.Store(false)
         return fmt.Errorf("websocket listen %s: %w", s.opts.Addr, err)
+    }
+    if s.opts.Proxy.Mode != shared.ProxyProtocolOff {
+        ln = shared.NewProxyListener(ln, s.opts.Proxy.WithRejectHook(s.rt.Logger(), s.rt.Metrics()))
+    }
+    if s.opts.TLSConfig != nil {
+        ln = tls.NewListener(ln, s.opts.TLSConfig)
     }
     s.listener = ln
     s.wg.Add(1)
@@ -3652,6 +3740,7 @@ type Options struct {
     MaxConnections int64                    // 并发连接上限,<= 0 不限制
     AcceptRate     float64                  // 接受速率(连接/秒),<= 0 不限制
     Listen         shared.ListenOptions     // 监听层 socket 选项,见 TCP 部分 sec.6.3
+    Proxy          shared.ProxyConfig       // PROXY protocol,见 TCP 部分 sec.6.4
 }
 ```
 
@@ -3710,6 +3799,8 @@ func WithMaxConnections(max int64) Option
 func WithAcceptRate(rate float64) Option
 func WithReusePort() Option
 func WithKeepAlive(idle, interval time.Duration, count int) Option
+func WithProxyProtocol(mode shared.ProxyProtocolMode) Option
+func WithProxyHeaderTimeout(timeout time.Duration) Option
 ```
 
 与 Options 字段不一致之处(有意为之,不是遗漏):
@@ -4063,6 +4154,7 @@ CloseAll 阶段(串行,在所有协议阶段完成后执行):
 | `AcceptRate` | 有(令牌桶) | 无 | 无 | 有 |
 | `SO_REUSEPORT` | 有(`shared.Listen`) | 无 | 无 | 有 |
 | TCP keepalive 节奏 | 有(`shared.Listen`) | 不适用 | 不适用 | 有 |
+| `PROXY protocol` v1/v2 | 有(`shared.ProxyListener`) | 无 | 无 | 有 |
 
 会话上限不再由各传输层各自配置,而是由 `SessionManager` 统一持有(默认 100 万,
 `runtime.WithMaxSessions` 可调),这样多协议共存时上限是总量而不是每协议配额.
@@ -4070,6 +4162,7 @@ CloseAll 阶段(串行,在所有协议阶段完成后执行):
 
 `SO_REUSEPORT` 与 keepalive 走的是同一条路径(`shared.ListenOptions`),表中只列了
 四路,另外两路 TCP 系传输(`HTTP`, `gRPC-Web`)同样具备,见 TCP 部分 `sec.6.3`.
+`PROXY protocol` 同理,见 TCP 部分 `sec.6.4`.
 
 ### 4.3 超时配置
 

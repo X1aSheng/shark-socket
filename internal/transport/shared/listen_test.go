@@ -24,13 +24,13 @@ func TestKeepAliveConfigMapping(t *testing.T) {
 	}{
 		{name: "zero keeps net.Listen behaviour", opts: ListenOptions{}, wantNil: true},
 		{
-			name: "idle only",
-			opts: ListenOptions{KeepAliveIdle: 30 * time.Second},
+			name:   "idle only",
+			opts:   ListenOptions{KeepAliveIdle: 30 * time.Second},
 			enable: true, idle: 30 * time.Second,
 		},
 		{
-			name: "negative idle disables probing",
-			opts: ListenOptions{KeepAliveIdle: -1},
+			name:   "negative idle disables probing",
+			opts:   ListenOptions{KeepAliveIdle: -1},
 			enable: false,
 		},
 		{
@@ -43,8 +43,8 @@ func TestKeepAliveConfigMapping(t *testing.T) {
 			enable: true, idle: 5 * time.Minute, inter: 30 * time.Second, count: 3,
 		},
 		{
-			name:  "count only keeps the platform idle",
-			opts:  ListenOptions{KeepAliveCount: 9},
+			name:   "count only keeps the platform idle",
+			opts:   ListenOptions{KeepAliveCount: 9},
 			enable: true, count: 9,
 		},
 	}
