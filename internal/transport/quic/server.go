@@ -142,6 +142,7 @@ func (s *Server) acceptLoop(ctx context.Context) {
 		}
 		peer := shared.PeerIP(conn.RemoteAddr())
 		if s.acceptor != nil && s.acceptor.TryAccept(peer) != shared.AcceptOK {
+			shared.IncProtocolCounter(s.rt.Metrics(), shared.MetricSessionsRejected, core.ProtocolQUIC)
 			conn.CloseWithError(0, "server busy")
 			continue
 		}

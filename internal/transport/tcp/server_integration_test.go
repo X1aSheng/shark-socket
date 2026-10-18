@@ -358,8 +358,8 @@ func TestTCPIdleReadTimeoutReclaimsSilentPeer(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if got := metrics.Counter("sessions_reclaimed_total"); got < 1 {
-		t.Fatalf("sessions_reclaimed_total = %v, want >= 1", got)
+	if got := metrics.Counter("sessions_reclaimed_total", "protocol", string(core.ProtocolTCP)); got < 1 {
+		t.Fatalf("sessions_reclaimed_total{protocol=tcp} = %v, want >= 1", got)
 	}
 
 	// The server is still alive: a new connection echoes normally.

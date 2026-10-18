@@ -42,6 +42,15 @@ README 里的 P99 全部来自压测工具, 线上无法自证. 这不是"少一
    "快但串号".
 7. **指标不是无代价的, 所以代价要有门禁.** `BenchmarkCallHandlerObserved*` 与
    `BenchmarkObserveHistogram/IncCounter` 进 `scripts/benchgate` 的固定套件.
+8. **准入/回收计数也带 `protocol` label**, 与直方图同一个 label 名与同一套取值.
+   它们是"多于一路传输会写"的指标, 判据是"需要一个不按协议拆分的视图", 不是
+   "只有一路在调用". 只有一路能写的指标 (`tcp_task_queue_full_total`,
+   `tls_handshake_failed_total`) 保留协议在名字里 -- 把它们也加 label 只会得到
+   一个恒定值的 `protocol`, 却让看板多一次 join.
+9. **跨传输计数器只经 `shared.IncProtocolCounter` 递增.** 该函数把 nil 检查与
+   `core.ProtocolLabel` 一起封装. 手写 `IncCounter(name)` 少一个 label 时没有任何
+   编译错误, 结果是一条静默缺失的序列 -- 未计数的拒绝与没有拒绝在抓取结果里长得
+   一样, 这正是 D3 要消灭的形态.
 
 ## 原因
 
@@ -63,6 +72,16 @@ README 里的 P99 全部来自压测工具, 线上无法自证. 这不是"少一
   `count`/`sum` 里. 用梯度累加值写 `+Inf` 会让 `bucket{le="+Inf"} != _count`,
   Prometheus 判定该直方图不自洽, `histogram_quantile()` 直接返回 NaN -- 实现时
   正是这里错了一次, 被 `TestPrometheusHistogramImplicitInfBucket` 抓住.
+- **为什么 D3 不是"给指标加个参数"这一行.** 迁移时发现准入计数并不完整:
+  WebSocket 升级被拒, QUIC 连接被拒, gRPC-Web 的两个入口 (direct 与 WebSocket
+  模式) 被拒, 都直接返回 "server busy" 而不计数. 也就是说**一台拒绝所有连接的
+  服务器, 在抓取结果里与空闲服务器完全一样**. label 迁移只是让这些已有的洞更容易
+  看见; 洞本身是与 label 无关的缺陷, 一并补上 (新增 4 处计数, 全部 15 个准入/
+  回收调用点统一经 `shared.IncProtocolCounter`).
+- **为什么用 `ProtocolLabel` 返回预构造的 label 对.** 每次调用 `[]string{"protocol",
+  string(p)}` 会在消息路径上分配一次; `incProtocolCounter` 每次拒绝都调用它, 而
+  拒绝风暴正是它要度量的事件. 枚举封闭, 8 个切片是常量, 枚举外的值退回现构造
+  (冷路径, 正确性优先).
 - **为什么 `RegisterHistogram` 在首次观测后拒绝注册.** 换梯度需要把已有样本重新
   分桶, 而导出器为了 O(buckets) 不保留原始样本. 静默换梯度会得到一个"前 1000 条
   按旧梯度, 之后按新梯度"的直方图, 分位数是错的且看不出来.
@@ -89,9 +108,17 @@ README 里的 P99 全部来自压测工具, 线上无法自证. 这不是"少一
   在每次注册/注销时遍历会话表 (O(n) 每次, 整体 O(n²)), 或者维护第二份计数 -- 后者
   正是 ADR-017 明确否掉的"两处计数互相漂移". 正确做法是在**抓取时**向运行时取值
   (导出器需要一个 collector 回调), 属于后续项, 不在此次偷偷降级.
-- **`sessions_accepted_total` / `sessions_closed_total` 等保留无 label 形态**:
-  报告 D3 建议加 `protocol`, 但它会改动运维现有的看板与告警表达式, 应与 gauge 的
-  抓取期派生一起做, 见"重新评估条件".
+- **`sessions_rejected_total` / `sessions_reclaimed_total` 已带 `protocol`**
+  (D3). 7 路传输共 15 个准入/回收调用点统一走 `shared.IncProtocolCounter`, 每处都有测试断言
+  `{protocol=...}` 的那条序列, 因此"少一个 label"会挂测试而不是静默通过.
+  跨协议汇总仍是 `sum(...)`; 报告建议的 `udp_sessions_rejected_total` 前缀方案
+  未采用 (只能靠正则聚合).
+- **`sessions_accepted_total` / `sessions_closed_total` / `sessions_active` 仍是
+  label 前的形态**: 它们会改动运维现有的看板与告警表达式, 且 gauge 的按协议读数
+  本来就需要抓取期派生, 两件事应一起做, 见"重新评估条件".
+- **这是一次破坏性变更**: 老序列 `sessions_rejected_total` (无 label) 不再存在,
+  新序列从 0 开始, `rate()`/`increase()` 会抖动一轮. 变更只影响这两条计数, 不影响
+  `handler_duration_seconds` / `messages_total` (它们自诞生就带 label).
 
 ## 重新评估条件
 
@@ -100,8 +127,10 @@ README 里的 P99 全部来自压测工具, 线上无法自证. 这不是"少一
 - 若要做"按协议的会话数", 应当引入抓取期 collector: `PrometheusMetrics` 持有一个
   `func() map[string]float64` 回调, 导出时问运行时要 `by_protocol` 计数, 而不是
   在热路径上维护第二份计数.
-- 若 D3 的 label 迁移启动, 需要一次明确的破坏性变更窗口: 老序列消失会让
-  `rate()` 从 0 重算, 告警会抖动一轮.
+- D3 的 label 迁移已启动并完成 `sessions_rejected_total` / `sessions_reclaimed_total`
+  两条; 剩余 `sessions_*` 三条要与抓取期 collector 一起做 (它们需要同一份
+  "按协议读会话表"的能力), 届时仍需要一次破坏性变更窗口: 老序列消失会让 `rate()`
+  从 0 重算, 告警会抖动一轮.
 - 若引入 Prometheus client_golang (例如为了 exemplars 或 native histograms),
   本 ADR 的决策 6 可以被句柄替代, 但决策 1-5 不变.
 

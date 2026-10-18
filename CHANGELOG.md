@@ -7,6 +7,50 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### 存量指标 label 化, 并补回 4 处从未计数的准入拒绝 (2026-10-18)
+
+对比报告 D3: 所有指标都没有 label, 五个传输混在一个计数器里. 迁移时发现比报告说的
+更糟 -- 不是"label 不够用", 而是**几条路根本没在计数**: WebSocket 升级被拒, QUIC
+连接被拒, gRPC-Web 的 direct 与 WebSocket 两个入口被拒, 都直接答 "server busy" 就走,
+一个计数器也不碰. 一台拒绝全部连接的服务器, 在抓取结果里与空闲服务器完全一样.
+
+**两条跨传输计数器加 `protocol` label**: `sessions_rejected_total{protocol}`,
+`sessions_reclaimed_total{protocol}`. 判据是"是否需要一个不按协议拆分的视图", 而不是
+"今天有几路在调用": 跨协议总拒绝数仍是 `sum(...)`, 而报告建议的
+`udp_sessions_rejected_total` 前缀方案只能靠正则匹配指标名聚合, 未采用. 只有一路能写
+的指标 (`tcp_task_queue_full_total`, `tls_handshake_failed_total`, `accept_errors_total`)
+保留协议在名字里 -- 给它们加 label 只会得到一个恒定值的维度.
+
+**15 个准入/回收调用点统一走 `shared.IncProtocolCounter`.** 手写
+`IncCounter("sessions_rejected_total")` 少一个 label 时没有任何编译错误, 得到的是一条
+静默缺失的序列; 封装之后 nil 检查与 `core.ProtocolLabel` 只写一次. `ProtocolLabel`
+返回按枚举预构造的 label 对, 枚举外的值才现构造 -- 拒绝风暴正是它要度量的事件, 不该
+在计数的同时分配.
+
+**补齐的 4 处计数**: `websocket/server.go` 升级拒绝, `quic/server.go` 连接拒绝,
+`grpcweb/server.go` direct 与 WebSocket 两个入口的拒绝.
+
+**验收**:
+
+- `TestWebSocketRejectedUpgradeIsCounted` / `TestQUICRejectedConnectionIsCounted` /
+  `TestGRPCWebRejectedRequestIsCounted` / `TestGRPCWebRejectedUpgradeIsCounted`:
+  四路各造一次真实拒绝, 断言 `sessions_rejected_total{protocol=...} == 1`
+- `TestSharedCounterIsSummableAcrossProtocols`: 两个协议写同一个名字导出为两条序列,
+  且只有一条 `# TYPE` -- 否则"一个 family"会被误读成两个指标名
+- `tcp` / `http` / `udp` 的 `countingMetrics` 改成按 `(name, labels)` 寻址:
+  原先按名字计数, 断言对"有 label"和"没 label"都成立, 等于不设防
+
+**破坏性变更**: 无 label 的 `sessions_rejected_total` / `sessions_reclaimed_total`
+序列不再存在, 新序列从 0 起算, 依赖它们的 `rate()`/`increase()` 会抖动一轮.
+
+**顺带修的文档说谎**: `TRANSPORT.md` 4.7 的 `getOrCreateUDPSession` "实现"画的是
+OnAccept -> Register -> 发布, 还引用了库里不存在的 `rejected_connections_total`;
+按 `coap/server.go` 的实际顺序 (准入 -> ID -> 发布 -> 注册 -> OnAccept) 重写.
+
+**仍未 label 化 (挂账)**: `sessions_active` / `sessions_accepted_total` /
+`sessions_closed_total`. 按协议读会话数需要抓取期 collector 回调, 在热路径维护第二
+份计数会与 `Count()` 漂移 (ADR-017). 见 ADR-020 "重新评估条件".
+
 ### 指标面真实化: 真直方图 + protocol label (2026-10-18)
 
 对比报告 D1/D2: `ObserveHistogram` 在生产代码里调用点为 **0**, 而它唯一的实现
@@ -58,9 +102,9 @@ Prometheus 的 `DefBuckets`(5ms 起步)是因为微秒级 echo 会全落进第�
   count 3 / messages 3, 证明"运行时 -> pool -> handler -> 导出器"整条线通了
 - `TestHandlerMetricsDoNotLeakAcrossProtocols`: TCP 消息不会出现在 UDP 序列里
 
-**未做 (挂账)**: D3 的存量指标 label 化. 按协议的 `sessions_active` 需要在抓取时
-向运行时取值 (导出器当前没有 collector 回调); 在热路径维护第二份计数会与
-`Count()` 漂移, 正是 ADR-017 否掉的形态.
+**当时未做, 随后补上**: D3 的存量指标 label 化见上一条. 按协议的 `sessions_active`
+仍需要在抓取时向运行时取值 (导出器当前没有 collector 回调); 在热路径维护第二份计数
+会与 `Count()` 漂移, 正是 ADR-017 否掉的形态.
 
 **文档**: ADR-020; `OBSERVABILITY.md` 3.3/5.1/5.3 更新 (含两条 PromQL 示例).
 

@@ -153,6 +153,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	peer := shared.PeerIPString(r.RemoteAddr)
 	if s.acceptor != nil && s.acceptor.TryAccept(peer) != shared.AcceptOK {
+		shared.IncProtocolCounter(s.rt.Metrics(), shared.MetricSessionsRejected, core.ProtocolGRPCWeb)
 		http.Error(w, "server busy", http.StatusServiceUnavailable)
 		return
 	}
@@ -241,6 +242,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	peer := shared.PeerIPString(r.RemoteAddr)
 	if s.acceptor != nil && s.acceptor.TryAccept(peer) != shared.AcceptOK {
+		shared.IncProtocolCounter(s.rt.Metrics(), shared.MetricSessionsRejected, core.ProtocolGRPCWeb)
 		http.Error(w, "server busy", http.StatusServiceUnavailable)
 		return
 	}
@@ -315,7 +317,7 @@ func (s *Server) readWebSocketLoop(sess *webSocketSession) {
 			// A read-deadline expiry means the peer stopped answering pings
 			// (a vanished client): count the reclaim.
 			if shared.IsTimeout(err) {
-				s.rt.Metrics().IncCounter("sessions_reclaimed_total")
+				shared.IncProtocolCounter(s.rt.Metrics(), shared.MetricSessionsReclaimed, core.ProtocolGRPCWeb)
 			}
 			return
 		}

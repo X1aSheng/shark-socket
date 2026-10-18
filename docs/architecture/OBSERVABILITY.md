@@ -134,8 +134,8 @@ Labels 以 key-value 交替传入:`IncCounter("name", "protocol", "tcp", "status
 | `sessions_active` | Gauge | - | 会话表当前条目数 |
 | `handler_duration_seconds` | Histogram | `protocol` | `shared.CallHandlerObserved`,8 路传输共用 |
 | `messages_total` | Counter | `protocol` | 同上,投递给用户 handler 的消息数 |
-| `sessions_reclaimed_total` | Counter | - | 读截止时间到期(对端消失),5 路传输共用 |
-| `sessions_rejected_total` | Counter | - | 准入拒绝(TCP/WS/QUIC/HTTP/gRPC-Web/UDP/CoAP 共用) |
+| `sessions_reclaimed_total` | Counter | `protocol` | 读截止时间到期(对端消失),5 路传输共用 |
+| `sessions_rejected_total` | Counter | `protocol` | 准入拒绝(TCP/WS/QUIC/HTTP/gRPC-Web/UDP/CoAP 共用) |
 | `tcp_task_queue_full_total` | Counter | - | TCP WorkerPool 队列满 |
 | `accept_errors_total` | Counter | - | TCP accept 返回错误(不含 `net.ErrClosed`) |
 | `accept_resource_errors_total` | Counter | - | 其中 `EMFILE`/`ENFILE`/`ENOMEM` 子集 |
@@ -152,15 +152,21 @@ Labels 以 key-value 交替传入:`IncCounter("name", "protocol", "tcp", "status
 `accept_resource_errors_total` 是 `accept_errors_total` 的子集而不是替代:
 前者是容量事故信号,后者含瞬时抖动. 混在一个计数器里, "fd 用尽"会被噪声淹没.
 
-`sessions_rejected_total` 不按协议加前缀, 尽管报告 (`COMPARISON-261018-OSS-PEERS.md`)
-曾建议 `udp_sessions_rejected_total`. 传输层已共用 `sessions_*` 前缀, 加协议前缀会让
-"跨协议汇总拒绝数"退化成一次正则匹配; 需要按协议区分时应使用 label(见 5.3), 而不是
-把协议编进指标名.
+`sessions_rejected_total` / `sessions_reclaimed_total` 已有 `protocol` label
+(ADR-020 D3). 报告 (`COMPARISON-261018-OSS-PEERS.md`) 曾建议改用协议前缀
+(`udp_sessions_rejected_total`): 那是同一个目标的两条路, 前缀只能靠正则匹配指标名
+汇总, label 用一条 `sum` 就够了 -- 所以选 label, 不把协议编进指标名.
 
-> 尚无 `protocol` label 的是 `sessions_*` 系列与各传输自己的计数器. 按协议的
-> `sessions_active` 需要在**抓取时**向运行时取值(导出器当前没有 collector 回调),
-> 而在热路径上维护第二份计数会与 `Count()` 漂移 -- 这是 ADR-017 明确否掉的形态.
-> 补齐计划见 ADR-020 的"重新评估条件".
+D3 之前这两条计数漏掉了若干入口: WebSocket 升级被拒、QUIC 连接被拒、gRPC-Web 的
+direct 与 WebSocket 两个入口被拒, 都直接返回 "server busy" 而不计数 -- 一台拒绝所有
+连接的服务器, 在抓取结果里与空闲服务器完全一样. 现在 7 路传输的 15 个准入/回收
+调用点统一走 `shared.IncProtocolCounter` (nil 检查与 label 对封装在一处), 每条入口
+都有测试断言 `{protocol=...}` 那条序列.
+
+> 仍未带 `protocol` label 的是 `sessions_active` / `sessions_accepted_total`: 按协议
+> 统计需要在**抓取时**向会话表取值(导出器当前没有 collector 回调), 而在热路径上
+> 维护第二份计数会与 `Count()` 漂移 -- 这是 ADR-017 明确否掉的形态. 补齐计划见
+> ADR-020 的"重新评估条件".
 
 ---
 
@@ -271,6 +277,15 @@ http.ListenAndServe(":18080", nil)
 - **协议用 `protocol` label, 不用指标名前缀.** 取值是封闭枚举
   (`tcp`/`udp`/`http`/`websocket`/`coap`/`quic`/`grpc-web`/`custom`),
   基数上界确定; 编进名字会让"跨协议汇总"退化成一次正则
+- **多于一路传输会写的指标带 label, 只有一路能写的指标把协议留在名字里.**
+  前者的判据是"需要一个不按协议拆分的视图"(`handler_duration_seconds`、
+  `messages_total`、`sessions_rejected_total`、`sessions_reclaimed_total`),
+  后者是"只有它能产生这个事件"(`tcp_task_queue_full_total`、
+  `tls_handshake_failed_total`、`accept_errors_total`). 判据不是代码位置:
+  一个名词有多路写, 即使今天只有一路调用, 也应按 label 设计
+- **跨传输计数器只经 `shared.IncProtocolCounter` 递增.** 它把 nil 检查与
+  `core.ProtocolLabel` 一起封装; 手写 `IncCounter(name)` 会少掉 label, 结果是
+  一条"静默缺失的序列" -- 未计数的拒绝与没有拒绝在抓取结果里长得一样
 - 序列身份是 `(name, 第一对 label 名, 第一对 label 值)` 的结构体键, 第一对之后
   的 label 走拼接形式. 因此**改变 label 名称也是一条新序列** -- 不会与旧数据混在
   一起, 也不会串号

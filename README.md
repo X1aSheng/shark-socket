@@ -95,7 +95,9 @@ chain, and one observability plane.
   `sessions_reclaimed_total` session metrics. Handler latency is a real
   histogram labelled by protocol (`handler_duration_seconds{protocol}`), so
   `histogram_quantile(0.99, ...)` answers on the live process -- and it costs
-  zero allocations per message (ADR-020).
+  zero allocations per message. Rejections and reclamations are labelled the
+  same way, so `sum(rate(sessions_rejected_total[5m])) by (protocol)` locates
+  the transport doing the refusing instead of a single blended number (ADR-020).
 - **Benchmark-driven**: optimizations require benchmark and pprof evidence.
 - **Compile-time verification**: `var _ Interface = (*Impl)(nil)` checks, with
   key invariants expressed in the type system.

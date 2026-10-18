@@ -786,7 +786,7 @@ func (s *Server) acceptLoop(ctx context.Context) {
         reported = false
         peer := shared.PeerIP(conn.RemoteAddr())
         if reason := s.acceptor.TryAccept(peer); reason != shared.AcceptOK {
-            s.rt.Metrics().IncCounter("sessions_rejected_total")
+            shared.IncProtocolCounter(s.rt.Metrics(), shared.MetricSessionsRejected, core.ProtocolTCP)
             conn.Close()
             continue
         }
@@ -2901,6 +2901,10 @@ func (s *Server) handleNON(
 
 ### 4.7 getOrCreateUDPSession 实现
 
+> 本片段按 `internal/transport/coap/server.go` 的实际顺序抄录: 准入, ID, 发布,
+> 注册, OnAccept. 早期版本画的是 OnAccept -> Register -> 发布, 与代码不符, 且没有
+> 准入检查 -- 文档里的"实现"若与代码不一致, 读者会照着错的顺序写新传输.
+
 ```go
 func (s *Server) getOrCreateUDPSession(addr *net.UDPAddr) *session {
     // shared.PeerKey 而不是 addr.String(): 每个数据报都要在这里解析一次会话,
@@ -2919,26 +2923,37 @@ func (s *Server) getOrCreateUDPSession(addr *net.UDPAddr) *session {
             return sess
         }
     }
+    // 准入在分配任何东西之前:等 SessionManager 拒绝, 连合法对端也一起被拒了.
+    ip := shared.PeerIP(addr)
+    if s.quota != nil && !s.quota.TryAcquire(ip) {
+        shared.IncProtocolCounter(s.rt.Metrics(), shared.MetricSessionsRejected, core.ProtocolCoAP)
+        return nil
+    }
     // 先分配 ID 再创建并发布:避免并发清扫/关闭观察到临时的 id=0.
-    sessionID := s.rt.Sessions().NextID()
-    sess := newSession(sessionID, s.conn, addr)
+    sess := newUDPSession(s.rt.Sessions().NextID(), s.udpConn, addr)
+    if s.quota != nil {
+        // 名额由 session.Close 归还, 下面每条退出路径都恰好调一次.
+        sess.release = func() { s.quota.Release(ip) }
+    }
+    // LoadOrStore 处理并发创建:输的一方关闭自己并复用赢家的.
+    actual, loaded := s.sessions.LoadOrStore(key, sess)
+    if loaded {
+        _ = sess.Close(context.Background())
+        return actual.(*session)
+    }
+    if err := s.rt.Sessions().Register(sess); err != nil {
+        s.sessions.Delete(key)
+        _ = sess.Close(context.Background())
+        return nil
+    }
     if err := s.rt.Plugins().OnAccept(sess); err != nil {
-        if errors.Is(err, core.ErrPluginBlock) {
-            s.rt.Metrics().IncCounter("rejected_connections_total",
-                "protocol", "coap", "reason", "plugin_block")
+        // 插件链已回滚部分 accept, 这里不再触发 OnClose.
+        if _, loaded := s.sessions.LoadAndDelete(key); loaded {
+            s.rt.Sessions().Unregister(sess.ID())
+            _ = sess.Close(context.Background())
         }
         return nil
     }
-    if err := s.rt.Sessions().Register(sess); err != nil {
-        return nil
-    }
-    // LoadOrStore 处理并发创建:输的一方注销自己刚注册的会话并复用赢家的.
-    actual, loaded := s.sessions.LoadOrStore(key, sess)
-    if loaded {
-        s.rt.Sessions().Unregister(sessionID)
-        return actual.(*session)
-    }
-    s.rt.Metrics().IncCounter("sessions_accepted_total", "protocol", "coap")
     return sess
 }
 ```
@@ -3755,7 +3770,7 @@ func (s *Server) readLoop(sess *session) {
         if err != nil {
             // 读截止时间到期说明对端不再回应 ping(客户端消失),计入回收指标.
             if shared.IsTimeout(err) {
-                s.rt.Metrics().IncCounter("sessions_reclaimed_total")
+                shared.IncProtocolCounter(s.rt.Metrics(), shared.MetricSessionsReclaimed, core.ProtocolWS)
             }
             return
         }

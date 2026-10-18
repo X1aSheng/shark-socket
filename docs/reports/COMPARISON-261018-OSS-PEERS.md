@@ -35,6 +35,7 @@
    消息总数与 handler 延迟这两个最该有的指标只出现在测试里 (`prometheus_test.go:12-16`),
    `sessions_reclaimed_total` 把 5 个传输混在一个计数器里;
    `Tracer` 除生命周期外无任何 `Start` 调用点, 而 README 声明 "traces on critical paths".
+   (前三条已按 ADR-020 关闭, 见 4.4 D1/D2/D3; `Tracer` 一项仍开放, 见 D4.)
 
 4. **CoAP 是"主路径可用", 不是"规范符合".** 重传用固定 2s 全局 ticker + 4 次,
    不符合 RFC 7252 第 4.2 节的随机初始超时与指数退避; 无 duplicate 检测;
@@ -543,8 +544,9 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
   切片, 每消息两次观测 = 5 次分配 / 235-272 ns. 序列键改为结构体
   `(name, label0, value0, rest)` 后 0 分配 / 98 ns, 时间降约 40%. 这个数字是
   "能不能在数据面上记指标"的分水岭, 所以写进了 ADR 与门禁
-- **未做**: D3 的存量指标 label 化 (含按协议的 `sessions_active`) 需要抓取期
-  collector 或第二份计数, 后者正是 ADR-017 否掉的形态, 见 ADR-020 重新评估条件
+- **随后补上**: D3 的存量指标 label 化见下一条. 仅剩按协议的 `sessions_active` /
+  `sessions_accepted_total` 未做 -- 它们需要抓取期 collector 或第二份计数, 后者正是
+  ADR-017 否掉的形态, 见 ADR-020 重新评估条件
 
 **D3 指标无 label**
 
@@ -557,6 +559,26 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
   "Prometheus metrics use a fixed key set (no cardinality explosion)" 的取舍有关,
   但 protocol 是**有限枚举**, 不构成基数风险
 - 改法: 至少给协议维度加 `protocol` label (8 个值)
+- **已实施 (2026-10-18, ADR-020 D3)**: `sessions_rejected_total` 与
+  `sessions_reclaimed_total` 现在带 `protocol` label; 7 路传输共 15 个准入/回收
+  调用点统一走 `shared.IncProtocolCounter` (nil 检查 + 预构造的 label 对封装在一处,
+  手写 `IncCounter(name)` 漏 label 时没有编译错误, 只会得到一条静默缺失的序列).
+  跨协议总拒绝数仍是 `sum(...)`; 本报告建议的 `udp_sessions_rejected_total` 前缀
+  方案**未采用** -- 它把"按协议看"和"看总量"变成两种查询语法, 而 label 两者都支持
+- **迁移时发现的更深一层问题**: 指标不只是"没有 label", 而是**有 4 条路根本没计数**.
+  WebSocket 升级被拒, QUIC 连接被拒, gRPC-Web 的 direct 与 WebSocket 两个入口被拒,
+  都直接答 "server busy" 就返回, 一个计数器也不碰 -- 一台拒绝全部连接的服务器,
+  在抓取结果里与空闲服务器完全一样. 4 处全部补上, 各配一条测试 (`TestWebSocket
+  RejectedUpgradeIsCounted`, `TestQUICRejectedConnectionIsCounted`,
+  `TestGRPCWebRejectedRequestIsCounted`, `TestGRPCWebRejectedUpgradeIsCounted`).
+  这一项与本报告的 D3 建议无关, 属于准入路径的缺陷, 但与 label 迁移同批做才看得见
+- **命名规则已写进文档** (`OBSERVABILITY.md` 5.3): 多于一路传输会写、且需要一个
+  不按协议拆分的视图的指标带 label; 只有一路能写的 (`tcp_task_queue_full_total`,
+  `tls_handshake_failed_total`) 把协议留在名字里. 判据是视图需求, 不是调用点数量
+- **破坏性变更**: 无 label 的老序列消失, `rate()` 从 0 重算, 告警抖动一轮
+- **仍未做**: `sessions_active` / `sessions_accepted_total` / `sessions_closed_total`.
+  按协议读会话数需要抓取期 collector 回调 (导出器目前没有), 在热路径维护第二份计数
+  会与 `Count()` 漂移 (ADR-017). 见 ADR-020 重新评估条件
 
 **D4 Tracer 空转**
 
@@ -631,8 +653,8 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
 
 进度 (2026-10-18): 批 2 的 B1 B2(部分) B3(a) B4 B5 B6 B7 已完成 (ADR-012 至
 ADR-015), 批 3 的 C1 C2 C4 C5 C7 E2 已完成 (ADR-016), 批 1 的 A1-A5 已完成
-(ADR-017), C3 (ADR-018) 与 C6 (ADR-019) 已完成, D1/D2 (ADR-020) 已完成.
-其余 (B2 的端到端证明, D3, D4) 未开始, 见各条目下的备注.
+(ADR-017), C3 (ADR-018) 与 C6 (ADR-019) 已完成, D1/D2/D3 (ADR-020) 已完成.
+其余 (B2 的端到端证明, D4) 未开始, 见各条目下的备注.
 
 不做: B8 (已记录决策), C3 的 Block1 (见 ADR-018 重新评估条件), C6 只做可热更子集.
 

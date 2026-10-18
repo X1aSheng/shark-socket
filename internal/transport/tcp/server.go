@@ -250,7 +250,7 @@ func (s *Server) acceptLoop(ctx context.Context) {
 		if s.acceptor != nil {
 			if reason := s.acceptor.TryAccept(peer); reason != shared.AcceptOK {
 				if s.rt != nil {
-					s.rt.Metrics().IncCounter("sessions_rejected_total")
+					shared.IncProtocolCounter(s.rt.Metrics(), shared.MetricSessionsRejected, core.ProtocolTCP)
 				}
 				conn.Close()
 				continue
@@ -333,7 +333,7 @@ func (s *Server) handleConn(conn net.Conn) {
 	})
 	sess.readTimeout = s.opts.ReadTimeout
 	sess.onIdleClose = func() {
-		s.rt.Metrics().IncCounter("sessions_reclaimed_total")
+		shared.IncProtocolCounter(s.rt.Metrics(), shared.MetricSessionsReclaimed, core.ProtocolTCP)
 	}
 	s.sessions.Store(id, sess)
 	// OnClose must fire only for sessions that were actually accepted; when

@@ -22,19 +22,33 @@ type countingMetrics struct {
 
 func newCountingMetrics() *countingMetrics { return &countingMetrics{counts: map[string]int{}} }
 
-func (m *countingMetrics) IncCounter(name string, _ ...string) {
+func (m *countingMetrics) IncCounter(name string, labels ...string) {
+	key := counterKey(name, labels)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.counts[name]++
+	m.counts[key]++
 }
 
 func (m *countingMetrics) SetGauge(string, float64, ...string)         {}
 func (m *countingMetrics) ObserveHistogram(string, float64, ...string) {}
 
-func (m *countingMetrics) get(name string) int {
+// get reads the series for name with the given label pairs. The transports
+// emit every shared counter with a protocol label, so an unlabelled lookup
+// returns 0: a transport that drops the label fails the assertion instead of
+// matching another transport's series.
+func (m *countingMetrics) get(name string, labels ...string) int {
+	key := counterKey(name, labels)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.counts[name]
+	return m.counts[key]
+}
+
+func counterKey(name string, labels []string) string {
+	key := name
+	for _, l := range labels {
+		key += "|" + l
+	}
+	return key
 }
 
 // observableRuntime substitutes a metrics sink; the runtime's own metrics
@@ -134,8 +148,8 @@ func TestHTTPMaxConnectionsAnswers503(t *testing.T) {
 	if status != stdhttp.StatusServiceUnavailable {
 		t.Fatalf("second connection status = %d, want 503", status)
 	}
-	if got := g.metrics.get("sessions_rejected_total"); got != 1 {
-		t.Errorf("sessions_rejected_total = %d, want 1", got)
+	if got := g.metrics.get("sessions_rejected_total", "protocol", string(core.ProtocolHTTP)); got != 1 {
+		t.Errorf("sessions_rejected_total{protocol=http} = %d, want 1", got)
 	}
 
 	// The first connection was not collateral damage.
@@ -162,8 +176,8 @@ func TestHTTPMaxConnectionsPerIPAnswers503(t *testing.T) {
 	if status != stdhttp.StatusServiceUnavailable {
 		t.Fatalf("second connection status = %d, want 503 (nine global slots were free)", status)
 	}
-	if got := g.metrics.get("sessions_rejected_total"); got != 1 {
-		t.Errorf("sessions_rejected_total = %d, want 1", got)
+	if got := g.metrics.get("sessions_rejected_total", "protocol", string(core.ProtocolHTTP)); got != 1 {
+		t.Errorf("sessions_rejected_total{protocol=http} = %d, want 1", got)
 	}
 }
 

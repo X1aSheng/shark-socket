@@ -6,12 +6,15 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/infra/observability"
 	"github.com/X1aSheng/shark-socket/internal/runtime"
+	"github.com/gorilla/websocket"
 )
 
 // clientFrom returns an HTTP client whose connections leave from localIP, so a
@@ -121,4 +124,92 @@ func waitForInFlight(t *testing.T, n *atomic.Int64, want int64) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %d in-flight requests (got %d)", want, n.Load())
+}
+
+// TestGRPCWebRejectedRequestIsCounted pins the admission counter for direct
+// mode. A request refused with 503 used to leave no trace in the metrics (D3).
+func TestGRPCWebRejectedRequestIsCounted(t *testing.T) {
+	metrics := observability.NewMemoryMetrics()
+	release := make(chan struct{})
+	var inFlight atomic.Int64
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithMaxConnections(1),
+		WithMaxConnectionsPerIP(1),
+		WithHandler(func(sess core.Session, msg core.Message) error {
+			inFlight.Add(1)
+			<-release
+			return sess.Send(msg.Payload)
+		}),
+	)
+	gateway := runtime.NewGateway(runtime.WithMetrics(metrics))
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer stopGateway(t, gateway)
+
+	addr := server.Addr().String()
+	peer := clientFrom("127.0.0.2")
+
+	// The first request blocks in the handler, holding the peer's only slot.
+	firstDone := make(chan int, 1)
+	go func() { firstDone <- post(peer, newGRPCWebRequest(t, addr)) }()
+	waitForInFlight(t, &inFlight, 1)
+
+	if got := post(peer, newGRPCWebRequest(t, addr)); got != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 for the second in-flight request", got)
+	}
+	if got := metrics.Counter("sessions_rejected_total", "protocol", string(core.ProtocolGRPCWeb)); got != 1 {
+		t.Fatalf("sessions_rejected_total{protocol=grpc-web} = %v, want 1", got)
+	}
+
+	close(release)
+	if got := <-firstDone; got != http.StatusOK {
+		t.Fatalf("first request status = %d, want 200", got)
+	}
+}
+
+// TestGRPCWebRejectedUpgradeIsCounted covers the second entry point: a
+// WebSocket-mode upgrade refused for capacity must be counted too, otherwise
+// one of the two ways into this transport is invisible (D3).
+func TestGRPCWebRejectedUpgradeIsCounted(t *testing.T) {
+	metrics := observability.NewMemoryMetrics()
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithWebSocketMode("/grpc/ws"),
+		WithCheckOrigin(func(*http.Request) bool { return true }),
+		WithMaxConnections(1),
+		WithMaxConnectionsPerIP(1),
+		WithHandler(func(core.Session, core.Message) error { return nil }),
+	)
+	gateway := runtime.NewGateway(runtime.WithMetrics(metrics))
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer stopGateway(t, gateway)
+
+	u := url.URL{Scheme: "ws", Host: server.Addr().String(), Path: "/grpc/ws"}
+	first, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	if err != nil {
+		t.Fatalf("first upgrade with the only slot free: %v", err)
+	}
+	defer first.Close()
+
+	second, resp, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	if err == nil {
+		second.Close()
+		t.Fatal("second upgrade succeeded despite MaxConnections=1")
+	}
+	if resp == nil || resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %v, want 503", resp)
+	}
+	if got := metrics.Counter("sessions_rejected_total", "protocol", string(core.ProtocolGRPCWeb)); got != 1 {
+		t.Fatalf("sessions_rejected_total{protocol=grpc-web} = %v, want 1", got)
+	}
 }

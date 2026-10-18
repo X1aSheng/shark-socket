@@ -80,19 +80,24 @@ func TestCallHandlerObservedNilMetrics(t *testing.T) {
 	}
 }
 
-// TestProtocolLabelsAreStable guards the label table against returning a slice
-// the caller could mutate into shared state.
-func TestProtocolLabelsAreStable(t *testing.T) {
-	for _, protocol := range []core.Protocol{
-		core.ProtocolTCP, core.ProtocolUDP, core.ProtocolHTTP, core.ProtocolWS,
-		core.ProtocolCoAP, core.ProtocolQUIC, core.ProtocolGRPCWeb, core.ProtocolCustom,
-	} {
-		labels := protocolLabels(protocol)
-		if len(labels) != 2 || labels[0] != "protocol" || labels[1] != string(protocol) {
-			t.Fatalf("protocolLabels(%q) = %v", protocol, labels)
-		}
+// TestIncProtocolCounterLabelsByProtocol covers the helper the transports use
+// for admission counters: a missing label would silently create a series that
+// no per-protocol query can see.
+func TestIncProtocolCounterLabelsByProtocol(t *testing.T) {
+	metrics := observability.NewMemoryMetrics()
+	IncProtocolCounter(metrics, MetricSessionsRejected, core.ProtocolWS)
+	IncProtocolCounter(metrics, MetricSessionsRejected, core.ProtocolWS)
+	IncProtocolCounter(metrics, MetricSessionsRejected, core.ProtocolQUIC)
+
+	if got := metrics.Counter(MetricSessionsRejected, "protocol", "websocket"); got != 2 {
+		t.Fatalf("websocket series = %v, want 2", got)
 	}
-	if got := protocolLabels("mqtt"); len(got) != 2 || got[1] != "mqtt" {
-		t.Fatalf("protocolLabels(out-of-enum) = %v", got)
+	if got := metrics.Counter(MetricSessionsRejected, "protocol", "quic"); got != 1 {
+		t.Fatalf("quic series = %v, want 1", got)
 	}
+	if got := metrics.Counter(MetricSessionsRejected); got != 0 {
+		t.Fatalf("unlabelled series = %v, want 0 (the label is mandatory)", got)
+	}
+	// A nil backend is legal: transports built without a runtime still call it.
+	IncProtocolCounter(nil, MetricSessionsRejected, core.ProtocolTCP)
 }

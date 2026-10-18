@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/infra/observability"
 	"github.com/X1aSheng/shark-socket/internal/runtime"
 	quicgo "github.com/quic-go/quic-go"
 )
@@ -118,5 +119,60 @@ func TestQUICPerPeerConnectionLimit(t *testing.T) {
 	defer other.CloseWithError(0, "")
 	if got, err := echoQUIC(other, "ping"); err != nil || got != "ping" {
 		t.Fatalf("echo %q, err %v from the second peer", got, err)
+	}
+}
+
+// TestQUICRejectedConnectionIsCounted pins the admission counter. A connection
+// closed for "server busy" used to leave no trace in the metrics, so an
+// overloaded server reported the same numbers as an idle one (D3).
+func TestQUICRejectedConnectionIsCounted(t *testing.T) {
+	metrics := observability.NewMemoryMetrics()
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithTLS(testTLSConfig(t)),
+		WithMaxConnections(1),
+		WithMaxConnectionsPerIP(1),
+		WithHandler(func(core.Session, core.Message) error { return nil }),
+	)
+	gateway := runtime.NewGateway(runtime.WithMetrics(metrics))
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer stopGateway(t, gateway)
+
+	addr := server.Addr().String()
+	first, err := dialQUICFrom(t, addr, "127.0.0.2")
+	if err != nil {
+		t.Fatalf("first connection with the only slot free: %v", err)
+	}
+	defer first.CloseWithError(0, "")
+
+	second, err := dialQUICFrom(t, addr, "127.0.0.2")
+	if err == nil {
+		defer second.CloseWithError(0, "")
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		select {
+		case <-second.Context().Done():
+		case <-ctx.Done():
+			t.Fatal("excess connection stayed open despite MaxConnections=1")
+		}
+	}
+
+	// The refusal happens in the accept loop, one step after the client sees
+	// the handshake complete, so the counter is polled rather than read once.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		got := metrics.Counter("sessions_rejected_total", "protocol", string(core.ProtocolQUIC))
+		if got == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("sessions_rejected_total{protocol=quic} = %v, want 1", got)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

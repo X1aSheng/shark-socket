@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/infra/observability"
+	"github.com/X1aSheng/shark-socket/internal/runtime"
 	gws "github.com/gorilla/websocket"
 )
 
@@ -151,5 +153,56 @@ func TestWebSocketHeaderReadBoundedByReadTimeout(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Fatalf("connection held for %v, want about the 150ms ReadTimeout", elapsed)
+	}
+}
+
+// TestWebSocketRejectedUpgradeIsCounted pins the admission counter. A refused
+// upgrade used to answer 503 without touching any metric, so a server that was
+// turning every connection away still looked idle in the scrape (D3).
+func TestWebSocketRejectedUpgradeIsCounted(t *testing.T) {
+	metrics := observability.NewMemoryMetrics()
+	server := NewServer(
+		WithAddr("127.0.0.1:0"),
+		WithPath("/ws"),
+		WithMaxConnections(1),
+		WithMaxConnectionsPerIP(1),
+		WithCheckOrigin(func(*http.Request) bool { return true }),
+		WithHandler(func(core.Session, core.Message) error { return nil }),
+	)
+	gateway := runtime.NewGateway(runtime.WithMetrics(metrics))
+	if err := gateway.Register(server); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = gateway.Stop(ctx)
+	}()
+
+	u := url.URL{Scheme: "ws", Host: server.Addr().String(), Path: "/ws"}
+	target := u.String()
+
+	first, _, err := dialWS(target, "")
+	if err != nil {
+		t.Fatalf("first upgrade with the only slot free: %v", err)
+	}
+	defer first.Close()
+
+	second, resp, err := dialWS(target, "")
+	if err == nil {
+		second.Close()
+		t.Fatal("second upgrade succeeded despite MaxConnections=1")
+	}
+	if resp == nil || resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %v, want 503", resp)
+	}
+
+	// The refusal is synchronous with the response, so the counter is already
+	// in place once the client has the status line.
+	if got := metrics.Counter("sessions_rejected_total", "protocol", string(core.ProtocolWS)); got != 1 {
+		t.Fatalf("sessions_rejected_total{protocol=websocket} = %v, want 1", got)
 	}
 }

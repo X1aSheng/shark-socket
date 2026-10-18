@@ -91,7 +91,7 @@ func (s *Server) Start(context.Context) error {
 		ln = shared.NewGateListener(ln, s.acceptor, shared.GateOptions{
 			Reject: rejectWithServiceUnavailable,
 			OnReject: func(shared.RejectReason) {
-				s.rt.Metrics().IncCounter("sessions_rejected_total")
+				shared.IncProtocolCounter(s.rt.Metrics(), shared.MetricSessionsRejected, core.ProtocolHTTP)
 			},
 		})
 	}

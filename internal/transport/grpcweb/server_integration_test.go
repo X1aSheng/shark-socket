@@ -391,8 +391,8 @@ func TestGRPCWebWSDeadPeerReclaimed(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if got := metrics.Counter("sessions_reclaimed_total"); got < 1 {
-		t.Fatalf("sessions_reclaimed_total = %v, want >= 1", got)
+	if got := metrics.Counter("sessions_reclaimed_total", "protocol", string(core.ProtocolGRPCWeb)); got < 1 {
+		t.Fatalf("sessions_reclaimed_total{protocol=grpc-web} = %v, want >= 1", got)
 	}
 }
 

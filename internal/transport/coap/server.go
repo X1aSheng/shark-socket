@@ -340,7 +340,7 @@ func (s *Server) handleDTLSConn(ctx context.Context, conn net.Conn) {
 			// A read-deadline expiry means the peer went silent (half-open
 			// DTLS); count the reclaim.
 			if shared.IsTimeout(err) {
-				s.rt.Metrics().IncCounter("sessions_reclaimed_total")
+				shared.IncProtocolCounter(s.rt.Metrics(), shared.MetricSessionsReclaimed, core.ProtocolCoAP)
 			}
 			return
 		}
@@ -795,7 +795,7 @@ func (s *Server) sweepLoop(ctx context.Context) {
 					// a DTLS session already reclaimed by its read deadline is
 					// not double-counted.
 					if s.closeSession(context.Background(), key, sess) {
-						s.rt.Metrics().IncCounter("sessions_reclaimed_total")
+						shared.IncProtocolCounter(s.rt.Metrics(), shared.MetricSessionsReclaimed, core.ProtocolCoAP)
 					}
 				}
 				return true
@@ -850,7 +850,7 @@ func (s *Server) getOrCreateUDPSession(addr *net.UDPAddr) *session {
 	// time the manager refuses, every legitimate peer is refused too.
 	ip := shared.PeerIP(addr)
 	if s.quota != nil && !s.quota.TryAcquire(ip) {
-		s.rt.Metrics().IncCounter("sessions_rejected_total")
+		shared.IncProtocolCounter(s.rt.Metrics(), shared.MetricSessionsRejected, core.ProtocolCoAP)
 		return nil
 	}
 	// Allocate the ID up front so the published session never carries a

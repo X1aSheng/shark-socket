@@ -6,15 +6,26 @@ import (
 	"github.com/X1aSheng/shark-socket/internal/core"
 )
 
-// Metric names emitted at the handler boundary. They follow the project's
-// unprefixed convention (sessions_active, accept_errors_total) so a single
-// scrape can be summed across protocols with one name plus a label filter.
+// Metric names emitted at the handler and admission boundaries.
+//
+// Naming rule: a metric that more than one transport writes carries a
+// `protocol` label; a metric only one transport can write keeps the protocol in
+// its name (tcp_task_queue_full_total, tls_handshake_failed_total). The label is
+// the only form that survives a sum across transports -- "how many sessions were
+// rejected in total" stays one expression -- while a per-transport name can only
+// be aggregated with a regex over metric names.
 const (
 	// MetricHandlerDuration is the wall-clock duration of one user handler or
 	// responder invocation, in seconds.
 	MetricHandlerDuration = "handler_duration_seconds"
 	// MetricMessagesTotal counts messages delivered to a user handler.
 	MetricMessagesTotal = "messages_total"
+	// MetricSessionsRejected counts connections or pseudo-sessions refused by
+	// an admission check.
+	MetricSessionsRejected = "sessions_rejected_total"
+	// MetricSessionsReclaimed counts sessions reclaimed because the peer went
+	// silent (read deadline expired), as opposed to a clean close.
+	MetricSessionsReclaimed = "sessions_reclaimed_total"
 )
 
 // CallHandler invokes a user handler/responder with panic recovery. A
@@ -53,49 +64,22 @@ func CallHandlerObserved(metrics core.Metrics, protocol core.Protocol, fn func()
 	if metrics == nil {
 		return err
 	}
-	labels := protocolLabels(protocol)
+	labels := core.ProtocolLabel(protocol)
 	metrics.ObserveHistogram(MetricHandlerDuration, time.Since(start).Seconds(), labels...)
 	metrics.IncCounter(MetricMessagesTotal, labels...)
 	return err
 }
 
-// protocolLabels returns the label pair for a protocol. A switch over the
-// closed enum rather than a map lookup: this runs once per message, and the
-// map hash is the single largest cost left in the no-op-metrics case, where
-// nothing is recorded at all.
-func protocolLabels(protocol core.Protocol) []string {
-	switch protocol {
-	case core.ProtocolTCP:
-		return tcpLabels
-	case core.ProtocolUDP:
-		return udpLabels
-	case core.ProtocolHTTP:
-		return httpLabels
-	case core.ProtocolWS:
-		return wsLabels
-	case core.ProtocolCoAP:
-		return coapLabels
-	case core.ProtocolQUIC:
-		return quicLabels
-	case core.ProtocolGRPCWeb:
-		return grpcWebLabels
-	case core.ProtocolCustom:
-		return customLabels
-	default:
-		// An out-of-enum protocol is a caller-defined string; building the
-		// labels allocates, which is the correct trade for a case that never
-		// appears on a hot path.
-		return []string{"protocol", string(protocol)}
+// IncProtocolCounter increments a protocol-scoped counter of the calling
+// transport.
+//
+// It exists so a transport reports an event without repeating the nil check and
+// the label pair at every call site: those two are the easy part to forget, and
+// forgetting them produces a counter that is silently missing series -- an
+// uncounted rejection is indistinguishable from no rejection (ADR-020).
+func IncProtocolCounter(metrics core.Metrics, name string, protocol core.Protocol) {
+	if metrics == nil {
+		return
 	}
+	metrics.IncCounter(name, core.ProtocolLabel(protocol)...)
 }
-
-var (
-	tcpLabels     = []string{"protocol", string(core.ProtocolTCP)}
-	udpLabels     = []string{"protocol", string(core.ProtocolUDP)}
-	httpLabels    = []string{"protocol", string(core.ProtocolHTTP)}
-	wsLabels      = []string{"protocol", string(core.ProtocolWS)}
-	coapLabels    = []string{"protocol", string(core.ProtocolCoAP)}
-	quicLabels    = []string{"protocol", string(core.ProtocolQUIC)}
-	grpcWebLabels = []string{"protocol", string(core.ProtocolGRPCWeb)}
-	customLabels  = []string{"protocol", string(core.ProtocolCustom)}
-)

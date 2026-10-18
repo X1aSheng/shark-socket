@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/X1aSheng/shark-socket/internal/core"
 )
 
 func TestPrometheusMetricsExportText(t *testing.T) {
@@ -128,6 +130,26 @@ func TestPrometheusMetricsSupportsValueOnlyLabels(t *testing.T) {
 
 	text := metrics.ExportText()
 	assertTextContains(t, text, `shark_messages_total{label_0="tcp"} 1`)
+}
+
+// TestSharedCounterIsSummableAcrossProtocols is the reason the shared counters
+// carry a label instead of a per-transport name: one series per protocol keeps
+// the total one expression away (`sum`), whereas a name prefix can only be
+// aggregated with a regex over metric names (D3).
+func TestSharedCounterIsSummableAcrossProtocols(t *testing.T) {
+	metrics := NewPrometheusMetrics()
+	metrics.IncCounter("sessions_rejected_total", core.ProtocolLabel(core.ProtocolTCP)...)
+	metrics.IncCounter("sessions_rejected_total", core.ProtocolLabel(core.ProtocolTCP)...)
+	metrics.IncCounter("sessions_rejected_total", core.ProtocolLabel(core.ProtocolUDP)...)
+
+	text := metrics.ExportText()
+	assertTextContains(t, text, `sessions_rejected_total{protocol="tcp"} 2`)
+	assertTextContains(t, text, `sessions_rejected_total{protocol="udp"} 1`)
+	// One family, one TYPE line: the per-protocol series must not be mistaken
+	// for separate metric names.
+	if got := strings.Count(text, "# TYPE sessions_rejected_total"); got != 1 {
+		t.Fatalf("# TYPE lines = %d, want 1:\n%s", got, text)
+	}
 }
 
 func TestPrometheusMetricsServeHTTP(t *testing.T) {

@@ -142,6 +142,7 @@ func (s *Server) Addr() net.Addr {
 func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 	peer := shared.PeerIPString(r.RemoteAddr)
 	if s.acceptor != nil && s.acceptor.TryAccept(peer) != shared.AcceptOK {
+		shared.IncProtocolCounter(s.rt.Metrics(), shared.MetricSessionsRejected, core.ProtocolWS)
 		http.Error(w, "server busy", http.StatusServiceUnavailable)
 		return
 	}
@@ -217,7 +218,7 @@ func (s *Server) readLoop(sess *session) {
 			// A read-deadline expiry means the peer stopped answering pings
 			// (a vanished client): count the reclaim.
 			if shared.IsTimeout(err) {
-				s.rt.Metrics().IncCounter("sessions_reclaimed_total")
+				shared.IncProtocolCounter(s.rt.Metrics(), shared.MetricSessionsReclaimed, core.ProtocolWS)
 			}
 			return
 		}

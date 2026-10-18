@@ -21,19 +21,33 @@ type countingMetrics struct {
 
 func newCountingMetrics() *countingMetrics { return &countingMetrics{counts: map[string]int{}} }
 
-func (m *countingMetrics) IncCounter(name string, _ ...string) {
+func (m *countingMetrics) IncCounter(name string, labels ...string) {
+	key := counterKey(name, labels)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.counts[name]++
+	m.counts[key]++
 }
 
 func (m *countingMetrics) SetGauge(string, float64, ...string)         {}
 func (m *countingMetrics) ObserveHistogram(string, float64, ...string) {}
 
-func (m *countingMetrics) get(name string) int {
+// get reads the series for name with the given label pairs. The transports
+// emit every shared counter with a protocol label, so an unlabelled lookup
+// returns 0: a transport that drops the label fails the assertion instead of
+// matching another transport's series.
+func (m *countingMetrics) get(name string, labels ...string) int {
+	key := counterKey(name, labels)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.counts[name]
+	return m.counts[key]
+}
+
+func counterKey(name string, labels []string) string {
+	key := name
+	for _, l := range labels {
+		key += "|" + l
+	}
+	return key
 }
 
 // observableRuntime substitutes a metrics sink; the runtime's own metrics
@@ -111,8 +125,8 @@ func TestUDPMaxSessionsPerPeer(t *testing.T) {
 	sendFrom(t, "127.0.0.3", addr)
 	waitFor(t, "the second peer's session", func() bool { return server.SessionCount() == 2 })
 
-	if got := metrics.get("sessions_rejected_total"); got < 1 {
-		t.Fatalf("sessions_rejected_total = %d, want at least 1 (the second socket of 127.0.0.2)", got)
+	if got := metrics.get("sessions_rejected_total", "protocol", string(core.ProtocolUDP)); got < 1 {
+		t.Fatalf("sessions_rejected_total{protocol=udp} = %d, want at least 1 (the second socket of 127.0.0.2)", got)
 	}
 	if got := server.SessionCount(); got != 2 {
 		t.Fatalf("SessionCount = %d, want 2 (one per address)", got)
@@ -151,8 +165,8 @@ func TestUDPMaxSessionsHoldsUnderManySourceAddresses(t *testing.T) {
 	if got := server.SessionCount(); got != maxSessions {
 		t.Fatalf("SessionCount = %d after %d source addresses, want the %d ceiling", got, flood, maxSessions)
 	}
-	if got := metrics.get("sessions_rejected_total"); got != flood-maxSessions {
-		t.Fatalf("sessions_rejected_total = %d, want %d (one per address over the ceiling)", got, flood-maxSessions)
+	if got := metrics.get("sessions_rejected_total", "protocol", string(core.ProtocolUDP)); got != flood-maxSessions {
+		t.Fatalf("sessions_rejected_total{protocol=udp} = %d, want %d (one per address over the ceiling)", got, flood-maxSessions)
 	}
 }
 
@@ -173,17 +187,17 @@ func TestUDPMaxSessionsReleasesOnExpiry(t *testing.T) {
 	// The table is full: a second peer is dropped.
 	sendFrom(t, "127.0.0.3", addr)
 	time.Sleep(50 * time.Millisecond)
-	if got := metrics.get("sessions_rejected_total"); got < 1 {
-		t.Fatalf("sessions_rejected_total = %d, want at least 1 while the table is full", got)
+	if got := metrics.get("sessions_rejected_total", "protocol", string(core.ProtocolUDP)); got < 1 {
+		t.Fatalf("sessions_rejected_total{protocol=udp} = %d, want at least 1 while the table is full", got)
 	}
 
 	// After the idle sweep the slot comes back, and the same peer that was
 	// refused now gets in.
 	waitFor(t, "the table to drain", func() bool { return server.SessionCount() == 0 })
-	before := metrics.get("sessions_rejected_total")
+	before := metrics.get("sessions_rejected_total", "protocol", string(core.ProtocolUDP))
 	sendFrom(t, "127.0.0.3", addr)
 	waitFor(t, "the refused peer to be admitted after the drain", func() bool { return server.SessionCount() == 1 })
-	if got := metrics.get("sessions_rejected_total"); got != before {
-		t.Fatalf("sessions_rejected_total moved from %d to %d while the table had room", before, got)
+	if got := metrics.get("sessions_rejected_total", "protocol", string(core.ProtocolUDP)); got != before {
+		t.Fatalf("sessions_rejected_total{protocol=udp} moved from %d to %d while the table had room", before, got)
 	}
 }
