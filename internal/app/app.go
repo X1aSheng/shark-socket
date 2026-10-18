@@ -5,12 +5,15 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/X1aSheng/shark-socket/api"
+	"github.com/X1aSheng/shark-socket/internal/core"
 	"github.com/X1aSheng/shark-socket/internal/infra/tlsutil"
+	"github.com/X1aSheng/shark-socket/internal/plugin"
 )
 
 type App struct {
@@ -20,6 +23,7 @@ type App struct {
 	Health       *http.Server
 	MetricsHTTP  *http.Server
 	Protocols    []string
+	Logger       *core.LeveledLogger
 	serveErrors  []error
 	serveMu      sync.Mutex
 	serveWG      sync.WaitGroup
@@ -28,15 +32,57 @@ type App struct {
 	certWG       sync.WaitGroup
 	appCtx       context.Context
 	appCancel    context.CancelFunc
+
+	// blacklist and rateLimit are the same instances installed in the plugin
+	// chain. Reload reaches through these handles instead of rebuilding the
+	// chain: a plugin is a live object holding state (counters, goroutine), so
+	// replacing it would both reset state and race with in-flight messages.
+	blacklist *plugin.Blacklist
+	rateLimit *plugin.RateLimit
+
+	reloadMu sync.Mutex // serializes Reload against itself
 }
 
 func New(cfg Config) (*App, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	level, err := core.ParseLevel(cfg.LogLevel)
+	if err != nil {
+		return nil, err
+	}
+	logger := core.NewLeveledLogger(os.Stderr, level)
 	metrics := api.NewPrometheusMetrics()
-	gateway := api.NewGateway(api.WithMetrics(metrics))
-	app := &App{Config: cfg, Gateway: gateway, Metrics: metrics}
+
+	// The blacklist is always in the chain, even when it starts empty: it is
+	// the field operators are most likely to need during an incident, and a
+	// plugin that has to be added at startup could not be turned on by a
+	// reload. An empty set costs one map lookup per accept.
+	blacklist := plugin.NewBlacklist(cfg.Blacklist...)
+	plugins := []api.Plugin{blacklist}
+	var rateLimit *plugin.RateLimit
+	if cfg.RateLimit != nil {
+		window, err := cfg.RateLimit.WindowDuration()
+		if err != nil {
+			return nil, err
+		}
+		rateLimit = plugin.NewRateLimit(cfg.RateLimit.PerSecond, window)
+		plugins = append(plugins, rateLimit)
+	}
+
+	gateway := api.NewGateway(
+		api.WithMetrics(metrics),
+		api.WithLogger(logger),
+		api.WithPlugins(plugins...),
+	)
+	app := &App{
+		Config:    cfg,
+		Gateway:   gateway,
+		Metrics:   metrics,
+		Logger:    logger,
+		blacklist: blacklist,
+		rateLimit: rateLimit,
+	}
 	if err := app.registerProtocols(cfg.Protocols); err != nil {
 		return nil, err
 	}

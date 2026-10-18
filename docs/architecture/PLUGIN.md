@@ -199,6 +199,22 @@ data = originalPayload
 
 ## 4. BlacklistPlugin
 
+> **实现现状 (2026-10-18, ADR-019 起)**: 本章 4.2-4.5 的代码片段描述的是早期设计
+> (带 TTL 的 `exactMap`、分布式 `Cache`、`Add`/`Remove`/`AddCIDR`/`Reload` 与
+> 后台清理循环), **从未落地**. 真实实现是 `internal/plugin/blacklist.go`:
+>
+> - 一个不可变集合 `blacklistSet{exact map[string]struct{}, nets []*net.IPNet}`,
+>   由 `atomic.Pointer` 指向; `OnAccept` 只做一次指针加载
+> - `NewBlacklist(entries ...string)` 宽松(跳过非法条目), 供代码内使用
+> - `Replace(entries []string) error` 严格(先解析再换指针), 供配置热重载使用;
+>   解析失败时旧集合原样保留
+> - `ValidateBlacklist(entries []string) error` 供配置校验复用同一套解析
+> - **没有 TTL, 因而没有清理循环**: 条目只在配置重载时整体替换
+>
+> 精确表与 CIDR 表放在同一个结构里, 是为了让"换黑名单"是一次指针交换,
+> 而不是两次独立的写入 -- 后者存在"新精确表 + 旧 CIDR 表"的中间态.
+> 下面片段保留为设计沿革记录, 不要据其推断当前行为.
+
 ### 4.1 设计
 
 ```
@@ -447,6 +463,20 @@ func extractIP(addr net.Addr) string {
 ---
 
 ## 5. RateLimitPlugin
+
+> **实现现状 (2026-10-18, ADR-019 起)**: 本章 5.2-5.5 的代码片段描述的是早期的
+> "双层令牌桶"设计, **从未落地**. 真实实现是 `internal/plugin/ratelimit.go`:
+>
+> - **滑动窗口**, 不是令牌桶; 32 个分片 (`rateLimitShardCount`), 分片选择用
+>   `maphash` 的进程随机种子, 攻击者无法预计算 IP 制造单分片热点
+> - 计数按**来源 IP**, 键缓存在会话 meta (`rateLimitKeyMeta`), 每条消息省一次
+>   `SplitHostPort`
+> - `rate`/`window` 是 `atomic.Int64`, `SetLimit`/`Limit` 供配置热重载; 改阈值
+>   **不重置计数** -- 否则客户端可以靠重载拿一份新配额
+> - 只有**放行**的请求写入时间戳, 因此每个键的 slice 上界就是 `rate`
+> - 超限返回 `ErrPluginDrop`(丢弃, 不回包), 没有"连续超限转 AutoBan"的联动
+>
+> 下面片段保留为设计沿革记录, 不要据其推断当前行为.
 
 ### 5.1 设计
 

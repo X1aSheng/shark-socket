@@ -3,6 +3,7 @@ package plugin
 import (
 	"hash/maphash"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
@@ -33,23 +34,47 @@ type rateLimitShard struct {
 type RateLimit struct {
 	core.BasePlugin
 	shards [rateLimitShardCount]rateLimitShard
-	rate   int
-	window time.Duration
+	// rate and window are read on every message and written by SetLimit, so
+	// they are atomic: a reload must not race with the read path of eight
+	// transports. Both are packed into integers rather than a mutex because the
+	// read side is the hot path and needs no ordering between the two fields
+	// beyond "each is a valid value".
+	rate   atomic.Int64
+	window atomic.Int64 // nanoseconds
 	lc     lifecycle
 }
 
 func NewRateLimit(rate int, window time.Duration) *RateLimit {
+	p := &RateLimit{}
+	p.SetLimit(rate, window)
+	for i := range p.shards {
+		p.shards[i].counters = make(map[string][]time.Time)
+	}
+	return p
+}
+
+// SetLimit replaces the allowance. Non-positive values fall back to the same
+// defaults as NewRateLimit.
+//
+// Counters are not reset: a tightened limit applies to the messages already
+// recorded in the current window (so it takes effect on the next message), and
+// a loosened one only becomes visible as old timestamps age out. Resetting the
+// counters instead would let a client double its allowance by waiting for a
+// reload, which is the opposite of what an operator changing the limit wants.
+func (p *RateLimit) SetLimit(rate int, window time.Duration) {
 	if rate <= 0 {
 		rate = 1
 	}
 	if window <= 0 {
 		window = time.Second
 	}
-	p := &RateLimit{rate: rate, window: window}
-	for i := range p.shards {
-		p.shards[i].counters = make(map[string][]time.Time)
-	}
-	return p
+	p.rate.Store(int64(rate))
+	p.window.Store(int64(window))
+}
+
+// Limit returns the current allowance.
+func (p *RateLimit) Limit() (rate int, window time.Duration) {
+	return int(p.rate.Load()), time.Duration(p.window.Load())
 }
 
 func (p *RateLimit) Name() string  { return "ratelimit" }
@@ -93,7 +118,8 @@ func (p *RateLimit) Stop() error {
 }
 
 func (p *RateLimit) sweep() {
-	cutoff := time.Now().Add(-p.window)
+	_, window := p.Limit()
+	cutoff := time.Now().Add(-window)
 	for i := range p.shards {
 		sh := &p.shards[i]
 		sh.mu.Lock()
@@ -115,8 +141,9 @@ func (p *RateLimit) sweep() {
 
 func (p *RateLimit) OnMessage(sess core.Session, data []byte) ([]byte, error) {
 	key := p.sessionKey(sess)
+	rate, window := p.Limit()
 	now := time.Now()
-	cutoff := now.Add(-p.window)
+	cutoff := now.Add(-window)
 	sh := p.shardFor(key)
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
@@ -131,7 +158,7 @@ func (p *RateLimit) OnMessage(sess core.Session, data []byte) ([]byte, error) {
 	// Only accepted requests are recorded, so a per-key slice stays bounded by
 	// rate: a flooding peer cannot grow it without bound (previously every
 	// request, including those over the limit, appended a timestamp).
-	if len(stamps) >= p.rate {
+	if len(stamps) >= rate {
 		sh.counters[key] = stamps
 		return nil, core.ErrPluginDrop
 	}

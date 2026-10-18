@@ -2,7 +2,10 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -37,6 +40,89 @@ func (nopLogger) Debug(string, ...any) {}
 func (nopLogger) Info(string, ...any)  {}
 func (nopLogger) Warn(string, ...any)  {}
 func (nopLogger) Error(string, ...any) {}
+
+// LeveledLogger is a Logger whose threshold can be changed while it is in use.
+//
+// The level lives in a slog.LevelVar, which slog consults for every record it
+// handles. SetLevel therefore takes effect on the very next line without
+// rebuilding the handler or replacing the logger value that components already
+// hold -- which is what makes "reload the log level" possible at all: the
+// alternative (swap the Logger inside every component) would need a lock on the
+// logging hot path.
+type LeveledLogger struct {
+	inner *slog.Logger
+	level *slog.LevelVar
+}
+
+// NewLeveledLogger builds a text logger writing to out at the given level.
+func NewLeveledLogger(out io.Writer, level slog.Level) *LeveledLogger {
+	levelVar := &slog.LevelVar{}
+	levelVar.Set(level)
+	handler := slog.NewTextHandler(out, &slog.HandlerOptions{Level: levelVar})
+	return &LeveledLogger{inner: slog.New(handler), level: levelVar}
+}
+
+// SetLevel changes the threshold for all subsequent records.
+func (l *LeveledLogger) SetLevel(level slog.Level) {
+	if l == nil || l.level == nil {
+		return
+	}
+	l.level.Set(level)
+}
+
+// Level returns the current threshold.
+func (l *LeveledLogger) Level() slog.Level {
+	if l == nil || l.level == nil {
+		return slog.LevelInfo
+	}
+	return l.level.Level()
+}
+
+func (l *LeveledLogger) Debug(msg string, attrs ...any) {
+	if l == nil {
+		return
+	}
+	l.inner.Debug(msg, attrs...)
+}
+
+func (l *LeveledLogger) Info(msg string, attrs ...any) {
+	if l == nil {
+		return
+	}
+	l.inner.Info(msg, attrs...)
+}
+
+func (l *LeveledLogger) Warn(msg string, attrs ...any) {
+	if l == nil {
+		return
+	}
+	l.inner.Warn(msg, attrs...)
+}
+
+func (l *LeveledLogger) Error(msg string, attrs ...any) {
+	if l == nil {
+		return
+	}
+	l.inner.Error(msg, attrs...)
+}
+
+// ParseLevel converts a configuration string ("debug", "info", "warn",
+// "error") into a slog level. The empty string means info, so a config that
+// omits log_level keeps the previous default behaviour.
+func ParseLevel(name string) (slog.Level, error) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "", "info":
+		return slog.LevelInfo, nil
+	case "debug":
+		return slog.LevelDebug, nil
+	case "warn", "warning":
+		return slog.LevelWarn, nil
+	case "error":
+		return slog.LevelError, nil
+	default:
+		return slog.LevelInfo, fmt.Errorf("unknown log level %q (want debug, info, warn or error)", name)
+	}
+}
 
 // Metrics is intentionally small. Concrete exporters can adapt it to Prometheus
 // or another backend without leaking vendor types into core.

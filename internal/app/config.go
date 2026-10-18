@@ -9,14 +9,42 @@ import (
 	"strings"
 	"time"
 
+	"github.com/X1aSheng/shark-socket/internal/core"
 	"github.com/X1aSheng/shark-socket/internal/infra/tlsutil"
+	"github.com/X1aSheng/shark-socket/internal/plugin"
 )
 
 type Config struct {
 	ShutdownTimeout string           `json:"shutdown_timeout"`
 	HealthAddr      string           `json:"health_addr"`
 	MetricsAddr     string           `json:"metrics_addr"`
+	LogLevel        string           `json:"log_level,omitempty"`
+	Blacklist       []string         `json:"blacklist,omitempty"`
+	RateLimit       *RateLimitConfig `json:"rate_limit,omitempty"`
 	Protocols       []ProtocolConfig `json:"protocols"`
+}
+
+// RateLimitConfig enables the per-peer message rate limiter. Leaving it out
+// keeps the limiter out of the plugin chain entirely, so an unconfigured
+// deployment pays nothing; adding it later needs a restart (see ADR-019).
+type RateLimitConfig struct {
+	PerSecond int    `json:"per_second"`
+	Window    string `json:"window,omitempty"`
+}
+
+// WindowDuration returns the sliding window, defaulting to one second.
+func (r RateLimitConfig) WindowDuration() (time.Duration, error) {
+	if strings.TrimSpace(r.Window) == "" {
+		return time.Second, nil
+	}
+	window, err := time.ParseDuration(r.Window)
+	if err != nil {
+		return 0, fmt.Errorf("invalid rate_limit.window %q: %w", r.Window, err)
+	}
+	if window <= 0 {
+		return 0, fmt.Errorf("rate_limit.window must be positive")
+	}
+	return window, nil
 }
 
 type ProtocolConfig struct {
@@ -39,6 +67,7 @@ func DefaultConfig() Config {
 		ShutdownTimeout: "10s",
 		HealthAddr:      "127.0.0.1:18081",
 		MetricsAddr:     "127.0.0.1:18080",
+		LogLevel:        "info",
 		Protocols: []ProtocolConfig{
 			{Name: "tcp", Addr: "127.0.0.1:18000"},
 		},
@@ -82,6 +111,20 @@ func (c Config) ShutdownDuration() (time.Duration, error) {
 func (c Config) Validate() error {
 	if _, err := c.ShutdownDuration(); err != nil {
 		return err
+	}
+	if _, err := core.ParseLevel(c.LogLevel); err != nil {
+		return err
+	}
+	if err := plugin.ValidateBlacklist(c.Blacklist); err != nil {
+		return err
+	}
+	if c.RateLimit != nil {
+		if c.RateLimit.PerSecond <= 0 {
+			return fmt.Errorf("rate_limit.per_second must be positive")
+		}
+		if _, err := c.RateLimit.WindowDuration(); err != nil {
+			return err
+		}
 	}
 	enabled := 0
 	seen := map[string]bool{}
@@ -155,6 +198,29 @@ func applyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 	}
 	if value, ok := lookup("SHARK_METRICS_ADDR"); ok {
 		cfg.MetricsAddr = value
+	}
+	if value, ok := lookup("SHARK_LOG_LEVEL"); ok {
+		cfg.LogLevel = value
+	}
+	if entries := splitCSVEnv(lookup, "SHARK_BLACKLIST"); entries != nil {
+		cfg.Blacklist = entries
+	}
+	ratePerSecond, hasRate := lookup("SHARK_RATE_LIMIT_PER_SECOND")
+	rateWindow, hasRateWindow := lookup("SHARK_RATE_LIMIT_WINDOW")
+	if hasRate || hasRateWindow {
+		if cfg.RateLimit == nil {
+			cfg.RateLimit = &RateLimitConfig{PerSecond: 1}
+		}
+		if hasRate {
+			parsed, err := strconv.Atoi(strings.TrimSpace(ratePerSecond))
+			if err != nil {
+				return fmt.Errorf("invalid SHARK_RATE_LIMIT_PER_SECOND %q: %w", ratePerSecond, err)
+			}
+			cfg.RateLimit.PerSecond = parsed
+		}
+		if hasRateWindow {
+			cfg.RateLimit.Window = rateWindow
+		}
 	}
 	httpAddr, hasHTTPAddr := lookup("SHARK_HTTP_ADDR")
 	httpOrigins := splitCSVEnv(lookup, "SHARK_HTTP_ALLOWED_ORIGINS")

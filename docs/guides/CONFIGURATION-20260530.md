@@ -38,6 +38,9 @@ Top-level fields:
 | `shutdown_timeout` | duration string | Graceful shutdown timeout, for example `10s` |
 | `health_addr` | string | HTTP health listener address |
 | `metrics_addr` | string | Prometheus metrics listener address |
+| `log_level` | string | `debug`, `info`, `warn` or `error`; defaults to `info` |
+| `blacklist` | string array | Rejected peers, each an IP literal or a CIDR |
+| `rate_limit` | object | Per-peer message limit: `{ "per_second": N, "window": "1s" }` |
 | `protocols` | array | Enabled protocol listeners |
 
 Protocol fields:
@@ -124,6 +127,34 @@ Supported `tls_client_auth` values:
 | `verify_if_given` | Verify a client certificate when supplied |
 | `require_and_verify` | Require and verify a client certificate against `tls_client_ca_file` |
 
+## Hot Reload
+
+`log_level`, `blacklist`, `rate_limit` and `shutdown_timeout` can change without a
+restart (`SIGHUP`, see ADR-019):
+
+```json
+{
+  "log_level": "warn",
+  "blacklist": ["203.0.113.9", "198.51.100.0/24"],
+  "rate_limit": { "per_second": 200, "window": "1s" },
+  "protocols": [{ "name": "tcp", "addr": "0.0.0.0:18000" }]
+}
+```
+
+The reload is all-or-nothing. A document that also changes `health_addr`,
+`metrics_addr` or any `protocols` entry is rejected whole with
+`ErrListenChangeRequiresRestart`, and the running configuration stays in force --
+listeners, TLS material and the protocol set are bound at startup.
+
+Two boundaries worth knowing:
+
+- `blacklist` is evaluated on accept, so existing connections keep working and are
+  never disconnected by a reload.
+- `rate_limit` is evaluated per message, so a new value applies to the next message
+  on an existing connection too; counters are not reset, which prevents a reload
+  from handing a client a fresh allowance.
+- Adding or removing `rate_limit` changes the plugin chain, so it needs a restart.
+
 ## Environment Overrides
 
 Supported overrides:
@@ -134,6 +165,10 @@ Supported overrides:
 | `SHARK_SHUTDOWN_TIMEOUT` | Overrides `shutdown_timeout` |
 | `SHARK_HEALTH_ADDR` | Overrides health listener |
 | `SHARK_METRICS_ADDR` | Overrides metrics listener |
+| `SHARK_LOG_LEVEL` | Overrides `log_level` |
+| `SHARK_BLACKLIST` | Comma-separated blacklist entries (IP or CIDR) |
+| `SHARK_RATE_LIMIT_PER_SECOND` | Enables/overrides the per-peer message limit |
+| `SHARK_RATE_LIMIT_WINDOW` | Overrides the rate limit window |
 | `SHARK_HTTP_ADDR` | Adds or overrides HTTP listener address |
 | `SHARK_HTTP_ALLOWED_ORIGINS` | Comma-separated HTTP CORS allowed origins |
 | `SHARK_TCP_ADDR` | Adds or overrides TCP listener address |
@@ -181,5 +216,7 @@ Metrics:
 - TCP TLS, QUIC TLS, and client certificate verification are configurable.
 - Certificate reload and finer per-protocol TLS defaults remain part of the
   security-baseline milestone.
+- Configuration hot reload is limited to the non-listener subset; listener and
+  plugin-chain changes still require a restart.
 - HTTP CORS and WebSocket/gRPC-Web Origin allowlists are configurable.
 - File format is JSON only; YAML can be added later if operators need it.

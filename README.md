@@ -84,6 +84,11 @@ chain, and one observability plane.
 - **Classified accept errors**: `net.ErrClosed` stops the loop, resource
   exhaustion (`EMFILE`/`ENFILE`/`ENOMEM`) is counted separately and backed off,
   and a failure streak collapses into one log line instead of a flood.
+- **Hot-reloadable operations, bounded on purpose**: `SIGHUP` swaps the log
+  level, the block list, the rate-limit parameters and the shutdown grace period
+  without touching a live session; a document that also moves a listener is
+  rejected whole rather than half-applied, so the running configuration is
+  always one the operator can reason about (ADR-019).
 - **Observability first**: metrics, traces, and logs on critical paths;
   Prometheus metrics use a fixed key set (no cardinality explosion);
   `/healthz` and `/readyz` endpoints plus `sessions_active` /
@@ -110,6 +115,7 @@ chain, and one observability plane.
 | gRPC-Web | Implemented | Direct HTTP mode, binary framing/trailers, WebSocket mode, connection caps (global + per-IP) |
 | Plugins | Implemented | Blacklist (exact + CIDR), RateLimit (32-shard sliding window), Heartbeat, Persistence (Store+MessageLog), AutoBan, SlowHandler, Cluster |
 | Security | Implemented | TLS cert hot-reload via file watcher, mTLS client auth, DTLS for UDP/CoAP, per-source-IP quotas on every transport |
+| Ops | Implemented | `SIGHUP` reloads log level / blacklist / rate limit / shutdown timeout; listener changes require a restart |
 | Persistence | Implemented | Store interface (error-returning), BoltDB backend, durable message log with sequence numbers, session snapshots |
 | Infra | Implemented | In-memory cache/store/pubsub/circuitbreaker/observability, Prometheus metrics exporter, OpenTelemetry tracer adapter, TLS cert cache |
 | MQTT | Integrated | External broker adapter (paho client), docker-compose mosquitto for E2E tests |

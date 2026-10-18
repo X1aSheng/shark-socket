@@ -251,8 +251,40 @@ resources:
 | `SHARK_SHUTDOWN_TIMEOUT` | `10s` | 优雅关闭超时 |
 | `SHARK_HEALTH_ADDR` | `127.0.0.1:18081` | 健康端点监听地址 |
 | `SHARK_METRICS_ADDR` | `127.0.0.1:18080` | 指标端点监听地址 |
+| `SHARK_LOG_LEVEL` | `info` | 日志级别 (`debug`/`info`/`warn`/`error`) |
+| `SHARK_BLACKLIST` | 空 | 黑名单, 逗号分隔的 IP 或 CIDR |
+| `SHARK_RATE_LIMIT_PER_SECOND` | 未启用 | 单来源每秒消息上限, 设置即启用限流 |
+| `SHARK_RATE_LIMIT_WINDOW` | `1s` | 限流滑窗长度 |
 
-### 6.2 协议
+### 6.2 热重载 (SIGHUP)
+
+`SIGHUP` 重读配置文件与环境变量, 只应用**不动 listener** 的子集 (见 ADR-019):
+
+| 字段 | 热更 | 生效点 |
+|------|------|--------|
+| `log_level` | 是 | 下一条日志 |
+| `blacklist` | 是 | 下一次 accept |
+| `rate_limit` | 是 | 下一条消息 (计数不重置) |
+| `shutdown_timeout` | 是 | 下一次停机 |
+| `health_addr` / `metrics_addr` / `protocols` | **否** | 需要重启 |
+
+```bash
+# 改完配置后
+kill -HUP $(pidof shark-socket)
+
+# 日志里二选一
+#   {"msg":"config reloaded","log_level":"warn",...}
+#   {"level":"ERROR","msg":"config reload rejected, keeping the running configuration",...}
+```
+
+三条性质:
+
+- **整份拒绝**: 文档里只要含监听类变更, 整次重载被拒, 热字段一个也不应用
+- **失败保留旧配置**: 解析/校验失败时运行中的配置、黑名单、限流、日志级别全部不变
+- **存量会话不受影响**: 黑名单只在 accept 判定; 限流是消息级策略, 新参数对存量连接
+  的下一条消息生效
+
+### 6.3 协议
 
 | 变量 | 协议 | 示例 |
 |------|------|------|

@@ -7,6 +7,69 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### 配置热重载子集 (2026-10-18)
+
+对比报告 C6: 配置一次加载, 只有证书能热更. 改限流阈值、黑名单或日志级别都要重启,
+而重启会掐断全部在线会话 -- 事故中要收紧限流时, 手边唯一的工具是最贵的那一个.
+根因不是"没有热重载", 而是**从来没有声明过哪些字段可以不重启生效**, 于是每个字段
+都只能按最保守的方式处理. 见 ADR-019.
+
+**热更子集是封闭的**: `log_level` / `blacklist` / `rate_limit` / `shutdown_timeout`.
+判据一条: 新值能否在不重建 socket、goroutine 或 handler 的前提下生效. `SIGHUP`
+重读文件与环境变量, 应用该子集.
+
+**监听类变更整份拒绝.** 文档里只要含 `health_addr` / `metrics_addr` / `protocols`
+(地址、路径、模式、TLS、CORS) 的变更, 整次重载返回
+`ErrListenChangeRequiresRestart`, 热字段一个也不应用. 运维很少一次只改一个字段,
+"改端口 + 顺手加一条黑名单"是最常见的组合; 部分应用会把进程留在一种没人能推理的
+状态. 整份拒绝的代价是一条错误日志, 换来的是"要么全生效要么全不生效".
+
+**先验证后应用.** 校验 (含日志级别解析、黑名单严格解析) 全部通过后才写状态, 写阶段
+只有原子 store, 因此不存在"应用到一半失败". 三条失败路径 (解析/校验/监听变更) 下
+运行配置、黑名单、限流参数、日志级别全部保持原值, 只多一条
+
+```text
+config reload rejected, keeping the running configuration
+```
+
+**改的是活对象, 不是换对象**:
+
+- `plugin.Blacklist` 改为持有 `atomic.Pointer[blacklistSet]`, 新增
+  `Replace(entries []string) error` 与 `ValidateBlacklist`. 精确地址表与 CIDR 表
+  封装在同一个不可变结构里, 重载不会出现"新精确表 + 旧 CIDR 表"的中间态. 构造器
+  仍是宽松的(跳过非法条目), `Replace` 是严格的 -- 运维从配置文件来的输入被静默
+  丢弃, 看起来会和"拉黑没生效"一模一样
+- `plugin.RateLimit` 的 `rate`/`window` 改为 `atomic.Int64`, 新增 `SetLimit`/`Limit`.
+  **计数不重置**: 收紧立即生效, 放宽随旧时间戳老化逐步放开; 清零等于给客户端一个
+  "等到重载就能翻倍"的漏洞
+- 新增 `core.LeveledLogger`(内部 `slog.LevelVar`)与 `core.ParseLevel`. 组件持有的是
+  `core.Logger` 接口值, 换 handler 就要替换被八处各存一份的接口值; `LevelVar` 是
+  slog 为此提供的原语, 每条 record 现读, 日志热路径不加锁
+
+**补上一个既有缺口**: `app.New` 之前不注入 Logger, 网关拿到的是 `NopLogger` --
+运行时的 `server failed` / `cert reload failed` 无人可见. 现在默认注入
+`info` 级 stderr logger, "热更日志级别"才有作用对象.
+
+**入口与生命周期**: `App.Reload(cfg)` / `App.ReloadFile(path)`. 不重走插件生命周期,
+因为 `Gateway.Start` 已经调过 `Plugins().StartAll()`, 再走一遍会让限流的清扫 goroutine
+有两条. 主程序的 SIGHUP 走独立 channel, 重载失败不会被误当成停机请求;
+停机宽限期改为向 App 要当前值, 因此 `shutdown_timeout` 的热更真的会在下一次停机生效.
+
+**验收** (`internal/app/reload_test.go`, `internal/plugin/reload_test.go`):
+
+- 热更后新连接立即生效: 同一操作重载前能通、重载后被立即关闭 (elapsed < 1s 区分
+  "关闭"与"静默丢弃"), 且重载前有同操作的阳性对照
+- 存量连接不受影响: 重载前建立的连接继续 echo
+- 失败保留旧配置: 非法黑名单条目、未知日志级别、截断的配置文件三条路径, 断言配置与
+  日志级别都是旧值
+- 监听变更整份拒绝: 断言 `ErrListenChangeRequiresRestart`, 且同一文档里的黑名单
+  没有泄漏进来 (连接仍被服务)
+- 限流: 2/s 下第 3 条被丢弃, 重载到 1000/s 后下一条通过 (计数未重置)
+- 配置里没有限流段时重载"开启限流"被拒 (插件链构成在启动时固定)
+
+**文档**: ADR-019; `DEPLOYMENT.md` 新增 sec.6.2 (热重载矩阵与三条性质),
+`CONFIGURATION-20260530.md` 新增 Hot Reload 一节与四个环境变量.
+
 ### CoAP 分块下发 (2026-10-18)
 
 对比报告 C3: 全仓没有 Block1/Block2, 于是任何超过单数据报的响应都只能靠 IP 分片,
