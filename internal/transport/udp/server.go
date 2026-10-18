@@ -280,7 +280,7 @@ func (s *Server) handleDTLSConn(ctx context.Context, conn net.Conn) {
 		}
 		if s.opts.Handler != nil {
 			msg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolUDP, Payload: payload}
-			if err := shared.CallHandler(func() error { return s.opts.Handler(sess, msg) }, s.rt.Logger()); err != nil {
+			if err := shared.CallHandlerObserved(s.rt.Metrics(), core.ProtocolUDP, func() error { return s.opts.Handler(sess, msg) }, s.rt.Logger()); err != nil {
 				_ = sess.Close(context.Background())
 			}
 		}
@@ -326,7 +326,7 @@ func (s *Server) readLoop(ctx context.Context) {
 		}
 		if s.opts.Handler != nil {
 			msg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolUDP, Payload: payload}
-			if err := shared.CallHandler(func() error { return s.opts.Handler(sess, msg) }, s.rt.Logger()); err != nil {
+			if err := shared.CallHandlerObserved(s.rt.Metrics(), core.ProtocolUDP, func() error { return s.opts.Handler(sess, msg) }, s.rt.Logger()); err != nil {
 				s.closeSession(context.Background(), sess.key, sess)
 			}
 		}

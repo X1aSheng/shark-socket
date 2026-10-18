@@ -471,7 +471,7 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 	var responsePayload []byte
 	if s.opts.Responder != nil {
 		handlerMsg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolCoAP, Payload: payload}
-		err = shared.CallHandler(func() (e error) {
+		err = shared.CallHandlerObserved(s.rt.Metrics(), core.ProtocolCoAP, func() (e error) {
 			responsePayload, e = s.opts.Responder(sess, handlerMsg)
 			return e
 		}, s.rt.Logger())
@@ -485,7 +485,7 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 		}
 	} else if s.opts.Handler != nil {
 		handlerMsg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolCoAP, Payload: payload}
-		if err := shared.CallHandler(func() error { return s.opts.Handler(sess, handlerMsg) }, s.rt.Logger()); err != nil {
+		if err := shared.CallHandlerObserved(s.rt.Metrics(), core.ProtocolCoAP, func() error { return s.opts.Handler(sess, handlerMsg) }, s.rt.Logger()); err != nil {
 			if sess.dtlsConn != nil {
 				_ = sess.Close(context.Background())
 			} else {

@@ -44,6 +44,7 @@
 | [ADR-017](ADR-017-admission-control.md) | 统一准入与单来源配额 | 已采纳 | `shared.PeerQuota` 一个计数两维读法, HTTP 走 GateListener 回真 503, 握手独立预算 |
 | [ADR-018](ADR-018-coap-blockwise.md) | CoAP 分块下发 | 已采纳 | Block2 按请求重建响应体 (不缓存), 块大小只向下协商, Block1 回 4.13 |
 | [ADR-019](ADR-019-config-hot-reload.md) | 配置热重载子集 | 已采纳 | SIGHUP 只换日志级别/黑名单/限流参数, 含监听变更则整份拒绝 |
+| [ADR-020](ADR-020-metric-truthfulness.md) | 指标面真实化 | 已采纳 | handler 边界记直方图 + protocol label, 结构体序列键零分配, 真 histogram 导出 |
 
 编号从 001 直接到 011, 缺 010。仓库中从未存在 `ADR-010` 文件 (查过全部提交历史),
 V9 审查 H12 曾记录某处引用了这个不存在的编号, 现已无残留引用。新 ADR 顺延 012 起编。
@@ -66,3 +67,4 @@ V9 审查 H12 曾记录某处引用了这个不存在的编号, 现已无残留�
 - 修改连接准入, 单来源配额, accept 错误处理或握手超时前先查 ADR-017.
 - 修改 CoAP 分块传输, 或决定是否实现 Block1 前先查 ADR-018.
 - 修改配置热重载范围, 或调整 SIGHUP 语义前先查 ADR-019.
+- 修改指标名/label/bucket 梯度, 或在热路径上加观测前先查 ADR-020.

@@ -88,7 +88,7 @@ type ScalablePool struct {
 // NewScalablePool creates an elastic pool. min/max bound the worker count at
 // run time; non-positive values fall back to GOMAXPROCS and
 // DefaultMaxWorkerMultiplier x GOMAXPROCS respectively.
-func NewScalablePool(handler core.Handler, logger core.Logger, min, max, queueSize int, policy FullPolicy) *ScalablePool {
+func NewScalablePool(handler core.Handler, logger core.Logger, min, max, queueSize int, policy FullPolicy, opts ...PoolOption) *ScalablePool {
 	if min <= 0 {
 		min = runtime.GOMAXPROCS(0)
 	}
@@ -107,6 +107,7 @@ func NewScalablePool(handler core.Handler, logger core.Logger, min, max, queueSi
 	}
 	p.minWorker.Store(int64(min))
 	p.maxWorker.Store(int64(max))
+	p.applyOptions(opts)
 	return p
 }
 

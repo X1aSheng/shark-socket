@@ -510,6 +510,18 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
 - 证据: `core/observability.go:46` 定义了 `ObserveHistogram`, 全仓生产代码
   调用点 **0 个** (仅 nop 实现与 Prometheus 实现自身)
 - 影响: README 的 P99 数字全部来自压测工具, 线上无法自证; 出问题时没有分位数可看
+- **已实施 (2026-10-18, ADR-020)**: 计时点选在 **handler 边界**
+  (`shared.CallHandlerObserved`)而不是各传输的读循环: 那是所有协议唯一的汇合点,
+  数值含 handler 自己的 `Send`、不含队列等待, 因此跨协议可比. 同处计
+  `messages_total{protocol}`. 覆盖 8 处调用点 (TCP 走 pool, HTTP/UDP×2/WS/CoAP×2/
+  QUIC/gRPC-Web 直调). 端到端验收在 `internal/app/metrics_test.go`: 三条真实 TCP
+  echo 之后导出文本里有 `handler_duration_seconds_count{protocol="tcp"} 3` 与
+  `messages_total{protocol="tcp"} 3`; 另一条测试断言 TCP 消息不会出现在 UDP 序列里.
+  **代价已量化并上门禁** (ADR-020 表格): 默认 NopMetrics 5→15 ns, 配导出器
+  98 ns / 0 alloc; `CallHandlerObserved*` 与 `ObserveHistogram/IncCounter` 已加进
+  `scripts/benchgate` 固定套件
+- **一处口径**: `messages_total` 度量"投递给 handler 的流量", 失败与 panic 也计入;
+  按成功率的指标需要另加, 否则丢包会表现为流量下降, 掩盖事故
 
 **D2 Prometheus 直方图不可聚合**
 
@@ -517,6 +529,22 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
   summary 不支持跨实例聚合, 且无分位数时连单实例 P99 也算不出
 - 改法: 改为显式 buckets 的 histogram (或用 OTel SDK 的 Prometheus exporter)
 - 验收: `histogram_quantile(0.99, ...)` 能返回非空值
+- **已实施 (2026-10-18, ADR-020)**: 导出 `_bucket{le=...}` 累计值 + `_count` +
+  `_sum`, `# TYPE` 改 `histogram`. 默认梯度秒制 1µs..10s 共 22 档 (不是
+  `DefBuckets` 的 5ms 起步 -- 微秒级 echo 会全落进第一档), 其它单位走
+  `RegisterHistogram(name, buckets)`, 首次观测后拒绝注册 (换梯度要重分桶, 而导出器
+  为 O(buckets) 不留原始样本). **验收以 PromQL 的算法本身代替 Prometheus**:
+  `TestPrometheusHistogramQuantileIsComputable` 在导出的 bucket 上重算
+  histogram_quantile(0.99), 断言结果落在 (0.01, 0.025] 区间 -- summary 形态没有
+  bucket 可找, 必然失败. 另有 `TestPrometheusHistogramImplicitInfBucket` 锁住
+  `bucket{le="+Inf"} == _count` (写错会导致 Prometheus 判直方图不自洽, 返回 NaN;
+  实现时正是这里错了一次)
+- **顺带修掉的性能坑**: 原导出器每次调用都拼 `name{labels}` 字符串并拷贝 label
+  切片, 每消息两次观测 = 5 次分配 / 235-272 ns. 序列键改为结构体
+  `(name, label0, value0, rest)` 后 0 分配 / 98 ns, 时间降约 40%. 这个数字是
+  "能不能在数据面上记指标"的分水岭, 所以写进了 ADR 与门禁
+- **未做**: D3 的存量指标 label 化 (含按协议的 `sessions_active`) 需要抓取期
+  collector 或第二份计数, 后者正是 ADR-017 否掉的形态, 见 ADR-020 重新评估条件
 
 **D3 指标无 label**
 
@@ -603,8 +631,8 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
 
 进度 (2026-10-18): 批 2 的 B1 B2(部分) B3(a) B4 B5 B6 B7 已完成 (ADR-012 至
 ADR-015), 批 3 的 C1 C2 C4 C5 C7 E2 已完成 (ADR-016), 批 1 的 A1-A5 已完成
-(ADR-017), C3 (ADR-018) 与 C6 (ADR-019) 已完成. 其余 (B2 的端到端证明, D1 D2)
-未开始, 见各条目下的备注.
+(ADR-017), C3 (ADR-018) 与 C6 (ADR-019) 已完成, D1/D2 (ADR-020) 已完成.
+其余 (B2 的端到端证明, D3, D4) 未开始, 见各条目下的备注.
 
 不做: B8 (已记录决策), C3 的 Block1 (见 ADR-018 重新评估条件), C6 只做可热更子集.
 

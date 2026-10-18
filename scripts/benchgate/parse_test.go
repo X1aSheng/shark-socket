@@ -329,10 +329,14 @@ pkg: a/two
 		t.Errorf("missingMeasurements = %v, want one note about a/two on the head side", got)
 	}
 
-	// The reverse direction reads the other way round.
-	got = missingMeasurements(head, bothSides)
-	if len(got) != 1 || !strings.Contains(got[0], "base measured none") {
-		t.Errorf("missingMeasurements = %v, want one note about a/two on the base side", got)
+	// The reverse direction is not a loss: the base ref simply had no such
+	// benchmark. It is reported as new coverage, not as a missing measurement.
+	if got := missingMeasurements(head, bothSides); len(got) != 0 {
+		t.Errorf("missingMeasurements = %v, want nothing when only the base side is short", got)
+	}
+	got = unmeasuredIsNew(head, bothSides)
+	if len(got) != 1 || !strings.Contains(got[0], "a/two") || !strings.Contains(got[0], "new benchmarks") {
+		t.Errorf("unmeasuredIsNew = %v, want one note about a/two being new", got)
 	}
 }
 

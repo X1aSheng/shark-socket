@@ -36,7 +36,7 @@
 - **失败隔离**:单连接 / 单协程 panic 不影响整体;插件 panic 由 PluginRunner 捕获并返回控制错误.
 - **僵尸连接回收,可观测**:每个空闲/死对端回收路径都有超时边界(TCP 读超时,UDP/CoAP TTL 清扫,DTLS 读超时,WebSocket/gRPC-Web PongTimeout,可配置的 QUIC idle 超时),并经 `sessions_reclaimed_total` 计数--幽灵连接不可能永远存活,回收可监控.
 - **可运维的热重载,边界明确**:`SIGHUP` 换日志级别/黑名单/限流参数/停机宽限期,不碰在线会话;含监听变更的文档整份拒绝而不是部分应用,因此运行中的配置永远是运维能推理的那一份(ADR-019).
-- **可观测优先**:关键路径内置 metrics / trace / log;Prometheus 指标采用固定键集合(无基数爆炸);提供 `/healthz`,`/readyz` 端点及 `sessions_active`,`sessions_reclaimed_total` 等会话指标.
+- **可观测优先**:关键路径内置 metrics / trace / log;Prometheus 指标采用固定键集合(无基数爆炸);提供 `/healthz`,`/readyz` 端点及 `sessions_active`,`sessions_reclaimed_total` 等会话指标.handler 延迟是带 `protocol` label 的真直方图(`handler_duration_seconds{protocol}`),`histogram_quantile(0.99, ...)` 在线上进程可直接回答,且每消息零分配(ADR-020).
 - **benchmark 驱动**:性能优化以基准测试与 pprof 热点证据为前提,禁止凭直觉改结构.
 - **编译期验证**:`var _ Interface = (*Impl)(nil)` 接口满足检查,关键约束用类型系统表达.
 - **安全内建**:TLS 证书热加载,mTLS,DTLS,接受速率限制,连接上限,写超时,非 root 容器,只读根文件系统,Drop ALL capabilities.

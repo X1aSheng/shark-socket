@@ -22,6 +22,10 @@ import (
 type poolCore struct {
 	handler core.Handler
 	logger  core.Logger
+	// metrics is where the handler boundary reports its latency histogram and
+	// message count. Nil is valid (tests, and pools built without a runtime),
+	// in which case CallHandlerObserved costs one branch.
+	metrics core.Metrics
 	queue   chan PoolTask
 	policy  FullPolicy
 	closed  atomic.Bool
@@ -48,6 +52,38 @@ func newPoolCore(handler core.Handler, logger core.Logger, workers, queueSize in
 		policy:  policy,
 		done:    make(chan struct{}),
 	}
+}
+
+// PoolOption configures the optional parts of a pool. The required ones
+// (handler, logger, sizing, back-pressure) stay positional because a pool
+// without them makes no sense; metrics is optional because a pool can run
+// without a runtime.
+type PoolOption func(*poolConfig)
+
+type poolConfig struct {
+	metrics core.Metrics
+}
+
+// WithPoolMetrics makes the pool report handler_duration_seconds and
+// messages_total at the handler boundary.
+func WithPoolMetrics(metrics core.Metrics) PoolOption {
+	return func(c *poolConfig) {
+		c.metrics = metrics
+	}
+}
+
+// applyOptions copies the option results onto the pool. It exists because
+// poolCore is embedded by value: options write into a temporary and the two
+// constructors then store the fields, instead of every option having to know
+// which concrete pool it is configuring.
+func (c *poolCore) applyOptions(opts []PoolOption) {
+	cfg := poolConfig{}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&cfg)
+		}
+	}
+	c.metrics = cfg.metrics
 }
 
 // Handler returns the configured handler.
@@ -132,7 +168,7 @@ func (c *poolCore) handle(t PoolTask) {
 // it the whole process) and the operator gets a diagnostic rather than a
 // silently vanished session.
 func (c *poolCore) callHandler(sess core.Session, msg core.Message) error {
-	return CallHandler(func() error { return c.handler(sess, msg) }, c.logger)
+	return CallHandlerObserved(c.metrics, msg.Protocol, func() error { return c.handler(sess, msg) }, c.logger)
 }
 
 // beginClose marks the pool closed and closes the done channel exactly once.

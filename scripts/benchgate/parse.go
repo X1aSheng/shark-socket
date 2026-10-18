@@ -140,14 +140,19 @@ func benchmarksPerPackage(out string) map[string]int {
 	return counts
 }
 
-// missingMeasurements reports packages that one side measured and the other did
-// not, and it exists because that failure is invisible by construction.
+// missingMeasurements reports packages the base side measured and the head side
+// did not, and it exists because that failure is invisible by construction.
 //
 // A package that silently ran nothing - a test binary that failed to start, a
 // -bench pattern that stopped matching, a measurement lost to a transient -
 // produces no rows, and no rows fail no checks. It looks exactly like a package
 // that improved. The gate must not report "no regressions" about a side it
 // never measured, so this is checked before anything else is reported.
+//
+// Only the base -> head direction is fatal. The reverse (head measured a package
+// the base did not) is a benchmark that did not exist at the base ref, which is
+// how every benchmark is born; unmeasuredIsNew reports it separately as a
+// notice instead of failing a merge for adding coverage.
 func missingMeasurements(baseOut, headOut string) []string {
 	base, head := benchmarksPerPackage(baseOut), benchmarksPerPackage(headOut)
 	if len(base) == 0 && len(head) == 0 {
@@ -159,9 +164,19 @@ func missingMeasurements(baseOut, headOut string) []string {
 			out = append(out, fmt.Sprintf("%s: base measured %d benchmarks, head measured none", pkg, n))
 		}
 	}
+	sort.Strings(out)
+	return out
+}
+
+// unmeasuredIsNew lists the packages that only the head side measured, i.e. the
+// benchmarks that have no base value to compare against. The caller prints them
+// so the coverage they add is visible, without pretending they were gated.
+func unmeasuredIsNew(baseOut, headOut string) []string {
+	base, head := benchmarksPerPackage(baseOut), benchmarksPerPackage(headOut)
+	var out []string
 	for pkg, n := range head {
 		if base[pkg] == 0 {
-			out = append(out, fmt.Sprintf("%s: head measured %d benchmarks, base measured none", pkg, n))
+			out = append(out, fmt.Sprintf("%s: %d new benchmarks (no base value, not gated)", pkg, n))
 		}
 	}
 	sort.Strings(out)

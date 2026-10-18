@@ -111,7 +111,8 @@ Labels 以 key-value 交替传入:`IncCounter("name", "protocol", "tcp", "status
 
 特点:
 - `sync.RWMutex` 并发安全
-- 输出标准 Prometheus text exposition 格式(`# TYPE` 声明,label 转义,histogram `_count`/`_sum`)
+- 输出标准 Prometheus text exposition 格式(`# TYPE` 声明,label 转义,
+  histogram 的 `_bucket`/`_count`/`_sum` 三元组)
 - 直接用作 HTTP Handler:`http.Handle("/metrics", promMetrics)`
 
 #### MemoryMetrics(测试用)
@@ -131,6 +132,8 @@ Labels 以 key-value 交替传入:`IncCounter("name", "protocol", "tcp", "status
 | `sessions_accepted_total` | Counter | - | `SessionManager.Register` 成功 |
 | `sessions_closed_total` | Counter | - | `SessionManager.Unregister` |
 | `sessions_active` | Gauge | - | 会话表当前条目数 |
+| `handler_duration_seconds` | Histogram | `protocol` | `shared.CallHandlerObserved`,8 路传输共用 |
+| `messages_total` | Counter | `protocol` | 同上,投递给用户 handler 的消息数 |
 | `sessions_reclaimed_total` | Counter | - | 读截止时间到期(对端消失),5 路传输共用 |
 | `sessions_rejected_total` | Counter | - | 准入拒绝(TCP/WS/QUIC/HTTP/gRPC-Web/UDP/CoAP 共用) |
 | `tcp_task_queue_full_total` | Counter | - | TCP WorkerPool 队列满 |
@@ -138,6 +141,13 @@ Labels 以 key-value 交替传入:`IncCounter("name", "protocol", "tcp", "status
 | `accept_resource_errors_total` | Counter | - | 其中 `EMFILE`/`ENFILE`/`ENOMEM` 子集 |
 | `tls_handshake_failed_total` | Counter | - | TCP TLS 握手失败或超时 |
 | `proxy_header_rejected_total` | Counter | - | PROXY protocol 头缺失或非法 |
+
+`handler_duration_seconds` 与 `messages_total` 记在 **handler 边界**
+(`shared.CallHandlerObserved`)而不是各传输的读循环里: 边界是所有协议唯一的汇合点,
+数值含 handler 自己的 `Send`、不含队列等待, 因此跨协议可比; 队列问题由
+`tcp_task_queue_full_total` 与池的伸缩曲线负责, 两者混在一起会让两个故障源
+给出一个数(ADR-020). 计时包住无 panic 隔离之后的调用, 所以 panic 的 handler
+也会留下一条长尾样本和一次计数 -- 计数度量的是流量, 不是成功率.
 
 `accept_resource_errors_total` 是 `accept_errors_total` 的子集而不是替代:
 前者是容量事故信号,后者含瞬时抖动. 混在一个计数器里, "fd 用尽"会被噪声淹没.
@@ -147,8 +157,10 @@ Labels 以 key-value 交替传入:`IncCounter("name", "protocol", "tcp", "status
 "跨协议汇总拒绝数"退化成一次正则匹配; 需要按协议区分时应使用 label(见 5.3), 而不是
 把协议编进指标名.
 
-> 内置指标仍偏少: 消息总数与 handler 延迟只在测试里出现, 完整的缺口清单见
-> `COMPARISON-261018-OSS-PEERS.md` 第 4 节 D 类.
+> 尚无 `protocol` label 的是 `sessions_*` 系列与各传输自己的计数器. 按协议的
+> `sessions_active` 需要在**抓取时**向运行时取值(导出器当前没有 collector 回调),
+> 而在热路径上维护第二份计数会与 `Count()` 漂移 -- 这是 ADR-017 明确否掉的形态.
+> 补齐计划见 ADR-020 的"重新评估条件".
 
 ---
 
@@ -206,15 +218,40 @@ sessions_accepted_total 1234
 # TYPE sessions_active gauge
 sessions_active 42
 # TYPE handler_duration_seconds histogram
-handler_duration_seconds_count 500
-handler_duration_seconds_sum 12.345
+handler_duration_seconds_bucket{protocol="tcp",le="0.0001"} 120
+handler_duration_seconds_bucket{protocol="tcp",le="0.00025"} 480
+...
+handler_duration_seconds_bucket{protocol="tcp",le="+Inf"} 500
+handler_duration_seconds_count{protocol="tcp"} 500
+handler_duration_seconds_sum{protocol="tcp"} 0.0123
 ```
 
-框架自身目前写入 10 个指标(`sessions_accepted_total` / `sessions_closed_total` /
-`sessions_active` / `sessions_reclaimed_total` / `sessions_rejected_total` /
-`tcp_task_queue_full_total` / `accept_errors_total` / `accept_resource_errors_total` /
-`tls_handshake_failed_total` / `proxy_header_rejected_total`),完整清单见
-`docs/architecture/OBSERVABILITY.md` 3.3 节.
+直方图是**真的 histogram 而不是 summary**: summary 不支持跨实例聚合, 且在没写
+quantile 时连单实例 P99 都算不出. 每档 `_bucket` 是累计值, `+Inf` 桶恒等于
+`_count` -- 超出最后一档的样本只记在 `count`/`sum` 里, 用梯度累加值写 `+Inf`
+会让直方图不自洽, `histogram_quantile()` 返回 NaN.
+
+默认梯度是秒,**1µs 到 10s 共 22 档**(`DefaultHistogramBuckets`). 不是 Prometheus
+的 `DefBuckets`(从 5ms 起): 本项目的 echo 路径在微秒级, 5ms 起步会让所有样本落进
+第一档. 其它单位的指标(字节数, 计数)必须显式声明:
+
+```go
+metrics.RegisterHistogram("payload_bytes", []float64{1024, 4096, 65536})
+```
+
+注册必须在首次观测之前: 换梯度要把已记录样本重新分桶, 而导出器为了
+O(buckets) 的内存不保留原始样本.
+
+于是 P99 在线上可自证:
+
+```promql
+histogram_quantile(0.99, sum by (le) (rate(handler_duration_seconds_bucket[5m])))
+histogram_quantile(0.99, sum by (le, protocol) (rate(handler_duration_seconds_bucket[5m])))
+```
+
+框架自身目前写入 12 个指标, 完整清单见 `docs/architecture/OBSERVABILITY.md` 3.3 节.
+序列键是结构体 `(name, label0, value0, rest)` 而不是拼接字符串, 因此每消息两次
+观测是**零分配**的; 实测代价与门禁见 ADR-020.
 
 ### 5.2 HTTP 端点
 
@@ -231,6 +268,12 @@ http.ListenAndServe(":18080", nil)
 - Label 名称自动净化:非 `[a-zA-Z0-9_]` 字符替换为 `_`,首字符不允许数字
 - Label 值自动转义:`\` -> `\\`,`\n` -> `\n`,`"` -> `\"`
 - 奇数个 labels 时自动命名为 `label_0`,`label_1`...
+- **协议用 `protocol` label, 不用指标名前缀.** 取值是封闭枚举
+  (`tcp`/`udp`/`http`/`websocket`/`coap`/`quic`/`grpc-web`/`custom`),
+  基数上界确定; 编进名字会让"跨协议汇总"退化成一次正则
+- 序列身份是 `(name, 第一对 label 名, 第一对 label 值)` 的结构体键, 第一对之后
+  的 label 走拼接形式. 因此**改变 label 名称也是一条新序列** -- 不会与旧数据混在
+  一起, 也不会串号
 
 ---
 

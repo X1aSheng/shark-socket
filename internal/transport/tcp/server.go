@@ -120,11 +120,11 @@ func (s *Server) buildPool() (taskPool, *shared.ScalablePool) {
 	logger := s.rt.Logger()
 	cfg := s.opts.ElasticPool
 	if cfg == nil {
-		p := shared.NewWorkerPool(s.opts.Handler, logger, s.opts.WorkerCount, s.opts.TaskQueueSize, s.opts.FullPolicy)
+		p := shared.NewWorkerPool(s.opts.Handler, logger, s.opts.WorkerCount, s.opts.TaskQueueSize, s.opts.FullPolicy, shared.WithPoolMetrics(s.rt.Metrics()))
 		p.Start(s.opts.WorkerCount)
 		return p, nil
 	}
-	p := shared.NewScalablePool(s.opts.Handler, logger, cfg.MinWorker, cfg.MaxWorker, s.opts.TaskQueueSize, s.opts.FullPolicy)
+	p := shared.NewScalablePool(s.opts.Handler, logger, cfg.MinWorker, cfg.MaxWorker, s.opts.TaskQueueSize, s.opts.FullPolicy, shared.WithPoolMetrics(s.rt.Metrics()))
 	// Only override what the caller set: a zero value means "package default",
 	// and passing it through would be rejected by the ratio validation.
 	if cfg.ScaleUpRatio != 0 || cfg.ScaleDownRatio != 0 {

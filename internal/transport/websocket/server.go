@@ -231,7 +231,7 @@ func (s *Server) readLoop(sess *session) {
 		}
 		if s.opts.Handler != nil {
 			msg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolWS, Payload: payload}
-			if err := shared.CallHandler(func() error { return s.opts.Handler(sess, msg) }, s.rt.Logger()); err != nil {
+			if err := shared.CallHandlerObserved(s.rt.Metrics(), core.ProtocolWS, func() error { return s.opts.Handler(sess, msg) }, s.rt.Logger()); err != nil {
 				return
 			}
 		}

@@ -72,6 +72,18 @@ var gateSuite = []benchSuite{
 		pkg:     "./internal/plugin",
 		pattern: `^BenchmarkRateLimitOnMessage`,
 	},
+	{
+		// The handler boundary is on the per-message path of every transport,
+		// and the exporter is what it calls into. Both are gated so a future
+		// "just one more label" edit cannot quietly reintroduce an allocation
+		// per message (ADR-020).
+		pkg:     "./internal/transport/shared",
+		pattern: `^BenchmarkCallHandler`,
+	},
+	{
+		pkg:     "./internal/infra/observability",
+		pattern: `^Benchmark(ObserveHistogram$|IncCounter$|ObserveHistogramParallel$)`,
+	},
 }
 
 func main() {
@@ -153,13 +165,20 @@ func gate(args []string) int {
 	}
 
 	// Before judging anything: a side that measured nothing cannot be compared,
-	// and "no rows" would otherwise sail through as "no regressions".
+	// and "no rows" would otherwise sail through as "no regressions". Only
+	// coverage lost between base and head is fatal; coverage added is reported
+	// as a notice, because a benchmark that did not exist at the base ref has
+	// nothing to be compared against, and failing on its birth would make the
+	// gate unusable exactly when someone adds a guard.
 	if missing := missingMeasurements(baseOut, headOut); len(missing) > 0 {
-		fmt.Fprintf(os.Stderr, "bench gate: the two sides did not measure the same packages:\n")
+		fmt.Fprintf(os.Stderr, "bench gate: the head side lost measurements the base side had:\n")
 		for _, m := range missing {
 			fmt.Fprintf(os.Stderr, "  %s\n", m)
 		}
 		return failf("re-run before trusting this gate; raw runs in %s", *out)
+	}
+	for _, added := range unmeasuredIsNew(baseOut, headOut) {
+		fmt.Fprintf(os.Stderr, "bench gate: notice: %s\n", added)
 	}
 
 	baseRuns := parseBenchOutput(baseOut)

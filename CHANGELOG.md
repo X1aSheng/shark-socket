@@ -7,6 +7,63 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### 指标面真实化: 真直方图 + protocol label (2026-10-18)
+
+对比报告 D1/D2: `ObserveHistogram` 在生产代码里调用点为 **0**, 而它唯一的实现
+只导出 `_count`/`_sum` 却把 `# TYPE` 写成 `summary` -- summary 不支持跨实例聚合,
+没有 quantile 时连单实例 P99 都算不出. README 里的 P99 全部来自压测工具, 线上无法
+自证. 见 ADR-020.
+
+**计时点选在 handler 边界, 不是各传输的读循环.** `shared.CallHandlerObserved`
+包住无 panic 隔离之后的用户 handler 调用: 数值含 handler 自己的 `Send`、不含队列
+等待, 因此跨协议可比; 队列问题归 `tcp_task_queue_full_total` 与池的伸缩曲线,
+两者混在一起会让两个故障源给出一个数. 同处计 `messages_total{protocol}`, 覆盖 8
+处调用点 (TCP 走 worker pool, 其余直调).
+
+**导出真 histogram.** `_bucket{le=...}` 累计值 + `_count` + `_sum`, `# TYPE`
+改 `histogram`, `+Inf` 桶恒等于 `_count`. 默认梯度秒制 1µs..10s 共 22 档; 不用
+Prometheus 的 `DefBuckets`(5ms 起步)是因为微秒级 echo 会全落进第一档, 等于没测.
+其它单位走 `RegisterHistogram(name, buckets)`, 首次观测后拒绝注册 (换梯度要重分桶,
+而导出器为了 O(buckets) 不保留原始样本).
+
+**序列键从字符串换成结构体.** 原实现每次调用拼 `name{labels}` 并拷贝 label 切片:
+每消息两次观测 = 5 次分配 / 235-272 ns, 10 万 msg/s 就是每秒 20 万次纯记账分配.
+改成可比较的 `(name, label0, value0, rest)` 之后:
+
+| 场景 | 改造前 | 改造后 |
+|------|--------|--------|
+| handler 边界 + Prometheus | 235-272 ns / 5 allocs | 97-98 ns / 0 allocs |
+| `ObserveHistogram` | 95-106 ns / 2 allocs | 46-47 ns / 0 allocs |
+| `IncCounter` | 105 ns / 3 allocs | 43-48 ns / 0 allocs |
+| 同上并行 16 线程 | 160 ns | 87 ns |
+| 默认 NopMetrics | 5 ns | 15 ns |
+
+默认配置那 10 ns 是"要构造 label 并调用两次空实现", 是换来可观测性的固定成本;
+两者都写进了 `scripts/benchgate` 的固定套件, 防止未来"再加一个 label"时悄悄把
+分配带回来.
+
+**顺带改的门禁行为**: `scripts/benchgate` 原先要求两侧测到同一批包, 因此**新增**
+基准会让门禁以 exit 2 失败 -- 等于"加守卫的人被守卫拦住". 现在只有"base 有, head 没了"
+是致命 (覆盖率丢失, 与大幅改善无法区分); "head 有, base 没有"降级为一条 notice,
+列出这些基准"没有 base 值, 未受门禁约束".
+
+**验收**:
+
+- `TestPrometheusHistogramQuantileIsComputable`: 在导出的 bucket 上重算
+  histogram_quantile(0.99) 并断言落在 (0.01, 0.025] -- summary 形态没有 bucket
+  可找, 必然失败 (测试环境没有 Prometheus, 所以复算的是算法本身, 不是抓取链路)
+- `TestPrometheusHistogramImplicitInfBucket`: `bucket{le="+Inf"} == _count`
+  (写错会让 Prometheus 判直方图不自洽, 返回 NaN; 实现时正是这里错了一次)
+- `TestHandlerMetricsReachTheExporter`: 三条真实 TCP echo 之后导出文本里有
+  count 3 / messages 3, 证明"运行时 -> pool -> handler -> 导出器"整条线通了
+- `TestHandlerMetricsDoNotLeakAcrossProtocols`: TCP 消息不会出现在 UDP 序列里
+
+**未做 (挂账)**: D3 的存量指标 label 化. 按协议的 `sessions_active` 需要在抓取时
+向运行时取值 (导出器当前没有 collector 回调); 在热路径维护第二份计数会与
+`Count()` 漂移, 正是 ADR-017 否掉的形态.
+
+**文档**: ADR-020; `OBSERVABILITY.md` 3.3/5.1/5.3 更新 (含两条 PromQL 示例).
+
 ### 配置热重载子集 (2026-10-18)
 
 对比报告 C6: 配置一次加载, 只有证书能热更. 改限流阈值、黑名单或日志级别都要重启,

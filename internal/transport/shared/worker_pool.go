@@ -53,8 +53,10 @@ type WorkerPool struct {
 // NewWorkerPool creates a pool. A non-positive worker count is treated as 1 and
 // a non-positive queue size defaults to workers*128. handler may be nil, in
 // which case Enabled reports false and callers skip Submit entirely.
-func NewWorkerPool(handler core.Handler, logger core.Logger, workers, queueSize int, policy FullPolicy) *WorkerPool {
-	return &WorkerPool{poolCore: newPoolCore(handler, logger, workers, queueSize, policy)}
+func NewWorkerPool(handler core.Handler, logger core.Logger, workers, queueSize int, policy FullPolicy, opts ...PoolOption) *WorkerPool {
+	p := &WorkerPool{poolCore: newPoolCore(handler, logger, workers, queueSize, policy)}
+	p.applyOptions(opts)
+	return p
 }
 
 // Handler returns the configured handler.

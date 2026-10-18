@@ -219,7 +219,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		// Run the handler through CallHandler so a panic is isolated and
 		// reported as a gRPC-Web error trailer instead of tearing the
 		// connection down with no status (the WebSocket path does the same).
-		if err := shared.CallHandler(func() error { return s.opts.Handler(sess, msg) }, s.rt.Logger()); err != nil {
+		if err := shared.CallHandlerObserved(s.rt.Metrics(), core.ProtocolGRPCWeb, func() error { return s.opts.Handler(sess, msg) }, s.rt.Logger()); err != nil {
 			if s.rt != nil {
 				s.rt.Logger().Error("grpc-web handler error", "session", id, "error", err)
 			}
@@ -329,7 +329,7 @@ func (s *Server) readWebSocketLoop(sess *webSocketSession) {
 		}
 		if s.opts.Handler != nil {
 			msg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolGRPCWeb, Payload: payload}
-			if err := shared.CallHandler(func() error { return s.opts.Handler(sess, msg) }, s.rt.Logger()); err != nil {
+			if err := shared.CallHandlerObserved(s.rt.Metrics(), core.ProtocolGRPCWeb, func() error { return s.opts.Handler(sess, msg) }, s.rt.Logger()); err != nil {
 				return
 			}
 		}

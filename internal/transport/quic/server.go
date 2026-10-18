@@ -218,11 +218,15 @@ func (s *Server) handleStream(sess *session, stream *quicgo.Stream) {
 	}
 	if s.opts.Handler != nil {
 		msg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolQUIC, Payload: data}
+		// The nil checks are defensive: reaching this point already dereferenced
+		// s.rt above, so both are set in practice.
 		var logger core.Logger
+		var metrics core.Metrics
 		if s.rt != nil {
 			logger = s.rt.Logger()
+			metrics = s.rt.Metrics()
 		}
-		if err := shared.CallHandler(func() error { return s.opts.Handler(sess, msg) }, logger); err != nil && s.rt != nil {
+		if err := shared.CallHandlerObserved(metrics, core.ProtocolQUIC, func() error { return s.opts.Handler(sess, msg) }, logger); err != nil && s.rt != nil {
 			s.rt.Logger().Error("quic handler error", "session", sess.ID(), "error", err)
 		}
 	}
