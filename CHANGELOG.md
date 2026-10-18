@@ -7,6 +7,55 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### CoAP 分块下发 (2026-10-18)
+
+对比报告 C3: 全仓没有 Block1/Block2, 于是任何超过单数据报的响应都只能靠 IP 分片,
+而 Leshan 这类标准客户端对大 payload 默认走 block-wise -- 互联会直接失败.
+
+**新增 `internal/transport/coap/blockwise.go`**:
+
+- `BlockOption` 是 RFC 7959 的 NUM/M/SZX 三元组, 编解码用**最短字节数**
+  (NUM 的高位零必须省掉, 全零是空值). 值超过 3 字节或 SZX=7(保留值)一律判非法
+- `blockFor` 切块, `negotiateBlock2` 做协商. 协商的关键不是"取小的"而是
+  **偏移换算**: 对端要 1024 而服务端上限 512 时, 对端的第 2 块是字节 2048,
+  在 512 的块大小下是第 4 块. 直接沿用 NUM 会重复发送偏移 1024 的数据
+- NUM 越界回 `4.02 Bad Option`, 而不是回一个空载荷的成功响应
+
+**`WithMaxBlockSize(size)` 默认关闭.** 打开后超过块大小的响应按块下发; 关闭时
+逐字节与之前一致 (有测试锁住"关闭时仍是单数据报且不带 Block2"). 默认关闭是因为
+Block2 是 **critical** 选项: 不实现 RFC 7959 的客户端收到带它的响应必须整条拒绝,
+默认打开会让"读 2 KiB 资源"对老客户端从成功变成失败. 合法块大小 16..1024,
+其它值在配置时向下取整到 2 的幂 (线上只有 3 位指数, 表达不了 700).
+
+**按请求重建响应体, 不缓存.** 缓存意味着在两次块请求之间持有一块大小由业务决定、
+数量由并发读决定、生命周期由对端决定的缓冲 -- 与 ADR-017 刚清掉的资源形态同类.
+代价是 `Responder` 每块被调用一次, 已写进 ADR-018 的后果与重新评估条件.
+
+**Block1(分块上传)明确拒绝**: 带 Block1 的请求回 `4.13 Request Entity Too Large`
+并附 Block1 提示. 忽略该选项的后果是每个分片被当成完整请求体执行一次 handler,
+对 LwM2M 的 write/execute 是一次真实副作用; 测试断言 handler 未被调用.
+
+**观察通知不分块**: 后续块由客户端请求驱动, 而通知是服务端主动推送的, 没有可依附的
+请求. 需要观察大资源时应在注册的 GET 上走分块.
+
+**验收** (自建客户端, 非 Leshan):
+
+- 4 KiB body / 1 KiB 块: 4 块, M 位依次 1,1,1,0, 重组后逐字节相等
+- 对端请求 256 字节: 4 块, 每块 256, 响应回显的 SZX 是 4 而不是服务端的 6
+- NUM 越界: `4.02 Bad Option`
+- 关闭时: 单数据报, 无 Block2 选项
+- 重传同一 MessageID 的块请求: 走 dedup 缓存返回同一块, 不重新切
+- 基准: `blockFor` 13.70 ns/op / 8 B / 1 alloc, `parseBlockOption` 2.23 ns/op / 0 alloc
+
+**顺带补齐 `api` 门面**: A 类的准入选项当时只在传输包里, 公开 API 拿不到 --
+补上 `WithTCPMaxConnectionsPerIP`, `WithTCPTLSHandshakeTimeout`,
+`WithUDPMaxSessions(PerPeer)`, `WithCoAPMaxSessions(PerPeer)`,
+`WithCoAPMaxBlockSize`, `WithHTTPMaxConnections(PerIP)`/`WithHTTPAcceptRate`,
+`WithWebSocketMaxConnectionsPerIP`/`WithWebSocketHandshakeTimeout`,
+`WithQUICMaxConnectionsPerIP`, `WithGRPCWebMaxConnectionsPerIP`/`WithGRPCWebHandshakeTimeout`.
+
+**文档**: ADR-018; `TRANSPORT.md` CoAP 部分新增 sec.4.11 与 options 条目.
+
 ### 连接准入与握手预算 (2026-10-18)
 
 对比报告 A 类 (P0 安全与稳定性) 五项一次落地, 见 ADR-017. 五项的共同根因不是

@@ -140,6 +140,18 @@ func WithTCPAcceptRate(rate float64) TCPOption {
 	return tcp.WithAcceptRate(rate)
 }
 
+// WithTCPMaxConnectionsPerIP caps one source address, so a single host cannot
+// occupy the whole MaxConnections budget (ADR-017).
+func WithTCPMaxConnectionsPerIP(max int64) TCPOption {
+	return tcp.WithMaxConnectionsPerIP(max)
+}
+
+// WithTCPTLSHandshakeTimeout bounds the TLS handshake separately from
+// ReadTimeout. Zero falls back to ReadTimeout.
+func WithTCPTLSHandshakeTimeout(timeout time.Duration) TCPOption {
+	return tcp.WithTLSHandshakeTimeout(timeout)
+}
+
 func NewTCPClient(addr string, opts ...TCPClientOption) *TCPClient {
 	return tcp.NewClient(addr, opts...)
 }
@@ -164,6 +176,18 @@ func WithUDPDTLSReadBufferBytes(size int) UDPOption {
 	return udp.WithDTLSReadBufferBytes(size)
 }
 
+// WithUDPMaxSessions caps the pseudo-session table; datagram transports create
+// a session per source address, so without it a forged-source flood grows the
+// table until the shared SessionManager is full (ADR-017).
+func WithUDPMaxSessions(max int64) UDPOption {
+	return udp.WithMaxSessions(max)
+}
+
+// WithUDPMaxSessionsPerPeer caps one source address.
+func WithUDPMaxSessionsPerPeer(max int64) UDPOption {
+	return udp.WithMaxSessionsPerPeer(max)
+}
+
 func NewHTTPServer(opts ...HTTPOption) *HTTPServer {
 	return transporthttp.NewServer(opts...)
 }
@@ -174,6 +198,23 @@ func WithHTTPAddr(addr string) HTTPOption {
 
 func WithHTTPHandler(handler Handler) HTTPOption {
 	return transporthttp.WithHandler(handler)
+}
+
+// WithHTTPMaxConnections caps concurrent in-flight requests. Excess
+// connections are answered with 503 instead of being accepted and dropped.
+func WithHTTPMaxConnections(max int64) HTTPOption {
+	return transporthttp.WithMaxConnections(max)
+}
+
+// WithHTTPMaxConnectionsPerIP caps one source address (ADR-017).
+func WithHTTPMaxConnectionsPerIP(max int64) HTTPOption {
+	return transporthttp.WithMaxConnectionsPerIP(max)
+}
+
+// WithHTTPAcceptRate limits the connection acceptance rate in connections per
+// second.
+func WithHTTPAcceptRate(rate float64) HTTPOption {
+	return transporthttp.WithAcceptRate(rate)
 }
 
 func WithHTTPCORSAllowedOrigins(origins []string) HTTPOption {
@@ -208,6 +249,17 @@ func WithWebSocketAcceptRate(rate float64) WebSocketOption {
 	return websocket.WithAcceptRate(rate)
 }
 
+// WithWebSocketMaxConnectionsPerIP caps one source address (ADR-017).
+func WithWebSocketMaxConnectionsPerIP(max int64) WebSocketOption {
+	return websocket.WithMaxConnectionsPerIP(max)
+}
+
+// WithWebSocketHandshakeTimeout bounds the upgrade response write. The upgrade
+// request header itself is bounded by the server's read timeout.
+func WithWebSocketHandshakeTimeout(timeout time.Duration) WebSocketOption {
+	return websocket.WithHandshakeTimeout(timeout)
+}
+
 func NewCoAPServer(opts ...CoAPOption) *CoAPServer {
 	return coap.NewServer(opts...)
 }
@@ -230,6 +282,23 @@ func WithCoAPDTLSReadBufferBytes(size int) CoAPOption {
 
 func WithCoAPResponder(responder func(Session, Message) ([]byte, error)) CoAPOption {
 	return coap.WithResponder(responder)
+}
+
+// WithCoAPMaxSessions caps the pseudo-session table (ADR-017).
+func WithCoAPMaxSessions(max int64) CoAPOption {
+	return coap.WithMaxSessions(max)
+}
+
+// WithCoAPMaxSessionsPerPeer caps one source address (ADR-017).
+func WithCoAPMaxSessionsPerPeer(max int64) CoAPOption {
+	return coap.WithMaxSessionsPerPeer(max)
+}
+
+// WithCoAPMaxBlockSize enables block-wise responses (RFC 7959 Block2) at the
+// given block size in bytes (16..1024). Off by default: enabling it changes the
+// wire format of every response larger than the block size.
+func WithCoAPMaxBlockSize(size int) CoAPOption {
+	return coap.WithMaxBlockSize(size)
 }
 
 func NewLwM2MServer(opts ...LwM2MServerOption) *LwM2MServer {
@@ -272,6 +341,11 @@ func WithQUICAcceptRate(rate float64) QUICOption {
 	return quic.WithAcceptRate(rate)
 }
 
+// WithQUICMaxConnectionsPerIP caps one source address (ADR-017).
+func WithQUICMaxConnectionsPerIP(max int64) QUICOption {
+	return quic.WithMaxConnectionsPerIP(max)
+}
+
 func WithQUICMaxIdleTimeout(timeout time.Duration) QUICOption {
 	return quic.WithMaxIdleTimeout(timeout)
 }
@@ -302,6 +376,16 @@ func WithGRPCWebCheckOrigin(fn func(*http.Request) bool) GRPCWebOption {
 
 func WithGRPCWebMaxConnections(max int64) GRPCWebOption {
 	return grpcweb.WithMaxConnections(max)
+}
+
+// WithGRPCWebMaxConnectionsPerIP caps one source address (ADR-017).
+func WithGRPCWebMaxConnectionsPerIP(max int64) GRPCWebOption {
+	return grpcweb.WithMaxConnectionsPerIP(max)
+}
+
+// WithGRPCWebHandshakeTimeout bounds the WebSocket-mode upgrade response write.
+func WithGRPCWebHandshakeTimeout(timeout time.Duration) GRPCWebOption {
+	return grpcweb.WithHandshakeTimeout(timeout)
 }
 
 func WithGRPCWebAcceptRate(rate float64) GRPCWebOption {

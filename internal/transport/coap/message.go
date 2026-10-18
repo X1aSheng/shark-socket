@@ -15,18 +15,20 @@ const (
 	TypeACK byte = 2
 	TypeRST byte = 3
 
-	CodeEmpty               byte = 0
-	CodeGet                 byte = 1
-	CodePost                byte = 2
-	CodePut                 byte = 3
-	CodeDelete              byte = 4
-	CodeCreated             byte = 65
-	CodeDeleted             byte = 66
-	CodeValid               byte = 67
-	CodeChanged             byte = 68
-	CodeContent             byte = 69
-	CodeBadRequest          byte = 128
-	CodeInternalServerError byte = 160
+	CodeEmpty                 byte = 0
+	CodeGet                   byte = 1
+	CodePost                  byte = 2
+	CodePut                   byte = 3
+	CodeDelete                byte = 4
+	CodeCreated               byte = 65
+	CodeDeleted               byte = 66
+	CodeValid                 byte = 67
+	CodeChanged               byte = 68
+	CodeContent               byte = 69
+	CodeBadRequest            byte = 128
+	CodeBadOption             byte = 130
+	CodeRequestEntityTooLarge byte = 141
+	CodeInternalServerError   byte = 160
 
 	ObserveOption uint16 = 6
 )

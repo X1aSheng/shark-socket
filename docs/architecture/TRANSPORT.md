@@ -3108,6 +3108,42 @@ write/execute 来说,重跑是语义错误而不只是性能问题. 若首次响
 `seen` 每 5 分钟整体清空一次. CoAP MessageID 是 16 位且回绕,而 EXCHANGE_LIFETIME
 是 247s,所以 300s 的清空间隔足以覆盖对端仍可能重传的窗口.
 
+### 4.11 分块传输(RFC 7959 Block2)
+
+`WithMaxBlockSize(size)` 打开服务端分块下发. 关闭时(默认)行为与此前逐字节相同:
+小于 `MaxDatagram` 的响应仍然一个数据报发完.
+
+```
+请求(可带 Block2 Option)
+    v
+negotiateBlock2: 取出对端 NUM 与 SZX, 用 min(请求大小, MaxBlockSize) 作为本次块大小,
+                 字节偏移按**对端**的大小先算出来, 再按本次大小重新整除(ADR-018)
+    v
+Responder 重新生成完整响应体
+    v
+blockFor: 切出 [offset, offset+size), M = 后面是否还有
+    +-- offset 超出体长 -> 4.02 Bad Option
+    v
+ACK(2.05 Content) + Block2(NUM, M, SZX) + 该块
+```
+
+三个设计要点:
+
+- **无状态.** 服务端不缓存响应体, 每个块请求都重新调用 `Responder`. 缓存任意大小的
+  响应体等于给每个进行中的传输开一块无上界缓冲 -- 那正是 ADR-017 刚清掉的那类
+  资源耗尽形态. 代价是 handler 每块被调用一次, 想少调几次就把块设大.
+- **块大小可以向下协商, 不能向上.** 对端要 256 就给 256; 对端要 1024 而服务端上限
+  512 时给 512, 但 NUM 要按"先算偏移再重新整除"换算, 否则第 2 块(偏移 2048)
+  会被当成偏移 1024.
+- **Block1(分块上传)明确拒绝.** 不实现时最危险的做法是忽略选项: 每个分片都会被当成
+  完整请求体交给 handler, 对 LwM2M 的 write/execute 就是一次副作用. 带 Block1 的请求
+  一律回 `4.13 Request Entity Too Large` 并附 Block1 提示(RFC 7959 sec.2.9.3).
+
+Observe 通知不走分块: `NotifyObservers` 的载荷仍是一次性发出的. RFC 7641 sec.4.4
+允许首条通知使用 Block2, 但观察者拿到首块之后要靠**明确的块请求**取后续块, 而通知
+是服务端主动推送的, 没有可依附的请求. 需要观察大资源时, 应在注册的 GET 上走分块,
+而不是依赖通知.
+
 ---
 
 ## 5. 配置项完整参考
@@ -3131,6 +3167,10 @@ type Options struct {
     // 伪会话准入(ADR-017), 与 UDP 同源, 共用 shared.PeerQuota.
     MaxSessions        int64 // 伪会话总数上限, <= 0 不限制
     MaxSessionsPerPeer int64 // 单来源地址伪会话上限, <= 0 不限制
+
+    // MaxBlockSize 启用分块响应(RFC 7959 Block2)并设定最大块大小:
+    // 16/32/64/128/256/512/1024. 0 表示关闭, 也是默认值.
+    MaxBlockSize int
 
     TLSConfig *tls.Config // 非 nil 即启用 DTLS
 }
@@ -3169,6 +3209,7 @@ func WithSessionTTL(ttl time.Duration) Option          // <= 0 忽略
 func WithSweepInterval(interval time.Duration) Option  // <= 0 忽略
 func WithMaxSessions(max int64) Option                 // <= 0 不限制
 func WithMaxSessionsPerPeer(max int64) Option          // <= 0 不限制
+func WithMaxBlockSize(size int) Option                 // <= 0 关闭分块; 其它值向下取整到 16..1024
 func WithDTLS(cfg *tls.Config) Option
 func WithDTLSReadBufferBytes(size int) Option          // <= 0 忽略
 

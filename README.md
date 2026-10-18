@@ -71,6 +71,11 @@ chain, and one observability plane.
   `shared.Acceptor` - a server-wide ceiling, a per-source-IP ceiling and an
   accept rate. Capacity and per-peer counts are two reads of one counter, so
   they cannot drift apart (ADR-017).
+- **Optional block-wise CoAP**: `WithMaxBlockSize` serves responses larger than
+  one datagram as RFC 7959 blocks, regenerating the body per request instead of
+  caching it (a cache would be an unbounded buffer sized by the peer's request),
+  and refusing block-wise uploads with 4.13 rather than executing a fragment as
+  a whole body (ADR-018).
 - **Bounded handshakes**: the TLS handshake runs under its own budget
   (`TLSHandshakeTimeout`, falling back to `ReadTimeout`) with failure counted in
   `tls_handshake_failed_total`, instead of riding the 5-minute session read
@@ -99,7 +104,7 @@ chain, and one observability plane.
 | UDP | Implemented | Pseudo-sessions with session caps (global + per-peer), TTL sweep, DTLS support (configurable read buffer), plugin path |
 | HTTP | Implemented | Mode A router and Mode B session/plugin/handler flow, accept rate limiting, connection caps (global + per-IP) answered with a real 503 |
 | WebSocket | Implemented | Binary message path, origin check, ping loop, write deadlines, accept rate limiting, connection caps (global + per-IP), upgrade handshake timeout and buffer sizes |
-| CoAP | Implemented | Message parse/marshal, CON ACK, pseudo-sessions with session caps, DTLS (configurable read buffer), option encoding (RFC 7252), Observe (RFC 7641) |
+| CoAP | Implemented | Message parse/marshal, CON ACK with RFC 7252 retransmission, dedup with response replay, pseudo-sessions with session caps, DTLS (configurable read buffer), option encoding (RFC 7252), Observe (RFC 7641), block-wise responses (RFC 7959 Block2, opt-in), Block1 refused with 4.13 |
 | LwM2M | Implemented | Object/resource model with operation masks, TLV binary codec, discover/register/update/deregister/write/read, Observer notifications |
 | QUIC | Implemented | TLS-required stream transport using quic-go, write deadlines, accept rate limiting, connection caps (global + per-IP), configurable idle timeout |
 | gRPC-Web | Implemented | Direct HTTP mode, binary framing/trailers, WebSocket mode, connection caps (global + per-IP) |

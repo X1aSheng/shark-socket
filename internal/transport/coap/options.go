@@ -30,6 +30,18 @@ type Options struct {
 	// MaxSessionsPerPeer caps one source address. Spoofing the source spreads a
 	// flood over MaxSessions; without this dimension it still fills the table.
 	MaxSessionsPerPeer int64
+	// MaxBlockSize enables block-wise responses (RFC 7959 Block2) and sets the
+	// largest block this server will send: 16, 32, 64, 128, 256, 512 or 1024
+	// bytes. Any other non-zero value is rounded down to the nearest legal
+	// size, which is what the wire format can express (SZX).
+	//
+	// Zero means off, and off is the default. Turning it on changes the wire
+	// behaviour of every response larger than the size: the peer receives the
+	// first block with the M bit set, and a client that does not implement
+	// Block2 must reject that response because option 23 is critical. That is
+	// the RFC's design, not a defect, but it makes this a deliberate opt-in
+	// rather than a default.
+	MaxBlockSize int
 }
 
 type Option func(*Options)
@@ -66,6 +78,28 @@ func WithMaxSessions(max int64) Option {
 // Values <= 0 mean unlimited.
 func WithMaxSessionsPerPeer(max int64) Option {
 	return func(o *Options) { o.MaxSessionsPerPeer = max }
+}
+
+// WithMaxBlockSize enables block-wise responses (RFC 7959 Block2) at the given
+// block size. Legal sizes are 16..1024 bytes; anything else is rounded down to
+// the nearest legal size. Values <= 0 leave block-wise transfer off.
+func WithMaxBlockSize(size int) Option {
+	return func(o *Options) {
+		if size <= 0 {
+			o.MaxBlockSize = 0
+			return
+		}
+		if size > DefaultBlockSize {
+			size = DefaultBlockSize
+		}
+		for size >= 16 && (size&(size-1)) != 0 {
+			size--
+		}
+		if size < 16 {
+			size = 16
+		}
+		o.MaxBlockSize = size
+	}
 }
 
 func WithSessionTTL(ttl time.Duration) Option {

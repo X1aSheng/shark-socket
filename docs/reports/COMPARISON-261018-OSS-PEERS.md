@@ -410,6 +410,23 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
   默认走 block-wise, 互联会直接失败
 - 改法: 先做 Block2 (服务端分块下发, 收益大且简单), Block1 视业务需要
 - 验收: 用标准客户端 (Leshan) 读一个 4 KiB 资源, 断言分块重组正确
+- **已实施 Block2 (2026-10-18, ADR-018)**: 新增 `coap/blockwise.go` (RFC 7959
+  的 NUM/M/SZX 编解码 + 切块 + 协商) 与 `WithMaxBlockSize` Option.
+  - **按请求重建, 不缓存响应体**: 缓存意味着在两次块请求之间持有一块大小由业务
+    决定、数量由并发读决定、生命周期由对端决定的缓冲, 那是 ADR-017 刚清掉的
+    "按对端意愿分配"形态. 代价是 `Responder` 每块被调用一次.
+  - **默认关闭**: Block2 是 critical 选项(编号 23), 不实现 RFC 7959 的客户端收到
+    带它的响应必须整条拒绝. 默认打开会让"读 2 KiB 资源"对老客户端从成功变失败.
+  - **大小只向下协商**: 对端要 256 给 256; 要 1024 而服务端上限 512 时给 512,
+    但块号按"先用对端大小算偏移, 再按本次大小整除"换算, 否则第 2 块会被当成偏移
+    1024. 该换算有单测 (`TestNegotiateBlock2UsesServerMaximum`).
+  - **Block1 明确拒绝**: 忽略 Block1 会让每个分片被当成完整请求体执行一次 handler,
+    对 LwM2M 的 write/execute 是带副作用的错误. 带 Block1 的请求回
+    `4.13 Request Entity Too Large` 并附 Block1 提示, 且断言 handler 未被调用.
+  - 验收实测 (自建客户端, 非 Leshan): 4 KiB body 在 1 KiB 块下按 4 块重组且
+    逐字节相等; 请求 256 字节时按 4 块(每块 256)重组; NUM 越界回 `4.02 Bad Option`;
+    关闭时仍是单数据报且不带 Block2; 重传同一 msgID 的块请求走 dedup 缓存返回同一块.
+    **Leshan 实机互操作未做**, 挂账 (本机无 Java/Leshan 环境).
 
 **C4 无 PROXY protocol v1/v2**
 
