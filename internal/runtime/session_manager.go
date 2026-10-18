@@ -118,6 +118,16 @@ func (m *SessionManager) Count() int64 {
 	return m.count.Load()
 }
 
+// Capacity reports the configured ceiling, or 0 when there is none. It is not
+// part of core.SessionManager: nothing in the runtime reads it back, it exists
+// so the admin listener can show how close the process is to the limit.
+func (m *SessionManager) Capacity() int64 {
+	if m.max < 0 {
+		return 0
+	}
+	return m.max
+}
+
 // Snapshot copies the registered sessions. It walks the shards one at a time
 // instead of freezing the whole table: while it runs, a session may be
 // registered into a shard not yet visited (and so appear here) or removed from

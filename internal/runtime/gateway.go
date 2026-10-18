@@ -11,14 +11,20 @@ import (
 )
 
 type Gateway struct {
-	mu        sync.RWMutex
-	startMu   sync.Mutex // serializes Start, Stop and Register against each other
-	servers   map[core.Protocol]core.Server
-	order     []core.Protocol
-	rt        *Runtime
-	timeouts  core.StageTimeouts
-	startedAt atomic.Pointer[time.Time]
-	started   atomic.Bool
+	mu       sync.RWMutex
+	startMu  sync.Mutex // serializes Start, Stop and Register against each other
+	servers  map[core.Protocol]core.Server
+	order    []core.Protocol
+	rt       *Runtime
+	timeouts core.StageTimeouts
+	adminCfg AdminConfig
+	admin    *adminServer // set while the admin listener is running
+	// rawSessions is the manager before metricSessionManager wraps it. The
+	// decorator embeds the core.SessionManager interface, so methods that only
+	// the concrete type has - Capacity, today - are not reachable through it.
+	rawSessions core.SessionManager
+	startedAt   atomic.Pointer[time.Time]
+	started     atomic.Bool
 }
 
 func NewGateway(opts ...GatewayOption) *Gateway {
@@ -44,9 +50,11 @@ func NewGateway(opts ...GatewayOption) *Gateway {
 		sessions = &metricSessionManager{SessionManager: cfg.sessions, metrics: cfg.metrics}
 	}
 	return &Gateway{
-		servers:  make(map[core.Protocol]core.Server),
-		rt:       NewRuntime(sessions, cfg.plugins, withRuntimeLogger(cfg.logger), withRuntimeMetrics(cfg.metrics), withRuntimeTracer(cfg.tracer)),
-		timeouts: normalizeTimeouts(cfg.timeouts),
+		servers:     make(map[core.Protocol]core.Server),
+		rt:          NewRuntime(sessions, cfg.plugins, withRuntimeLogger(cfg.logger), withRuntimeMetrics(cfg.metrics), withRuntimeTracer(cfg.tracer)),
+		timeouts:    normalizeTimeouts(cfg.timeouts),
+		adminCfg:    cfg.admin,
+		rawSessions: cfg.sessions,
 	}
 }
 
@@ -100,24 +108,42 @@ func (g *Gateway) Start(ctx context.Context) error {
 	for _, srv := range servers {
 		if err := srv.Start(ctx); err != nil {
 			g.rt.Logger().Error("server start failed", "protocol", srv.Protocol(), "error", err)
-			rollbackCtx, cancel := context.WithTimeout(context.Background(), g.timeouts.Finalize)
-			for i := len(started) - 1; i >= 0; i-- {
-				if stopErr := started[i].Stop(rollbackCtx); stopErr != nil {
-					g.rt.Logger().Error("rollback stop failed", "protocol", started[i].Protocol(), "error", stopErr)
-				}
-			}
-			cancel()
-			if stopErr := g.rt.Plugins().StopAll(); stopErr != nil {
-				g.rt.Logger().Error("plugin stop during rollback failed", "error", stopErr)
-			}
+			g.rollbackStart(started)
 			return err
 		}
 		started = append(started, srv)
+	}
+	// The admin listener comes up last: it reports on servers, so it should not
+	// be answering while they are still half-started.
+	if g.adminCfg.Addr != "" {
+		admin := newAdminServer(g, g.adminCfg)
+		if err := admin.start(); err != nil {
+			g.rollbackStart(started)
+			return err
+		}
+		g.admin = admin
 	}
 	now := time.Now()
 	g.startedAt.Store(&now)
 	g.started.Store(true)
 	return nil
+}
+
+// rollbackStart undoes a partial Start: servers in reverse order, then the
+// plugin chain. Errors are logged rather than returned, because the caller
+// already has the failure that triggered the rollback and that is the one worth
+// reporting.
+func (g *Gateway) rollbackStart(started []core.Server) {
+	ctx, cancel := context.WithTimeout(context.Background(), g.timeouts.Finalize)
+	defer cancel()
+	for i := len(started) - 1; i >= 0; i-- {
+		if err := started[i].Stop(ctx); err != nil {
+			g.rt.Logger().Error("rollback stop failed", "protocol", started[i].Protocol(), "error", err)
+		}
+	}
+	if err := g.rt.Plugins().StopAll(); err != nil {
+		g.rt.Logger().Error("plugin stop during rollback failed", "error", err)
+	}
 }
 
 func (g *Gateway) Stop(ctx context.Context) error {
@@ -180,6 +206,14 @@ func (g *Gateway) Stop(ctx context.Context) error {
 	// started was already cleared at the top of Stop so readyz reports
 	// not-ready for the whole shutdown window; only the uptime is stale here.
 	g.startedAt.Store(nil)
+	// The admin listener is stopped last so the drain is observable through
+	// /sessions while it happens. Stop never returns early above - it
+	// accumulates firstErr - so this still runs when a stage timed out.
+	if g.admin != nil {
+		if err := g.admin.stop(ctx); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
 	return firstErr
 }
 

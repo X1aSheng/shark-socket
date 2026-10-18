@@ -13,6 +13,7 @@ type gatewayConfig struct {
 	metrics  core.Metrics
 	tracer   core.Tracer
 	timeouts core.StageTimeouts
+	admin    AdminConfig
 }
 
 type GatewayOption func(*gatewayConfig)

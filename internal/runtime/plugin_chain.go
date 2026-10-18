@@ -71,6 +71,18 @@ func (c *PluginChain) Append(plugins ...core.Plugin) {
 	c.view.Store(&pluginView{plugins: next, logger: cur.logger})
 }
 
+// PluginNames returns the names of the plugins in execution order, which is
+// also priority order. It reads the published view once, so the list belongs to
+// a single generation even if Append runs concurrently.
+func (c *PluginChain) PluginNames() []string {
+	plugins := c.current().plugins
+	names := make([]string, len(plugins))
+	for i, p := range plugins {
+		names[i] = p.Name()
+	}
+	return names
+}
+
 // current returns the published view. It is never nil: the constructor stores
 // an empty view before the first Append.
 func (c *PluginChain) current() *pluginView {

@@ -7,6 +7,38 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### Optional Admin Listener (2026-10-18)
+
+批 3 的 C7: 新增可选的管理/调试监听, 默认关闭. 说明见
+[`GATEWAY.md`](docs/architecture/GATEWAY.md) 第 2.8 节.
+不改 `core` 契约, 故未新增 ADR.
+
+**问题**: 全仓无 `pprof` / `expvar`, `Gateway.Health()` 只返回一个 map. 线上出问题
+时既没有 CPU/heap profile 可抓, 也没有一个不依赖指标后端的"当前有多少会话"入口.
+
+**改动**:
+
+- 新增 `runtime.WithAdmin(AdminConfig{Addr, Token})` 与 `Gateway.AdminAddr()`
+  (`Addr` 用 `:0` 时取实际端口)
+- 端点: `GET /healthz` (与 `Health()` 同体), `GET /sessions`
+  (`total` / `by_protocol` / `capacity`), `GET /plugins` (按执行顺序),
+  `GET /debug/pprof/*`
+- 只读; 不暴露会话 ID 与对端地址, 只给聚合值
+- 新增 `SessionManager.Capacity()` 与 `PluginChain.PluginNames()`;
+  `Runtime.PluginNames()` 在 runner 不支持枚举时返回 nil
+- `Gateway` 保留 `rawSessions` (装饰前的 manager): `metricSessionManager` 内嵌的是
+  `core.SessionManager` **接口**, 具体类型上的 `Capacity()` 透过它取不到
+- 非 loopback 地址且无 token 时 `Start` **失败**, 不是警告: pprof 能读进程内存与
+  全部 goroutine 栈
+- pprof 挂独立 mux 而非 `DefaultServeMux`; 只设 `ReadHeaderTimeout`, 不设
+  `WriteTimeout` (profile/trace 会跑满请求时长, 写超时会截断结果)
+- 顺手把 `Start` 里内联的回滚逻辑提成 `rollbackStart`, admin 启动失败复用同一条路径
+
+**验证**: 新增 7 个测试 -- 默认不监听, `/sessions` 与 `Runtime.Sessions().Count()`
+一致且按协议分组, `/plugins` 按优先级而非追加顺序, `/healthz` 与 pprof 可达,
+写方法返回 405, 无 token 401 / 带 token 200, 非 loopback 无 token 拒绝启动且
+回滚已启动的 server. `go test -race` 通过, `golangci-lint` 0 issues.
+
 ### PROXY Protocol Listener (2026-10-18)
 
 批 3 的 C4: 在监听层支持 PROXY protocol v1/v2, 让部署在 L4 负载均衡器后面的服务

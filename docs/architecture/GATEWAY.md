@@ -259,6 +259,59 @@ func (g *Gateway) Protocols() []core.Protocol // 按注册顺序返回副本
 `Health()` 返回 `started` 布尔量而不是 `status` 字符串,`readyz` 直接映射 `Ready()`.
 `Protocols()` 返回副本,调用方修改不会影响网关状态.
 
+### 2.8 管理/调试监听 (可选, 默认关闭)
+
+```go
+type AdminConfig struct {
+    Addr  string // "" 表示关闭
+    Token string // 非空则要求 Authorization: Bearer <token>
+}
+
+func WithAdmin(cfg AdminConfig) GatewayOption
+func (g *Gateway) AdminAddr() string // Addr 用 :0 时用它取实际端口
+```
+
+端点只读, 且刻意窄:
+
+| 路径 | 内容 |
+|------|------|
+| `GET /healthz` | 与 `Health()` 同体 |
+| `GET /sessions` | `total`, `by_protocol`, `capacity` |
+| `GET /plugins` | 插件名, 按执行顺序(即优先级顺序) |
+| `GET /debug/pprof/*` | 标准 profile |
+
+四条约束, 都是"不做"而不是"没做":
+
+- **默认关闭.** 没人要求的端口不该被打开. `AdminAddr()` 在未启用时返回空串.
+- **不做任何写操作.** "关闭所有会话"之类的按钮是等着被误触的故障源.
+- **不暴露会话 ID 与对端地址.** 运维要的是"进程是否健康"的聚合值; 更细的信息
+  属于日志与指标, 有自己的保留策略. `/sessions` 的 `by_protocol` 来自一次
+  `SessionManager.Range`, 与容量判定同源, 因此不会与运行时自己的计数漂移;
+  但它不是一致性快照 (遍历 64 片不加全局锁), 差几个会话是允许的.
+- **非 loopback 地址必须带 token.** pprof 能读进程内存 (heap profile) 与每个
+  goroutine 的栈. 没有凭据就暴露在可路由地址上属于"不会有人发现"的信息泄露,
+  所以 `Start` 直接失败而不是打一条警告:
+
+  ```go
+  if !isLoopbackAddr(ln.Addr()) && a.cfg.Token == "" {
+      _ = ln.Close()
+      return fmt.Errorf("admin listen %s: refusing to expose profiles on a "
+          + "non-loopback address without a token", ln.Addr())
+  }
+  ```
+
+pprof 挂在**自己的 mux** 而不是 `http.DefaultServeMux`: 导入 `net/http/pprof` 本身
+就会往默认 mux 注册, 让它们顺带出现在别的监听上比一个 import 副作用更糟.
+
+`http.Server` 只设 `ReadHeaderTimeout` (5s), **不设** `WriteTimeout` /
+`IdleTimeout`: CPU profile 与 execution trace 会跑满请求的时长再一次性写出,
+写超时会在最需要它的时刻把结果截断.
+
+生命周期: admin 在 `Start` 的最后一步起(它报告的是 server, 不该在 server 还没起
+完时应答), 在 `Stop` 的最后一步停 -- 关停全程都能通过 `/sessions` 看会话数下降.
+`Start` 里 admin 失败会回滚已经启动的 server, 与 server 自身失败走同一条
+`rollbackStart`.
+
 ---
 
 ## 3. SessionManager 实现

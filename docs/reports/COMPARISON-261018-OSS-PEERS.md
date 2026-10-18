@@ -373,6 +373,17 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
 - 改法: 独立 admin listener (默认关闭), `/debug/pprof`, `/sessions` 摘要 (脱敏),
   `/plugins` 状态
 - 验收: 默认构建不监听; 打开后可按协议统计连接数, 与指标一致
+- **已实施 (2026-10-18)**: `runtime.WithAdmin(Addr, Token)` 与
+  `Gateway.AdminAddr()`, 默认关闭. 端点 `GET /healthz` / `/sessions`
+  (`total` / `by_protocol` / `capacity`) / `/plugins` (按优先级顺序) /
+  `/debug/pprof/*`, 全部只读, 不暴露会话 ID 与对端地址. 非 loopback 且无 token
+  时 `Start` 失败而非告警. 两条验收都成立: 默认不监听有测试
+  (`TestAdminDisabledByDefault`); `/sessions` 的 `total` 与
+  `Runtime.Sessions().Count()` 同源同名同值, `by_protocol` 由一次 `Range` 得出,
+  测试断言 tcp:3 / udp:2 与运行时一致. **一处口径要说明**: `core.Metrics` 是只写
+  接口 (无读回), 所以"与指标一致"在结构上等于"与指标读的同一个数", 而不是真的
+  去对一次导出的 scrape; 目前也没有 `sessions_active` 以外的按协议 gauge,
+  补 gauge 属于 D 类 (可观测真实性) 的范围
 
 ### 4.4 D 类: 可观测真实性 (P1)
 

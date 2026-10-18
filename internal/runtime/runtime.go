@@ -36,4 +36,15 @@ func (r *Runtime) Logger() core.Logger           { return r.logger }
 func (r *Runtime) Metrics() core.Metrics         { return r.metrics }
 func (r *Runtime) Tracer() core.Tracer           { return r.tracer }
 
+// PluginNames returns the plugin names in execution order, or nil when the
+// configured runner cannot enumerate them (core.PluginRunner does not require
+// it; only PluginChain can).
+func (r *Runtime) PluginNames() []string {
+	lister, ok := r.plugins.(interface{ PluginNames() []string })
+	if !ok {
+		return nil
+	}
+	return lister.PluginNames()
+}
+
 var _ core.Runtime = (*Runtime)(nil)
