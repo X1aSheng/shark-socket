@@ -378,6 +378,7 @@ Raw JSON and readable reports are written to `logs/`.
 - [Documentation Index](docs/README.md)
 - [Architecture](docs/architecture/ARCHITECTURE.md)
 - [Contracts & Interfaces](docs/architecture/CONTRACTS.md)
+- [Compatibility Promise](docs/architecture/COMPATIBILITY.md) -- what is frozen, what is not, and the test that enforces it
 - [Gateway & Runtime](docs/architecture/GATEWAY.md)
 - [Deployment](docs/architecture/DEPLOYMENT.md)
 - [Configuration Guide](docs/guides/CONFIGURATION-20260530.md)

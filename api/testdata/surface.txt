@@ -1,0 +1,213 @@
+# Package api: the compatibility surface. Do not edit by hand.
+# Regenerate with: go test ./api -run TestPublicSurface -update-surface
+#
+# Declarations are listed as written; interface methods come from reflection
+# because the aliases put the real method sets in internal/core.
+const CoAP = core.ProtocolCoAP
+const Custom = core.ProtocolCustom
+const HTTP = core.ProtocolHTTP
+const QUIC = core.ProtocolQUIC
+const StateActive = core.StateActive
+const StateClosed = core.StateClosed
+const StateConnecting = core.StateConnecting
+const StateDraining = core.StateDraining
+const TCP = core.ProtocolTCP
+const UDP = core.ProtocolUDP
+const WS = core.ProtocolWS
+func AdaptTyped[M any](Codec[M], TypedHandler[M]) Handler
+func NewAutoBanPlugin(int) *AutoBanPlugin
+func NewBlacklistPlugin(...string) *BlacklistPlugin
+func NewBoltStore(string) (*BoltStore, error)
+func NewClusterPlugin(string, *PubSub, SessionManager, int) *ClusterPlugin
+func NewCoAPServer(...CoAPOption) *CoAPServer
+func NewGRPCWebServer(...GRPCWebOption) *GRPCWebServer
+func NewGateway(...GatewayOption) *Gateway
+func NewHTTPServer(...HTTPOption) *HTTPServer
+func NewHeartbeatPlugin(SessionManager, time.Duration, time.Duration) *HeartbeatPlugin
+func NewLwM2MClient(string, *LwM2MServer, ...LwM2MClientOption) *LwM2MClient
+func NewLwM2MCoAPResponder(*LwM2MServer) func(Session, Message) ([]byte, error)
+func NewLwM2MServer(...LwM2MServerOption) *LwM2MServer
+func NewMemoryStore() *MemoryStore
+func NewMessageLog(Store, string) (*MessageLog, error)
+func NewOpenTelemetryTracer(trace.Tracer) *OpenTelemetryTracer
+func NewPersistencePlugin(Store, string) *PersistencePlugin
+func NewPrometheusMetrics() *PrometheusMetrics
+func NewPubSub() *PubSub
+func NewQUICServer(...QUICOption) *QUICServer
+func NewRateLimitPlugin(int, time.Duration) *RateLimitPlugin
+func NewSessionStore(Store, string) *SessionStore
+func NewSlowHandler(Logger, time.Duration, Handler, ...SlowHandlerOption) Handler
+func NewTCPClient(string, ...TCPClientOption) *TCPClient
+func NewTCPServer(...TCPOption) *TCPServer
+func NewUDPServer(...UDPOption) *UDPServer
+func NewWebSocketServer(...WebSocketOption) *WebSocketServer
+func ParseLwM2MPath(string) (LwM2MObjectPath, error)
+func Run(context.Context, *Gateway) error
+func WithCoAPAddr(string) CoAPOption
+func WithCoAPDTLS(*tls.Config) CoAPOption
+func WithCoAPDTLSReadBufferBytes(int) CoAPOption
+func WithCoAPHandler(Handler) CoAPOption
+func WithCoAPMaxBlockSize(int) CoAPOption
+func WithCoAPMaxSessions(int64) CoAPOption
+func WithCoAPMaxSessionsPerPeer(int64) CoAPOption
+func WithCoAPResponder(func(Session, Message) ([]byte, error)) CoAPOption
+func WithGRPCWebAcceptRate(float64) GRPCWebOption
+func WithGRPCWebAddr(string) GRPCWebOption
+func WithGRPCWebCheckOrigin(func(*http.Request) bool) GRPCWebOption
+func WithGRPCWebHandler(Handler) GRPCWebOption
+func WithGRPCWebHandshakeTimeout(time.Duration) GRPCWebOption
+func WithGRPCWebMaxConnections(int64) GRPCWebOption
+func WithGRPCWebMaxConnectionsPerIP(int64) GRPCWebOption
+func WithGRPCWebMaxMessageBytes(int64) GRPCWebOption
+func WithGRPCWebWebSocketMode(string) GRPCWebOption
+func WithHTTPAcceptRate(float64) HTTPOption
+func WithHTTPAddr(string) HTTPOption
+func WithHTTPCORSAllowedOrigins([]string) HTTPOption
+func WithHTTPHandler(Handler) HTTPOption
+func WithHTTPMaxConnections(int64) HTTPOption
+func WithHTTPMaxConnectionsPerIP(int64) HTTPOption
+func WithLogger(Logger) GatewayOption
+func WithMetrics(Metrics) GatewayOption
+func WithPlugins(...Plugin) GatewayOption
+func WithQUICAcceptRate(float64) QUICOption
+func WithQUICAddr(string) QUICOption
+func WithQUICHandler(Handler) QUICOption
+func WithQUICMaxConnections(int64) QUICOption
+func WithQUICMaxConnectionsPerIP(int64) QUICOption
+func WithQUICMaxIdleTimeout(time.Duration) QUICOption
+func WithQUICTLS(*tls.Config) QUICOption
+func WithStageTimeouts(StageTimeouts) GatewayOption
+func WithTCPAcceptRate(float64) TCPOption
+func WithTCPAddr(string) TCPOption
+func WithTCPFramer(Framer) TCPOption
+func WithTCPHandler(Handler) TCPOption
+func WithTCPMaxConnections(int64) TCPOption
+func WithTCPMaxConnectionsPerIP(int64) TCPOption
+func WithTCPTLS(*tls.Config) TCPOption
+func WithTCPTLSHandshakeTimeout(time.Duration) TCPOption
+func WithTCPWriteBufferBytes(int) TCPOption
+func WithTracer(Tracer) GatewayOption
+func WithUDPAddr(string) UDPOption
+func WithUDPDTLS(*tls.Config) UDPOption
+func WithUDPDTLSReadBufferBytes(int) UDPOption
+func WithUDPHandler(Handler) UDPOption
+func WithUDPMaxSessions(int64) UDPOption
+func WithUDPMaxSessionsPerPeer(int64) UDPOption
+func WithWebSocketAcceptRate(float64) WebSocketOption
+func WithWebSocketAddr(string) WebSocketOption
+func WithWebSocketCheckOrigin(func(*http.Request) bool) WebSocketOption
+func WithWebSocketHandler(Handler) WebSocketOption
+func WithWebSocketHandshakeTimeout(time.Duration) WebSocketOption
+func WithWebSocketMaxConnections(int64) WebSocketOption
+func WithWebSocketMaxConnectionsPerIP(int64) WebSocketOption
+func WithWebSocketPath(string) WebSocketOption
+iface Codec.Decode func([]byte) (M, error)
+iface Codec.Encode func(M) ([]byte, error)
+iface Framer.ReadFrame func(io.Reader) ([]byte, error)
+iface Framer.WriteFrame func(io.Writer, []byte) error
+iface Logger.Debug func(string, ...any)
+iface Logger.Error func(string, ...any)
+iface Logger.Info func(string, ...any)
+iface Logger.Warn func(string, ...any)
+iface Metrics.IncCounter func(string, ...string)
+iface Metrics.ObserveHistogram func(string, float64, ...string)
+iface Metrics.SetGauge func(string, float64, ...string)
+iface Plugin.Name func() string
+iface Plugin.OnAccept func(Session) error
+iface Plugin.OnClose func(Session)
+iface Plugin.OnMessage func(Session, []byte) ([]byte, error)
+iface Plugin.Priority func() int
+iface Session.Close func(context.Context) error
+iface Session.Context func() context.Context
+iface Session.CreatedAt func() time.Time
+iface Session.DelMeta func(string)
+iface Session.GetMeta func(string) (any, bool)
+iface Session.ID func() uint64
+iface Session.LastActiveAt func() time.Time
+iface Session.LocalAddr func() net.Addr
+iface Session.Protocol func() Protocol
+iface Session.RemoteAddr func() net.Addr
+iface Session.Send func([]byte) error
+iface Session.SetMeta func(string, any)
+iface Session.State func() SessionState
+iface Store.Close func() error
+iface Store.Delete func(string, string) error
+iface Store.List func(string) ([]string, error)
+iface Store.Load func(string, string) ([]byte, bool, error)
+iface Store.Save func(string, string, []byte) error
+iface Tracer.Start func(context.Context, string, ...any) (context.Context, Span)
+type AutoBanPlugin = plugin.AutoBan
+type BasePlugin = core.BasePlugin
+type BlacklistPlugin = plugin.Blacklist
+type BoltStore = store.BoltStore
+type ClusterPlugin = plugin.Cluster
+type CoAPOption = coap.Option
+type CoAPServer = coap.Server
+type Codec[M any] = core.Codec[M]
+type Framer = tcp.Framer
+type GRPCWebOption = grpcweb.Option
+type GRPCWebServer = grpcweb.Server
+type Gateway = runtime.Gateway
+type GatewayOption = runtime.GatewayOption
+type HTTPOption = transporthttp.Option
+type HTTPServer = transporthttp.Server
+type Handler = core.Handler
+type HeartbeatPlugin = plugin.Heartbeat
+type LengthPrefixFramer = tcp.LengthPrefixFramer
+type LineFramer = tcp.LineFramer
+type Logger = core.Logger
+type LwM2MClient = lwm2m.Client
+type LwM2MClientOption = lwm2m.ClientOption
+type LwM2MObjectPath = lwm2m.ObjectPath
+type LwM2MRegistration = lwm2m.Registration
+type LwM2MResource = lwm2m.Resource
+type LwM2MServer = lwm2m.Server
+type LwM2MServerOption = lwm2m.ServerOption
+type MemoryStore = store.Memory
+type Message = core.Message
+type MessageLog = store.MessageLog
+type Metrics = core.Metrics
+type OpenTelemetryTracer = observability.OpenTelemetryTracer
+type PersistencePlugin = plugin.Persistence
+type Plugin = core.Plugin
+type PrometheusMetrics = observability.PrometheusMetrics
+type Protocol = core.Protocol
+type PubSub = pubsub.PubSub
+type QUICOption = quic.Option
+type QUICServer = quic.Server
+type RateLimitPlugin = plugin.RateLimit
+type RawFramer = tcp.RawFramer
+type Server = core.Server
+type Session = core.Session
+type SessionManager = core.SessionManager
+type SessionSnapshot = store.SessionSnapshot
+type SessionState = core.SessionState
+type SessionStore = store.SessionStore
+type SlowHandlerOption = plugin.SlowHandlerOption
+type Span = core.Span
+type StageTimeouts = core.StageTimeouts
+type Store = store.Store
+type TCPClient = tcp.Client
+type TCPClientOption = tcp.ClientOption
+type TCPOption = tcp.Option
+type TCPServer = tcp.Server
+type Tracer = core.Tracer
+type TypedHandler[M any] = core.TypedHandler[M]
+type UDPOption = udp.Option
+type UDPServer = udp.Server
+type WebSocketOption = websocket.Option
+type WebSocketServer = websocket.Server
+var ErrClosed = core.ErrClosed
+var ErrDuplicateProtocol = core.ErrDuplicateProtocol
+var ErrDuplicateSession = core.ErrDuplicateSession
+var ErrFrameTooLarge = core.ErrFrameTooLarge
+var ErrHandlerPanic = core.ErrHandlerPanic
+var ErrInvalidArgument = core.ErrInvalidArgument
+var ErrNoServers = core.ErrNoServers
+var ErrPluginBlock = core.ErrPluginBlock
+var ErrPluginDrop = core.ErrPluginDrop
+var ErrPluginPanic = core.ErrPluginPanic
+var ErrServerClosed = core.ErrServerClosed
+var ErrSessionCapacity = core.ErrSessionCapacity
+var ErrSessionClosed = core.ErrSessionClosed
+var ErrWriteQueueFull = core.ErrWriteQueueFull

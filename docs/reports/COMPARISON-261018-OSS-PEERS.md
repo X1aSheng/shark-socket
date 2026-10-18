@@ -688,6 +688,22 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
   自己; 改成"分块不变性只在 Auto 模式下跑一遍"后提升 42 倍。
 - **E4 发布成熟度.** 仅 `v0.1.0` 与 `v0.1.0-rc.1`; v0.x 允许破坏性变更, 但应有一页
   "兼容承诺" 说明哪些包已冻结 (core 接口), 哪些会变
+- **已实施 (2026-10-18)**: 新增 `docs/architecture/COMPATIBILITY.md`, 但先做了一件
+  报告没要求的事 -- **把"冻结"变成一条会红的测试**, 否则那份清单只是自我声明.
+  先量了边界: 45 个包里 20 个在 `internal/` (编译期不可 import), 19 个是 `main`,
+  可 import 且属于框架的只有 `api` 一个包, 208 条导出 (`type` 61 条全是别名).
+  `api/testdata/surface.txt` 逐条比对: 删除/改名/改签名红, **新增也红** (新增即
+  新承诺, 得先定档再 `-update`), **改参数名不红** (参数名不在调用语法里, 让它红
+  只会训练人无脑 `-update`, 那是这个测试唯一承受不起的失败模式). 上半边用 AST 走
+  `api/*.go`, 下半边用反射取用户实现或伪造的 8 个接口方法集 -- 别名把真正的方法集
+  留在 `internal/core`, AST 看不见它们. **写这页才发现两个真实缺口**: `api` 没有
+  导出 `Span` 与 `SessionState`, 而 `Tracer.Start` 返回前者、`Session.State` 返回
+  后者, 仓库外 import 不了 `internal/core` -- 也就是说 v0.1.0 的 `Tracer` 无法从
+  外部实现, `Session` 无法从外部伪造. 已补两个别名与 4 个状态常量. 同时把 14 个
+  错误哨兵别名进 `api` (`errors.Is` 跨包可用), 判据是"能观察到或必须产出":
+  `ErrPluginDrop` / `ErrPluginBlock` 是**你**返回给框架的控制信号, 必须在; 而
+  `ErrUnsupportedFeature` 没有任何返回点, 导出它等于给调用方一个恒假的分支.
+  实测: 加导出函数 -> 红, `float64` 改 `int` -> 红, `addr` 改 `address` -> 绿.
 - **E5 README 定位页缺失.** 现在的 README 以功能矩阵开篇, 读者会拿它和 gnet
   比吞吐; 缺一页 "与 gnet/netpoll/Netty/t-io 的分工", 而这类误读会反复发生
 

@@ -272,6 +272,7 @@ docker compose -f deploy/docker/docker-compose.yml up -d --build
 - [文档索引](docs/README.md)
 - [架构](docs/architecture/ARCHITECTURE.md)
 - [契约与接口](docs/architecture/CONTRACTS.md)
+- [兼容承诺](docs/architecture/COMPATIBILITY.md) -- 哪些冻结, 哪些不承诺, 以及强制它的测试
 - [网关与运行时](docs/architecture/GATEWAY.md)
 - [部署](docs/architecture/DEPLOYMENT.md)
 - [配置指南](docs/guides/CONFIGURATION-20260530.md)

@@ -7,6 +7,57 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### 兼容承诺: 一个包, 三档冻结, 一条会红的测试 (2026-10-18)
+
+报告 E4 说"应有一页兼容承诺". 写这一页时发现, 比缺文档更实在的问题是缺边界:
+公开面到底有多大没人说得准, 而"冻结"此前**没有任何东西在守** -- 加一个导出、改一个
+签名、给用户实现的接口添一个方法, 全都只靠人记得.
+
+**公开面其实只有一个包.** 45 个包里 20 个在 `internal/` (编译期不可 import), 19 个
+是 `main`, 可 import 且属于框架的只有 `api`: 208 条导出, 其中 `type` 61 条**全是
+别名**, 函数 87 条 (58 个 `With*`, 26 个 `New*`, 3 个其他), 常量 11, 哨兵 14, 接口
+方法 35.
+
+**新增 `api/surface_test.go` + `api/testdata/surface.txt`**:
+
+| 情形 | 结果 | 为什么 |
+| --- | --- | --- |
+| 删除 / 改名 / 改签名 | 红, 提示补 ADR 与 Breaking | 外部代码当场不编译 |
+| **新增导出** | **红** | 新增就是一个新承诺, 得先定档 (F0/F1/F2) 再 `-update` |
+| 改参数名 | 绿 | 参数名不在调用语法里, 谁也观察不到。让它红只会训练人无脑 `-update` |
+| 具体类型新增方法 | 绿 | `*TCPServer` 多一个方法不影响任何人 |
+
+上半边用 AST 走 `api/*.go` 的导出声明 (参数名先剥掉, 多参数组展开以保住元数);
+下半边用反射取"用户会实现或伪造"的接口方法集 -- 前者看不见它们, 因为别名把真正的
+方法集留在 `internal/core`. `Handler` 与 `TypedHandler` 不在下半边: 它们是**函数
+类型**, 没有方法集可加.
+
+实测: 加一个导出函数 -> 红并列出 `added`; `WithTCPAcceptRate` 的 `float64` 改 `int`
+-> 红并列出 `removed or re-signed` 与 `added`; `WithTCPAddr` 的 `addr` 改 `address`
+-> 绿.
+
+**顺带补掉两个真实缺口** (写清单才暴露的): `api` 没有导出 `Span` 与 `SessionState`,
+而 `Tracer.Start` 返回 `Span`、`Session.State` 返回 `SessionState`, `internal/core`
+在仓库外 import 不了 -- 于是 v0.1.0 的 `Tracer` **无法从外部实现**, `Session`
+**无法从外部伪造**, 因为签名里的类型在外面没有名字. 新增 `api.Span`
+`api.SessionState` 与 4 个状态常量.
+
+**新增 `api/errors.go`**: 14 个错误哨兵从 `internal/core` 别名出来, 跨包 `errors.Is`
+直接可用. 判据是"能观察到, 或必须产出", 所以 `ErrPluginDrop` / `ErrPluginBlock`
+(由你从 `Handler` / `Plugin` 返回, 框架据此改变行为) 也在里面, 而
+`ErrUnsupportedFeature` 不在 -- 它在 `internal/core` 里有定义但**没有任何返回点**,
+导出它等于给调用方一个恒假的分支.
+
+**两条断言专堵别名退化**: `TestAliasesPointAtTheInternalTypes` 与
+`TestErrorSentinelsAreTheSameValues`. 把 `ErrFrameTooLarge = core.ErrFrameTooLarge`
+换成 `errors.New("frame too large")` 会保住文档、丢掉契约, 而上面所有比对**还是绿的**.
+
+**新增 `docs/architecture/COMPATIBILITY.md`**: 三档冻结 (F0 用户实现或伪造的接口方法集
+与哨兵 / F1 构造器、配置字段、指标名只增不改 / F2 `internal/`、具体类型新方法、文案自由),
+冻结的**语义**清单 (停机顺序, panic 隔离, `OnAccept` 回滚, 指标口径, 写批处理, 准入
+控制, 消息所有权, 各带 ADR 出处), 以及明确不在承诺内的部分 (性能数字, 日志文案,
+入站帧的生命周期, 配置未知字段当前被静默忽略).
+
 ### fuzz: 补上四个目标, 并让它每晚真的在跑 (2026-10-18)
 
 报告 E3 说 fuzz 覆盖窄. 窄的部分是目标清单, 更窄的部分是**没人跑** -- 此前

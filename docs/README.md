@@ -73,6 +73,8 @@
 - 总览, 入口和导航写入 `architecture/ARCHITECTURE.md`。
 - 依赖是否合法只看 `architecture/ARCHITECTURE.md`。
 - 核心接口先更新 `architecture/CONTRACTS.md`, 再改代码。
+- 冻结级别与兼容承诺只写入 `architecture/COMPATIBILITY.md`; 导出面清单只由
+  `go test ./api -run TestPublicSurface -update-surface` 生成, 不手写。
 - Gateway 生命周期问题写入 `architecture/GATEWAY.md` 和 `architecture/LIFECYCLE.md`。
 - TCP/UDP/HTTP/WebSocket/CoAP/QUIC/gRPC-Web 写入 `architecture/TRANSPORT.md`。
 - LwM2M 和未来应用协议写入 `architecture/PROTOCOL.md`。

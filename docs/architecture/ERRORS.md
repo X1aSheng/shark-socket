@@ -27,6 +27,12 @@
 - **不做分类包装**:框架不再提供 IsRetryable / IsFatal 之类的聚合判断,调用点直接
   `errors.Is` / `errors.As`,理由见第 4 节
 
+**从仓库外看**:上面这些全部定义在 `internal/` 下,仓库外的代码 import 不了。`api`
+导出了其中 14 个同名别名(`api.ErrFrameTooLarge` 等,是框架自己的值而非副本),
+`errors.Is` 直接可用。导出哪 14 个的判据与清单见
+[`COMPATIBILITY.md`](COMPATIBILITY.md) 第 4 节; 没导出的 `ErrUnsupportedFeature`
+当前没有任何返回点,因此不构成契约。
+
 **设计原则:**
 
 | 原则 | 说明 |

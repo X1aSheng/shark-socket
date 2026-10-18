@@ -13,6 +13,7 @@
 | --- | --- | --- |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | **总入口**: 项目定位, 设计哲学, 非目标, 分层图, 依赖矩阵, 目录树 | 362 |
 | [`CONTRACTS.md`](CONTRACTS.md) | `internal/core` 接口, 类型, 不变量 | 746 |
+| [`COMPATIBILITY.md`](COMPATIBILITY.md) | 兼容承诺: 三档冻结, 冻结的语义, 不在承诺内的部分, 强制机制 | 174 |
 | [`GATEWAY.md`](GATEWAY.md) | Gateway, Runtime, SessionManager, PluginChain, WorkerPool | 1044 |
 | [`LIFECYCLE.md`](LIFECYCLE.md) | 连接生命周期, Gateway 启停, StagedServer 三阶段, 状态机汇总 | 1065 |
 | [`TRANSPORT.md`](TRANSPORT.md) | TCP, UDP, HTTP, WebSocket, CoAP, QUIC, gRPC-Web 的实现细节 | 4206 |
@@ -31,11 +32,12 @@
 
 1. `ARCHITECTURE.md` - 先建立分层与依赖的整体印象。
 2. `CONTRACTS.md` - 再看核心接口的形状, 后续文档里的类型名都出自这里。
-3. `GATEWAY.md` + `LIFECYCLE.md` - 运行时的组装与启停路径。
-4. `TRANSPORT.md` / `PROTOCOL.md` - 按需查具体协议, 不必通读。
-5. `PLUGIN.md`, `ERRORS.md` - 扩展点与失败信号。
-6. `OBSERVABILITY.md`, `SECURITY.md` - 上线前必读。
-7. `DEPLOYMENT.md`, `TROUBLESHOOTING.md` - 部署与排障时查。
+3. `COMPATIBILITY.md` - 要升级或要依赖某个接口时先看这份: 哪些冻结了, 哪些没有。
+4. `GATEWAY.md` + `LIFECYCLE.md` - 运行时的组装与启停路径。
+5. `TRANSPORT.md` / `PROTOCOL.md` - 按需查具体协议, 不必通读。
+6. `PLUGIN.md`, `ERRORS.md` - 扩展点与失败信号。
+7. `OBSERVABILITY.md`, `SECURITY.md` - 上线前必读。
+8. `DEPLOYMENT.md`, `TROUBLESHOOTING.md` - 部署与排障时查。
 
 `TRANSPORT.md` 标题带 "Part 1/5" 且已 4206 行, 是当前最大的一份; 找某一协议时直接用
 标题锚点跳转, 不要顺序翻。
@@ -44,6 +46,8 @@
 
 | 想找什么 | 在哪 |
 | --- | --- |
+| 升级会不会把我弄坏 | [`COMPATIBILITY.md`](COMPATIBILITY.md) |
+| 导出面到底有哪些 (机器可读) | `api/testdata/surface.txt`, 由 `TestPublicSurface` 生成 |
 | Prometheus 指标清单 | [`OBSERVABILITY.md`](OBSERVABILITY.md) 3.3 节 (不是 `guides/Architecture.md`, 那份已归档) |
 | 配置字段 | [`../guides/CONFIGURATION-20260530.md`](../guides/CONFIGURATION-20260530.md) |
 | 回归清单与验收命令 | [`../guides/TEST-STRATEGY-20260529.md`](../guides/TEST-STRATEGY-20260529.md) |

@@ -84,6 +84,13 @@ type (
 	Logger              = core.Logger
 	Metrics             = core.Metrics
 	Tracer              = core.Tracer
+	// Span and SessionState are here because they appear in the signatures of
+	// interfaces an embedder implements. Without the alias, Tracer cannot be
+	// implemented (its Start returns a Span) and Session cannot be faked (its
+	// State returns a SessionState): internal/core is unimportable by design,
+	// so the type would have no name on the outside.
+	Span                = core.Span
+	SessionState        = core.SessionState
 	StageTimeouts       = core.StageTimeouts
 	Codec[M any]        = core.Codec[M]
 	TypedHandler[M any] = core.TypedHandler[M]
@@ -97,6 +104,15 @@ const (
 	CoAP   = core.ProtocolCoAP
 	QUIC   = core.ProtocolQUIC
 	Custom = core.ProtocolCustom
+)
+
+// Session states, so a fake Session can answer State() without naming an
+// internal type.
+const (
+	StateConnecting = core.StateConnecting
+	StateActive     = core.StateActive
+	StateDraining   = core.StateDraining
+	StateClosed     = core.StateClosed
 )
 
 func NewGateway(opts ...GatewayOption) *Gateway {
