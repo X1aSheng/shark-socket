@@ -15,6 +15,7 @@ import (
 	"context"
 	"flag"
 	"log"
+	"net/http"
 
 	"github.com/X1aSheng/shark-socket/api"
 )
@@ -22,6 +23,7 @@ import (
 func main() {
 	addr := flag.String("addr", "127.0.0.1:19001", "listen address")
 	writeBuf := flag.Int("write-buffer", 0, "per-connection write buffer in bytes")
+	metricsAddr := flag.String("metrics", "", "serve Prometheus metrics here (empty = off)")
 	flag.Parse()
 
 	server := api.NewTCPServer(
@@ -32,7 +34,20 @@ func main() {
 			return sess.Send(msg.Payload)
 		}),
 	)
-	gateway := api.NewGateway()
+	// The metrics endpoint is what turns a throughput row into an attribution:
+	// handler_duration_seconds says how much of the round trip is the handler
+	// and how much is dispatch, framing and the socket.
+	var opts []api.GatewayOption
+	if *metricsAddr != "" {
+		metrics := api.NewPrometheusMetrics()
+		opts = append(opts, api.WithMetrics(metrics))
+		go func() {
+			if err := http.ListenAndServe(*metricsAddr, metrics); err != nil {
+				log.Printf("metrics: %v", err)
+			}
+		}()
+	}
+	gateway := api.NewGateway(opts...)
 	if err := gateway.Register(server); err != nil {
 		log.Fatalf("register: %v", err)
 	}
