@@ -56,7 +56,11 @@ go test -c -o "$OUT/bench.test" "$PKG" >/dev/null
 frames=$((ITER * FRAMES_PER_OP))
 
 probe_syscalls() {
-    local tag="$1" pattern="$2" raw="$OUT/syscalls-$tag.txt"
+    # Assignments one per statement: `local a=$1 b=$a` expands every word
+    # before any of them is bound, so $a is unbound under `set -u`.
+    local tag="$1"
+    local pattern="$2"
+    local raw="$OUT/syscalls-$tag.txt"
     # strace distorts timing, so this run is for call counts only.
     strace -f -e trace=write,writev -o "$raw" \
         "$OUT/bench.test" -test.run '^$' -test.bench "$pattern" \
