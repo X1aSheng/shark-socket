@@ -81,7 +81,8 @@ func LoadConfig(path string) (Config, error) {
 		if err != nil {
 			return Config{}, fmt.Errorf("read config %s: %w", path, err)
 		}
-		if err := json.Unmarshal(data, &cfg); err != nil {
+		cfg, err = decodeConfig(data)
+		if err != nil {
 			return Config{}, fmt.Errorf("parse config %s: %w", path, err)
 		}
 	}
@@ -89,6 +90,21 @@ func LoadConfig(path string) (Config, error) {
 		return Config{}, err
 	}
 	if err := cfg.Validate(); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
+}
+
+// decodeConfig lays one JSON document over the defaults.
+//
+// It exists so the decode half can be exercised without a file and without the
+// environment: LoadConfig's other two steps (applyEnv, Validate) are separate
+// on purpose, and a config file is exactly the kind of input that arrives
+// malformed and half-hand-edited. Decoding alone decides nothing about
+// validity -- the caller still validates.
+func decodeConfig(data []byte) (Config, error) {
+	cfg := DefaultConfig()
+	if err := json.Unmarshal(data, &cfg); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil

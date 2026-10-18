@@ -1,0 +1,96 @@
+name: Fuzz
+
+# Fuzzing does not belong on the pull-request path. Seeds run there anyway --
+# `go test ./...` executes every Fuzz target against its seed corpus and any
+# committed regressions -- but the part that finds new bugs is the part that
+# costs minutes, and a check that makes every PR wait is a check that gets
+# skipped. So this runs nightly, and on demand with a longer budget.
+on:
+  schedule:
+    # 03:17 UTC daily. Not on the hour: cron jobs queued at :00 across all of
+    # GitHub compete for runners and start late.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: "Budget per target (Go duration, e.g. 60s, 5m)"
+        required: false
+        default: "60s"
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Fuzz ${{ matrix.target }} (${{ matrix.pkg }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      # Only the artifact upload needs this; keep the rest at contents:read.
+      contents: read
+      actions: write
+    strategy:
+      # One slow or failing target must not cancel the others: the point of the
+      # run is to learn about all of them in one night.
+      fail-fast: false
+      matrix:
+        include:
+          - pkg: ./internal/transport/tcp
+            target: FuzzLengthPrefixFramer
+          - pkg: ./internal/transport/tcp
+            target: FuzzLineFramerRead
+          - pkg: ./internal/transport/tcp
+            target: FuzzFixedSizeFramerRead
+          - pkg: ./internal/transport/tcp
+            target: FuzzRawFramerRoundTrip
+          - pkg: ./internal/transport/tcp
+            target: FuzzBufferedFramerRead
+          - pkg: ./internal/transport/grpcweb
+            target: FuzzParseDataFrames
+          - pkg: ./internal/transport/grpcweb
+            target: FuzzDataFrameRoundTrip
+          - pkg: ./internal/transport/shared
+            target: FuzzReadProxyHeader
+          - pkg: ./internal/transport/coap
+            target: FuzzParseMessage
+          - pkg: ./internal/transport/coap
+            target: FuzzMessageRoundTrip
+          - pkg: ./internal/protocol/lwm2m
+            target: FuzzTLVRoundTrip
+          - pkg: ./internal/protocol/lwm2m
+            target: FuzzTLVDecodeRandom
+          - pkg: ./internal/app
+            target: FuzzDecodeConfig
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Fuzz ${{ matrix.target }}
+        # -parallel 2 keeps the corpus in the cache and the workers from fighting
+        # over the runner's cores; throughput per worker matters less than
+        # coverage of the interesting paths.
+        run: |
+          go test -run '^$' -fuzz '^${{ matrix.target }}$' -fuzztime "${{ github.event.inputs.fuzztime || '60s' }}" \
+            -parallel 2 '${{ matrix.pkg }}'
+        shell: bash
+
+      - name: Upload failing input and corpus
+        # The crasher lands in <pkg>/testdata/fuzz/<target>/ and the generated
+        # corpus in GOCACHE; the crasher is the artifact that matters, because
+        # it can be committed as a regression seed as-is.
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: fuzz-${{ matrix.target }}
+          path: |
+            ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.target }}/
+          if-no-files-found: ignore
