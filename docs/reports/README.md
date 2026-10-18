@@ -57,7 +57,7 @@
 | 网络验证 | `NETWORK-VALIDATION-261016-092259-DIRECT.md` (直连) | `NETWORK-VALIDATION-261016-014530.md` (SSH 隧道) |
 | 架构分析 | `ARCHITECTURE-ANALYSIS-260626.md` | - |
 | 方法论 | `ARCHITECTURE-METHODOLOGY-260626.md` | - |
-| 性能基准 | `BENCHMARK-260614-102513.md` | - |
+| 性能基准 | `BENCHMARK-261018-PEER.md` (同机对等: 本项目 / gnet / netpoll) | `BENCHMARK-260614-102513.md` (本项目自身微基准) |
 | 差距分析 | `GAP-ANALYSIS-260614.md` | - |
 | 横向对比 | `COMPARISON-261018-OSS-PEERS.md` (5 项目机制对比 + 改进清单) | `COMPARISON-261017-SMARTBOOT.md` (smart-socket 对比 + 资源基线) |
 | 压测 | `STRESS-INTRANET-261017.md` (内网重测 + 弹性池对比) | `STRESS-LADDER-261017.md` (公网压测) |

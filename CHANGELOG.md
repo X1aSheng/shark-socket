@@ -7,6 +7,29 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### 同机对等基准: 本项目 vs gnet vs netpoll (2026-10-18)
+
+报告 E1 的挂账是"没有同一台 Linux、同一 echo 负载、同一个客户端的横向基准". 现在有了:
+`tests/peerbench/` 是嵌套 module, `replace` 指向工作树 -- 对手是可复现的依赖,
+被测对象是工作树而不是 tag. 四臂 (本项目 / 本项目 + `-write-buffer 4096` /
+gnet v2.10.0 / netpoll v0.7.5) 跑同一个 256 B 字节 echo, 由同一个 load 二进制驱动,
+在 srv2 与 srv3 各跑一遍 (各 3 轮, 中位数).
+
+**结论 (1 连接, pipeline 16)**: 本项目 216-234k msg/s, gnet 339-344k,
+netpoll 306-311k -> 落后 gnet **32-36%**、落后 netpoll **25-29%**; 单次往返
+p50 **12 us 对 9 / 10 us**. 差距不在业务代码: 同一负载下
+`handler_duration_seconds` 均值 **0.65 us/条** (n = 1.13M), 只占往返的 5%.
+写缓冲补回 6-12%, 说明逐帧 syscall 是真实但次要的分项.
+
+**16/64 连接四臂挤在 418-518k 的窄带上** (2 vCPU 上客户端与服务端共享核, 那一带是
+客户端的天花板), 排序在两次主机之间还会翻转, 因此这几行**不能**用来给四者排名.
+报告把这一点写在最前面, 而不是挑一个对本项目有利的档位.
+
+**顺带补了两个真实 api 缺口**: embedder 之前既选不了 `Framer` (只能吃默认的
+`LengthPrefixFramer`), 也开不了 ADR-013 的 `WriteBufferBytes` -- 这两条都不是为基准
+新造的, 是基准写出来才发现公共面缺了. 见 `BENCHMARK-261018-PEER.md`.
+
+
 ### 写批处理: 补上"真实负载下确实会合批"的端到端证明 (2026-10-18)
 
 报告 B2 的挂账是"端到端收益未证明". 复核时先发现更基本的问题: **原来的验证证明不了

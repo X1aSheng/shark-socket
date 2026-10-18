@@ -133,6 +133,9 @@ CGO_ENABLED=0 go build -o shark-socket ./cmd/shark-socket
 - 数据报会话解析(UDP/CoAP):**每包 0 次分配**,约 46 ns(原为 3 次分配 / 32 B,
   约 99-113 ns)。开发机实测,不属上面的云端基线,见 ADR-015
 - 连接抖动:50 路并发,10s 内 85.9 万次连接/断开循环零错误
+- 同机对等基准(对比 gnet v2.10.0 与 cloudwego/netpoll v0.7.5):单连接下本项目比
+gnet 慢 32-36%、比 netpoll 慢 25-29%(P50 往返 12us 对 9us),差距在投递与 syscall,
+不在 handler(0.65us)。见 [docs/reports/BENCHMARK-261018-PEER.md](docs/reports/BENCHMARK-261018-PEER.md)
 
 **每空闲 TCP 连接的资源占用**
 

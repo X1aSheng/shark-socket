@@ -79,6 +79,14 @@
 
 第 3, 4 节只谈这五项.
 
+**一个受控例外**: 同机、同客户端、同 echo 之下, 排名是有意义的, 因为它把
+"网络"和"量具"都固定住了。这件事已经做了, 见
+[`BENCHMARK-261018-PEER.md`](BENCHMARK-261018-PEER.md):
+1 连接时本项目比 gnet 慢 32-36%, 比 netpoll 慢 25-29%, 单次往返 p50 12 us
+对 9/10 us, 而 handler 只占 0.65 us。差距在投递与 socket 路径, 不在业务代码。
+那一份的数字可以引用, 因为四臂跑在同一台机器、同一个负载生成器上;
+本节拒绝的是把不同硬件、不同消息尺寸、不同负载语义的数字摆在一起。
+
 ---
 
 ## 3. 机制对比矩阵
@@ -637,6 +645,15 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
 - **E1 缺同机横向基准.** 261017 明确拒绝跨机对比, 但没有"同一台 Linux, 同一 echo
   负载, 本项目 vs gnet vs netpoll"的 harness. netpoll 社区的做法
   (`netpoll-benchmark`) 可直接借鉴: 让对手成为可复现的依赖, 而不是 README 里的引用
+- **已实施 (2026-10-18)**: `tests/peerbench/` 是一个嵌套 module, `replace` 指向
+  工作树 (对手是可复现的依赖, 被测对象是工作树而不是 tag)。四臂: 本项目 /
+  本项目 + `-write-buffer 4096` / gnet v2.10.0 / netpoll v0.7.5, 同一 echo,
+  同一个 load 生成器, srv2 与 srv3 各跑一遍。**结论**: 1 连接时落后 gnet
+  32-36%、落后 netpoll 25-29%, p50 往返 12 us 对 9 us; handler 只占 0.65 us,
+  写缓冲补回 6-12%, 说明差距在投递与 socket 路径。16/64 连接四臂挤在
+  418-518k 的窄带上, 那是客户端的天花板, 不能用来排名。详见
+  `BENCHMARK-261018-PEER.md`。另: 这一步顺手补上了两个真实 api 缺口 ——
+  embedder 既选不了 `Framer` 也开不了 `WriteBufferBytes`。
 - **E2 无 benchstat 回归门禁.** 基准只在 `scripts/run_benchmarks.go` 手工跑, CI 不跑;
   资源基准只在 `.workbuddy/cloud/` 手工跑. 没有门禁的基准, 半年后就是过期数字
 - **已实施 (2026-10-18)**: 新增 `scripts/benchgate/` 包与 CI job `bench-gate`.

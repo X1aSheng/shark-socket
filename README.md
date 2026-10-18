@@ -216,6 +216,10 @@ concern from the shipped artifact.
   (was 3 allocations / 32 B, ~99-113 ns). Development-machine measurement, not
   part of the cloud baseline above; see ADR-015
 - Connection churn: 50-way concurrency, 859k connect/disconnect cycles in 10s, 0 errors
+- Same-host peer comparison against gnet v2.10.0 and cloudwego/netpoll v0.7.5: at one
+  connection this server is 32-36% behind gnet and 25-29% behind netpoll (P50 12us vs
+  9us); the deficit is dispatch and syscalls, not the handler (0.65us). See
+  [docs/reports/BENCHMARK-261018-PEER.md](docs/reports/BENCHMARK-261018-PEER.md)
 
 **Resource footprint per idle TCP connection**
 
