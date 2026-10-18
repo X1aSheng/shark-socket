@@ -36,3 +36,6 @@ __pycache__/
 
 # Local tooling state (assistant workspace memory, per-machine, not source)
 .workbuddy/
+
+# Peer benchmark build output
+tests/peerbench/bin/

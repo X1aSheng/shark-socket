@@ -25,18 +25,25 @@ import (
 )
 
 type (
-	Protocol            = core.Protocol
-	Session             = core.Session
-	SessionManager      = core.SessionManager
-	Server              = core.Server
-	Message             = core.Message
-	Handler             = core.Handler
-	Plugin              = core.Plugin
-	BasePlugin          = core.BasePlugin
-	Gateway             = runtime.Gateway
-	GatewayOption       = runtime.GatewayOption
-	TCPServer           = tcp.Server
-	TCPOption           = tcp.Option
+	Protocol       = core.Protocol
+	Session        = core.Session
+	SessionManager = core.SessionManager
+	Server         = core.Server
+	Message        = core.Message
+	Handler        = core.Handler
+	Plugin         = core.Plugin
+	BasePlugin     = core.BasePlugin
+	Gateway        = runtime.Gateway
+	GatewayOption  = runtime.GatewayOption
+	TCPServer      = tcp.Server
+	TCPOption      = tcp.Option
+	// Framer and its built-ins are aliased so an embedder can pick a wire
+	// format without importing internal/transport/tcp. RawFramer is the
+	// byte-oriented option: it hands the handler whatever one read produced.
+	Framer              = tcp.Framer
+	RawFramer           = tcp.RawFramer
+	LengthPrefixFramer  = tcp.LengthPrefixFramer
+	LineFramer          = tcp.LineFramer
 	TCPClient           = tcp.Client
 	TCPClientOption     = tcp.ClientOption
 	UDPServer           = udp.Server
@@ -130,6 +137,22 @@ func WithTCPHandler(handler Handler) TCPOption {
 
 func WithTCPTLS(config *tls.Config) TCPOption {
 	return tcp.WithTLS(config)
+}
+
+// WithTCPFramer sets the wire format. The default is LengthPrefixFramer; a
+// byte-oriented gateway (or a benchmark that must speak the same bytes as
+// another framework) wants RawFramer.
+func WithTCPFramer(framer Framer) TCPOption {
+	return tcp.WithFramer(framer)
+}
+
+// WithTCPWriteBufferBytes enables per-connection write batching. Measured on
+// Linux it turns one write syscall per frame into one per burst (1.24x-1.28x
+// echo throughput, ADR-013), but it costs WriteBufferBytes of heap per
+// connection and only pays off when a connection actually bursts, so it stays
+// opt-in.
+func WithTCPWriteBufferBytes(n int) TCPOption {
+	return tcp.WithWriteBufferBytes(n)
 }
 
 func WithTCPMaxConnections(max int64) TCPOption {
