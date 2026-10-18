@@ -24,12 +24,24 @@ unix 上 `framedWrite` 已经用 writev 把长度头与载荷合成**一次**系
 **1 次/帧 -> 1 次/批**. 这也解释了此前 Windows 上的"无可分辨差异": 在两条都是逐帧的
 路径之间比较, 批处理的收益根本不在比较范围内.
 
-**墙钟数字仍未取得**(本机无 Docker, WSL 被安全策略拦截, 云主机口令已不在环境变量).
-缺的那个数字现在是一条命令: `bash scripts/probe-write-batching.sh` -- 在 Linux 上用
-`strace` 统计 `write`/`writev` 调用数(先 `go test -c` 再 trace 测试二进制, 避免把
-编译器的写操作算进来), 两侧各给 3 轮 ns/op, 并写明预期形状: writev/帧 2.0 -> 1.0,
-write/帧 -> 约 1/16. 若它显示批处理在真实负载下不触发, 按 ADR-013 应删掉
-`WriteBufferBytes`.
+**Linux 墙钟数字已测出** (阿里云 2C/4G Ubuntu 26.04 go1.26.9, 两台机器各一遍,
+2000 轮 x 16 帧流水线 echo, 由 `scripts/probe-write-batching.sh` 产出):
+
+| WriteBufferBytes | writev/帧 | write/帧 | ns/op | 吞吐 |
+| --- | --- | --- | --- | --- |
+| 0 (默认) | 2.001 | 0.000 | 83.8k-89.9k | 45.5-48.9 MB/s |
+| 4096 | 1.000 | 0.407 / 0.552 | 66.9k-68.5k | 59.8-61.2 MB/s |
+
+**吞吐 1.24x (srv2) / 1.28x (srv3), 两侧各 3 轮无重叠**; 服务端写 syscall 从 1.0/帧
+降到 0.41-0.55/帧 (echo handler 逐帧回写, 队列里同时只有两三帧, 所以不是理论上的
+1/16). `writev/帧` 是双向计数, 2.001 -> 1.000 正好说明服务端从"逐帧 writev"改成了
+"逐批 write". 默认仍关闭 -- 收益只对突发成立, 请求-响应型负载里队列始终只有一帧;
+广播/批量下发应显式设 `WriteBufferBytes: 4096`.
+
+顺带修掉两个只有到 Linux 上才会暴露的问题: `.gitattributes` 未固定 `.sh`/`Dockerfile`
+的行尾, `git archive` 在 Windows 上按 `core.autocrlf` 把脚本转成 CRLF, 到 Linux 首行就
+报 `set: pipefail: invalid option name`; 以及探测脚本里 `local a=$1 b=$a` 的
+`set -u` unbound (所有 word 先展开后赋值).
 
 ### Tracer: 明确定位为嵌入方扩展点, 并停止宣称"关键路径有 trace" (2026-10-18)
 

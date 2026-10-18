@@ -326,9 +326,27 @@ func (f *RawFramer) WriteFrame(w io.Writer, payload []byte) error {
 帧全部写入 `bufio.Writer` 后 `Flush` 一次. 队列没有后继帧时立即冲刷, 因此低负载下
 延迟不变, 只在突发时体现为"一批一次系统调用". 写超时随之从每帧一次变为每批一次.
 
-**实测** (开发机 Windows): 3 帧排队时底层 `Write` 次数 6 -> 1, 解码校验通过.
-Windows 回环的 16 帧流水线 echo 两组无可分辨差异 (677-936 us 对 724-855 us),
-且 writev 在 Windows 不生效, 因此写路径的收益待 Linux 云主机复核.
+**实测** (阿里云 2C/4G, Ubuntu 26.04, go1.26.9, 两台机器各跑一遍, 2000 轮 x 16 帧
+流水线 echo; 用 `scripts/probe-write-batching.sh` 产生):
+
+| WriteBufferBytes | writev/帧 | write/帧 | ns/op | 吞吐 |
+| --- | --- | --- | --- | --- |
+| 0 (默认) | 2.001 | 0.000 | 83.8k-89.9k | 45.5-48.9 MB/s |
+| 4096 | 1.000 | 0.407 (srv2) / 0.552 (srv3) | 66.9k-68.5k | 59.8-61.2 MB/s |
+
+读法: `writev/帧` 是**双向**计数 (客户端 + 服务端各一次), 未开缓冲时两端都是逐帧
+writev = 2.0; 开缓冲后服务端改成"一批一次 `write`", 于是 writev 只剩客户端的 1.0,
+`write/帧` 就是服务端的批次率 -- 0.41-0.55 表示平均 1.8-2.4 帧一批, 不是理论上的 16,
+因为 echo handler 是逐帧回写, 队列里同时最多只有两三帧 (64 帧一次性回发的极端情况由
+`TestWriteBatchingEngagesUnderRealIO` 覆盖: 64 帧 -> 1 批).
+**收益: 吞吐 1.24x (srv2) / 1.28x (srv3), 两组各 3 轮无重叠.**
+
+Windows 开发机的 16 帧流水线 echo 两组无可分辨差异 (677-936 us 对 724-855 us) --
+原因已查清: Windows 上 `framedWrite` 回退成两次 `Write`, 未开缓冲的路径本身就是
+"逐帧", 而批处理的收益只在 writev 已经把单帧压成一次调用之后才显现, 属于测错了对象.
+
+**默认仍关闭**: 上述收益只对**突发**成立. 请求-响应型负载里队列始终只有一帧, `Flush`
+立刻发生, 开关只会多占 4 KiB/连接. 广播与批量下发类负载建议显式设 4096.
 
 ## 3. TCPSession
 

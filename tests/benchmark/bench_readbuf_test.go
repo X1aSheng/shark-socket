@@ -143,8 +143,9 @@ func BenchmarkTCPEchoReadBuffer(b *testing.B) {
 // dominated by scheduling, so the two syscalls a frame costs on the write path
 // are invisible; with a burst in flight, batching turns 2*16 writes into 1.
 //
-// This is a development-machine figure and the writev coalescing only applies on
-// unix, so the Linux cloud baseline is the one to quote.
+// The measured Linux figures live in ADR-013 and TRANSPORT.md sec.2.7: 45-49 MB/s
+// without the buffer, 60-61 MB/s with it (1.24x-1.28x on two cloud hosts), with
+// server write syscalls dropping from one per frame to 0.41-0.55 per frame.
 func BenchmarkTCPEchoWriteBuffer(b *testing.B) {
 	skipIfShort(b)
 	const (
