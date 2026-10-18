@@ -24,9 +24,15 @@ func onRequest(ctx context.Context, conn netpoll.Connection) error {
 	if len(buf) == 0 {
 		return nil
 	}
-	// buf is only valid until Release; WriteBinary copies it into the outbound
-	// buffer, which is where the other two arms put their bytes as well.
+	// WriteBinary references buf without copying it, and buf stops being valid
+	// at Release -- so the Flush has to happen between the two. Netpoll does not
+	// flush on the caller's behalf when OnRequest returns: without the Flush
+	// this server reads every request and answers none, which looks exactly like
+	// a hung client.
 	if _, err := conn.Writer().WriteBinary(buf); err != nil {
+		return err
+	}
+	if err := conn.Writer().Flush(); err != nil {
 		return err
 	}
 	return reader.Release()

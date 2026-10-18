@@ -32,14 +32,23 @@ func main() {
 	duration := flag.Duration("duration", 5*time.Second, "measurement window after warmup")
 	warmup := flag.Duration("warmup", 1*time.Second, "traffic discarded before measuring")
 	label := flag.String("label", "server", "row label")
+	roundTimeout := flag.Duration("timeout", 10*time.Second, "per-round deadline; a silent server must fail the arm, not hang the runner")
 	flag.Parse()
 
 	var (
-		total atomic.Int64
-		wg    sync.WaitGroup
-		mu    sync.Mutex
-		lats  []time.Duration
+		total  atomic.Int64
+		failed atomic.Int32
+		wg     sync.WaitGroup
+		mu     sync.Mutex
+		lats   []time.Duration
 	)
+	// A failed connection must fail the arm. The throughput of the survivors is
+	// not a smaller version of the real number, it is a different measurement --
+	// and it is always the flattering one, because whoever died was the arm.
+	fail := func(format string, args ...any) {
+		failed.Add(1)
+		fmt.Fprintf(os.Stderr, format+"\n", args...)
+	}
 
 	start := time.Now()
 	warmUntil := start.Add(*warmup)
@@ -51,7 +60,7 @@ func main() {
 			defer wg.Done()
 			conn, err := net.Dial("tcp", *addr)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "dial: %v\n", err)
+				fail("dial: %v", err)
 				return
 			}
 			defer conn.Close()
@@ -65,17 +74,22 @@ func main() {
 			var local []time.Duration
 			for time.Now().Before(end) {
 				roundStart := time.Now()
+				if err := conn.SetDeadline(roundStart.Add(*roundTimeout)); err != nil {
+					fail("conn %d deadline: %v", id, err)
+					return
+				}
 				for p := 0; p < *pipeline; p++ {
 					if _, err := conn.Write(msg); err != nil {
+						fail("conn %d write: %v", id, err)
 						return
 					}
 				}
 				if _, err := io.ReadFull(conn, readBuf); err != nil {
-					fmt.Fprintf(os.Stderr, "conn %d read: %v\n", id, err)
+					fail("conn %d read: %v", id, err)
 					return
 				}
 				if readBuf[0] != byte(id) {
-					fmt.Fprintf(os.Stderr, "conn %d: echoed byte %d, want %d (streams crossed)\n",
+					fail("conn %d: echoed byte %d, want %d (streams crossed)",
 						id, readBuf[0], byte(id))
 					return
 				}
@@ -90,6 +104,11 @@ func main() {
 		}(i)
 	}
 	wg.Wait()
+
+	if n := failed.Load(); n > 0 {
+		fmt.Fprintf(os.Stderr, "%s: %d of %d connections failed, no row printed\n", *label, n, *conns)
+		os.Exit(2)
+	}
 
 	secs := end.Sub(warmUntil).Seconds()
 	sort.Slice(lats, func(i, j int) bool { return lats[i] < lats[j] })
