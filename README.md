@@ -82,7 +82,7 @@ chain, and one observability plane.
 | Area | Status | Notes |
 | --- | --- | --- |
 | Runtime/Gateway | Implemented | Runtime injection, shared SessionManager, plugin chain, staged stop |
-| TCP | Implemented | Length-prefix, line, fixed-size, raw framers, TLS server/client, worker pool, accept rate limiting, connection caps, write deadlines, idle read timeout |
+| TCP | Implemented | Length-prefix, line, fixed-size, raw framers, TLS server/client, worker pool, per-connection read buffer (1 KiB default), optional write batching, accept rate limiting, connection caps, write deadlines, idle read timeout |
 | UDP | Implemented | Pseudo-sessions, TTL sweep, DTLS support (configurable read buffer), plugin path |
 | HTTP | Implemented | Mode A router and Mode B session/plugin/handler flow |
 | WebSocket | Implemented | Binary message path, origin check, ping loop, write deadlines, accept rate limiting, connection caps |
@@ -180,6 +180,9 @@ concern from the shipped artifact.
 - TCP throughput: ~316k msg/s (50 connections, 256B payload), P50 ~144us, P99 ~401us
 - TCP / UDP / HTTP echo latency: ~19us / 5us / 31us
 - Plugin-chain overhead: 4 real plugins add only ~1.7% latency (<5%)
+- Datagram session lookup (UDP/CoAP): **0 allocations** per packet, ~46 ns
+  (was 3 allocations / 32 B, ~99-113 ns). Development-machine measurement, not
+  part of the cloud baseline above; see ADR-015
 - Connection churn: 50-way concurrency, 859k connect/disconnect cycles in 10s, 0 errors
 
 **Resource footprint per idle TCP connection**
@@ -193,11 +196,20 @@ deployments against; both are given.
 - Goroutines: **2 per connection** (`readLoop` + `writeLoop`), 20,008 at 10k
 - Goroutine stacks: **40.3 MB at 10k** (2,112 B per goroutine), i.e. **0.66x the heap**
 - Process RSS: **~87 MB at 10k** (peak during connect is 175-184 MB; read RSS at steady state)
-- Frame decode: 2 allocs/frame (payload + a 4-byte header that escapes to the heap)
+- Frame decode: **1 alloc/frame** with the read buffer on (payload only; the header is
+  peeked out of the buffer), 2 allocs/frame with `WithReadBufferBytes(0)`
 - Guard: a benchmark fails if resident heap exceeds 64 KiB per connection
 
-At this footprint, 100k connections need ~1.03 GB and 1M connections ~10.3 GB,
-of which the heap is 60%. Stack size is platform-dependent and this figure is
+Since ADR-012 the TCP read path keeps a read buffer per connection. The figures
+above were collected before that change, so they understate the current heap by
+exactly `ReadBufferBytes`: at 1,000 connections the 1 KiB default moves 6,647 B
+to 7,888 B per connection (Windows control run, not the cloud baseline). Add
+~1 KiB per connection to the extrapolation below -- 100k connections become
+~1.13 GB -- until the Linux ladder is re-measured. `WithReadBufferBytes(0)`
+recovers the unbuffered footprint and the old 2 allocs/frame.
+
+At the pre-buffer footprint, 100k connections need ~1.03 GB and 1M connections
+~10.3 GB, of which the heap is 60%. Stack size is platform-dependent and this figure is
 Linux-only: Windows reserves 8 KB per goroutine against Linux's 2 KB, a 3.89x
 difference, so stack figures collected on Windows do not transfer.
 

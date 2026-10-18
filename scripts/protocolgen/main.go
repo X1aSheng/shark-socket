@@ -458,8 +458,6 @@ func (s *coapSession) Close() { _ = s.conn.Close() }
 
 // --- gRPC-Web over WebSocket ---
 
-type grpcWSHandler struct{}
-
 type grpcWSSession struct{ conn net.Conn }
 
 func dialGRPCWeb(addr string) (session, error) {
@@ -666,13 +664,4 @@ func maskFrame(opcode byte, payload []byte) []byte {
 		masked[i] = b ^ mask[i%4]
 	}
 	return append(out, masked...)
-}
-
-// readStream reads exactly len(buf) bytes.
-//
-// io.ReadFull rather than a hand-rolled loop: a stream may deliver the payload in
-// chunks with the last chunk carrying EOF, and a loop that returns the first
-// error it sees reports a complete read as a failure.
-func readStream(c net.Conn, buf []byte) (int, error) {
-	return io.ReadFull(c, buf)
 }

@@ -8,14 +8,20 @@ import (
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/transport/shared"
 )
 
 type session struct {
-	id        uint64
-	dtlsConn  net.Conn
-	conn      *net.UDPConn
-	remote    net.Addr
-	local     net.Addr
+	id       uint64
+	dtlsConn net.Conn
+	conn     *net.UDPConn
+	remote   net.Addr
+	local    net.Addr
+	// key is the precomputed peer identity. Deriving it once here instead of
+	// per datagram removes the net.UDPAddr.String allocations from the read
+	// loop and from every error path that has to close the session.
+	// DTLS sessions leave it at the zero value: they are keyed by id.
+	key       shared.PeerKey
 	createdAt time.Time
 	activeAt  atomic.Int64
 	state     atomic.Uint32
@@ -32,6 +38,7 @@ func newSession(id uint64, conn *net.UDPConn, remote *net.UDPAddr) *session {
 		conn:      conn,
 		remote:    remote,
 		local:     conn.LocalAddr(),
+		key:       shared.NewPeerKey(remote),
 		createdAt: time.Now(),
 		ctx:       ctx,
 		cancel:    cancel,

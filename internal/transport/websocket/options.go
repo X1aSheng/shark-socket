@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/transport/shared"
 )
 
 type Options struct {
@@ -22,6 +23,9 @@ type Options struct {
 	IdleTimeout    time.Duration
 	MaxConnections int64
 	AcceptRate     float64
+	// Listen configures socket-level listener behaviour (SO_REUSEPORT, TCP
+	// keepalive). The zero value produces exactly what net.Listen does.
+	Listen shared.ListenOptions
 }
 
 type Option func(*Options)
@@ -97,4 +101,22 @@ func WithMaxConnections(max int64) Option {
 // excess upgrade attempts are rejected with 503.
 func WithAcceptRate(rate float64) Option {
 	return func(o *Options) { o.AcceptRate = rate }
+}
+
+// WithReusePort lets several processes bind the same address, with the kernel
+// distributing connections across them. Linux and Darwin only; elsewhere the
+// listener reports shared.ErrReusePortUnsupported rather than silently ignoring
+// the request. See tcp.WithReusePort for the full trade-off.
+func WithReusePort() Option {
+	return func(o *Options) { o.Listen.ReusePort = true }
+}
+
+// WithKeepAlive overrides the TCP keepalive schedule; a negative idle disables
+// probes. Zero values keep the platform default. See tcp.WithKeepAlive.
+func WithKeepAlive(idle, interval time.Duration, count int) Option {
+	return func(o *Options) {
+		o.Listen.KeepAliveIdle = idle
+		o.Listen.KeepAliveInterval = interval
+		o.Listen.KeepAliveCount = count
+	}
 }

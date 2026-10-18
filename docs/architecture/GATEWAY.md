@@ -263,16 +263,25 @@ func (g *Gateway) Protocols() []core.Protocol // 按注册顺序返回副本
 
 ## 3. SessionManager 实现
 
-### 3.1 P0 实现(单锁,功能正确优先)
+### 3.1 分片实现 (ADR-015)
 
 ```go
 // internal/runtime/session_manager.go
-type SessionManager struct {
+// 64 片: 每个传输的每一次 accept / close 都要动会话表, 单表 + 单锁是全进程
+// 的一个争用点. 按会话 ID 分片, ID 来自全局计数器, 相邻 ID 落在不同片.
+// RWMutex 24 字节 + map 头 8 字节, pad 到 64 字节: 否则相邻两片共用一条
+// 缓存行, 失效其中一把锁的热字会把另一把也从其他核的缓存里拽走.
+type sessionShard struct {
     mu       sync.RWMutex
-    nextID   atomic.Uint64              // NextID 单调递增,无锁
-    count    atomic.Int64               // Count 无锁读取
-    max      int64                      // 0 或负数 = 不限制
     sessions map[uint64]core.Session
+    _        [32]byte
+}
+
+type SessionManager struct {
+    nextID atomic.Uint64            // NextID 单调递增,无锁
+    count  atomic.Int64             // Count 无锁读取,同时是容量的唯一权威
+    max    int64                    // 0 或负数 = 不限制;构造后只读
+    shards [64]sessionShard
 }
 
 type SessionManagerOption func(*SessionManager)
@@ -286,8 +295,9 @@ func NewSessionManager(opts ...SessionManagerOption) *SessionManager
 var _ core.SessionManager = (*SessionManager)(nil)
 ```
 
-单锁换来的是推理成本最低的正确性:所有变更路径共用一把 `RWMutex`,读多写少的会话表在此
-规模下足够;分片方案见 3.4,只有在基准测试证明锁竞争成为瓶颈后才引入.
+分片前的单锁版本换来的是推理成本最低的正确性;分片方案见 3.4,在基准测试证明
+`Register/Unregister/Get` 的锁竞争为瓶颈后**已按 ADR-015 落地** (16 并发下
+366-382 -> 149-163 ns/op, 单线程持平).
 
 ### 3.2 核心方法实现
 
@@ -298,20 +308,31 @@ func (m *SessionManager) Register(sess core.Session) error {
     if sess == nil {
         return core.ErrInvalidArgument
     }
-    m.mu.Lock()
-    defer m.mu.Unlock()
-    if _, ok := m.sessions[sess.ID()]; ok {
+    // 判重在分片锁内, 判容量在其后: 与单表时代的返回顺序一致. 传输重试一个
+    // 已存在的会话 ID 时, 即使容量已满也必须被告知"重复"而不是"容量".
+    sh := m.shard(sess.ID())
+    sh.mu.Lock()
+    defer sh.mu.Unlock()
+    if _, ok := sh.sessions[sess.ID()]; ok {
         return core.ErrDuplicateSession   // 同 ID 重复注册是调用方的 bug,显式报错
     }
-    if m.max > 0 && int64(len(m.sessions)) >= m.max {
-        return core.ErrSessionCapacity
+    // 容量是全局语义, 不能按片计数 (两片各自未满, 合起来仍可能超限), 因此在
+    // 共享计数器上 CAS 认领名额.
+    for {
+        cur := m.count.Load()
+        if m.max > 0 && cur >= m.max {
+            return core.ErrSessionCapacity
+        }
+        if m.count.CompareAndSwap(cur, cur+1) {
+            break
+        }
     }
-    m.sessions[sess.ID()] = sess
-    m.count.Add(1)
+    sh.sessions[sess.ID()] = sess
     return nil
 }
 
 // Unregister 返回是否真正删除了条目,便于调用方区分重复注销.
+// 只有真的删掉才减计数, 避免重复注销把 count 减到下溢.
 func (m *SessionManager) Unregister(id uint64) bool { ... }
 
 func (m *SessionManager) Get(id uint64) (core.Session, bool) { ... }
@@ -319,24 +340,28 @@ func (m *SessionManager) Get(id uint64) (core.Session, bool) { ... }
 func (m *SessionManager) Count() int64 { return m.count.Load() }
 ```
 
-容量判断用 `len(m.sessions)` 而不是 `m.count`,因为前者在锁内一定是最新值;`count` 是给
-无锁读路径用的计数器.`Register(nil)` 返回 `core.ErrInvalidArgument` 而不是 panic.
+`Register(nil)` 返回 `core.ErrInvalidArgument` 而不是 panic.
 
 ### 3.3 遍历与广播
 
 ```go
-// Snapshot 在 RLock 内构造切片并立即释放锁.
+// Snapshot 逐片取读锁构造切片;不再是时点快照 (遍历期间新会话可能落在尚未
+// 访问的片里). 调用方只需要活会话的超集, CloseAll 还会循环到空.
 func (m *SessionManager) Snapshot() []core.Session
 
-// Range 在持读锁期间就地遍历,省掉一次全量快照分配.
-// fn 不得调用会取写锁的方法(Register / Unregister),否则死锁.
+// Range 在每片的读锁内就地遍历,省掉一次全量快照分配.
+// fn 不得对当前正在遍历的片调用 Register / Unregister,否则死锁.
 func (m *SessionManager) Range(fn func(core.Session) bool) {
-    m.mu.RLock()
-    defer m.mu.RUnlock()
-    for _, sess := range m.sessions {
-        if !fn(sess) {
-            return
+    for i := range m.shards {
+        sh := &m.shards[i]
+        sh.mu.RLock()
+        for _, sess := range sh.sessions {
+            if !fn(sess) {
+                sh.mu.RUnlock()
+                return
+            }
         }
+        sh.mu.RUnlock()
     }
 }
 
@@ -396,13 +421,14 @@ func safeSessionCall(fn func() error) (err error) {
 - 该实现同时替代了早期草案里"并发 goroutine + WaitGroup + ErrDrainTimeout"的写法:
   阶段超时由 `Gateway` 的 `CloseSessions` 预算统一表达,管理器不再自带第二种超时语义.
 
-### 3.4 P2 演进方案(分片锁)
+### 3.4 分片方案 (ADR-015 已落地)
 
-**触发条件:** benchmark 证明 `Register/Unregister/Get` 锁竞争为瓶颈.当前基准测试尚未显示
-该瓶颈,因此以下方案仅为预案,未实现.
+**触发条件:** benchmark 证明 `Register/Unregister/Get` 锁竞争为瓶颈.
+`BenchmarkSessionManager_RegisterGetUnregister_Parallel` (16 并发) 显示了该瓶颈
+(366-382 ns/op, 而单线程只有 184-194 ns/op), 因此分片已实现, 形态如下:
 
 ```go
-// P2 预案(未实现)
+// 已实现 (分片数取 64 而非预案的 32, 并加了缓存行 pad)
 type shardedManager struct {
     shards   [32]shard
     nextID   atomic.Uint64
@@ -416,9 +442,10 @@ type shard struct {
     // P2:per-shard LRU 淘汰(benchmark 证明需要后引入)
 }
 
-// 分片函数:位运算替代取模
+// 分片函数:取模 (ID 来自全局计数器, 相邻 ID 天然散开; 64 不是 2 的幂时
+// 才需要位运算, 这里两者等价但取模更直白)
 func shardIndex(id uint64) int {
-    return int(id & 31)
+    return int(id % 64)
 }
 
 func (m *shardedManager) Get(id uint64) (core.Session, bool) {
@@ -431,15 +458,20 @@ func (m *shardedManager) Get(id uint64) (core.Session, bool) {
 ```
 
 分片后 `Snapshot` / `Range` / `Broadcast` / `CloseAll` 需按分片加锁,不能再依赖一把全局锁保证
-一致性,这是迁移的主要成本.
+一致性,这是迁移的主要成本. 实测下来只有两处语义变化:
 
-**P0 -> P2 迁移策略:**
+- `Snapshot` / `Range` 不再是时点快照 (见 3.3)
+- 容量判定的权威从"锁内 `len(m.sessions)`"变成了"共享计数器上的 CAS"
+
+**迁移已完成, 验收结果:**
 
 - `core.SessionManager` 接口不变
-- 只替换 `internal/runtime/session_manager.go` 中的实现
-- 迁移前必须有 P0 基准测试数据作为对比基线
-- 迁移后 `go test -race ./...` 无竞争
-- `CloseAll` 的"循环直到清空"语义必须保留
+- 只替换了 `internal/runtime/session_manager.go` 中的实现
+- 迁移前后均有基准数据 (16 并发 366-382 -> 149-163 ns/op; 单线程 184-194 ->
+  165-203 ns/op, 噪声内持平)
+- `go test -race ./...` 无竞争
+- `CloseAll` 的"循环直到清空"语义保留
+- 并发容量恰好等于上限, 重复注册归还名额, 重复注销不下溢, 均有测试
 
 ---
 
@@ -465,10 +497,19 @@ func (m *shardedManager) Get(id uint64) (core.Session, bool) {
 
 ```go
 // internal/runtime/plugin_chain.go
-type PluginChain struct {
-    mu      sync.RWMutex
+// pluginView 是不可变的一代链:有序插件集 + panic 报告用的 logger.
+// 链从不原地修改视图,重配置即发布新视图.
+type pluginView struct {
     plugins []core.Plugin // 按 Priority 稳定升序
     logger  core.Logger
+}
+
+type PluginChain struct {
+    // mu 只保护"发布新视图"这一动作;读取方完全不加锁,直接原子载入
+    // 当前视图指针. ADR-015: 此前每条消息都要取一次进程级 RWMutex 的
+    // 读锁, 于是所有传输, 所有核共用一个缓存行.
+    mu   sync.Mutex
+    view atomic.Pointer[pluginView]
 }
 
 func NewPluginChain(plugins ...core.Plugin) *PluginChain
@@ -483,9 +524,11 @@ var _ core.PluginRunner = (*PluginChain)(nil)
 func (c *PluginChain) Append(plugins ...core.Plugin) {
     c.mu.Lock()
     defer c.mu.Unlock()
-    // Copy-on-write: 构造新切片后整体换入,c.plugins 从不原地修改,
-    // 因此 snapshot() 可以直接交出当前切片引用,无需逐条消息复制.
-    next := append([]core.Plugin(nil), c.plugins...)
+    // Copy-on-write: 构造新切片后发布新视图. 旧视图对已经载入它的读取方
+    // 仍然有效, 因此一条正在处理的消息看到的是完整一致的一代, 而不是一个
+    // 正在被排序的切片.
+    cur := c.view.Load()
+    next := append([]core.Plugin(nil), cur.plugins...)
     for _, p := range plugins {
         if p == nil {
             continue
@@ -495,37 +538,57 @@ func (c *PluginChain) Append(plugins ...core.Plugin) {
     slices.SortStableFunc(next, func(a, b core.Plugin) int {
         return a.Priority() - b.Priority()
     })
-    c.plugins = next
+    c.view.Store(&pluginView{plugins: next, logger: cur.logger})
 }
 ```
 
-copy-on-write 换来两件事:`OnMessage` 热路径零分配;插件在自己的
+copy-on-write 换来三件事:`OnMessage` 热路径零分配;插件在自己的
 `OnAccept/OnMessage/OnClose` 回调里调用 `SetLogger` 或 `Append` 不会死锁
-(RWMutex 不可重入).
+(读取方不持锁);读取方与重配置互不阻塞.
 
-### 4.4 snapshot(回调在锁外执行)
+### 4.4 原子视图(读取方不持锁)
 
 ```go
-func (c *PluginChain) snapshot() ([]core.Plugin, core.Logger) {
-    c.mu.RLock()
-    defer c.mu.RUnlock()
-    return c.plugins, c.logger
+func (c *PluginChain) current() *pluginView {
+    if v := c.view.Load(); v != nil {
+        return v
+    }
+    return &pluginView{logger: core.NopLogger()} // 零值链也可用
 }
 ```
 
-每个钩子先取一次快照,随后全程在锁外调用插件代码.
+每个钩子先取一次视图,随后全程在锁外调用插件代码.
+
+> **为什么单线程基准测不出这一项**: 无争用的 `RWMutex.RLock` 只有几纳秒, 代价
+> 是所有传输所有核共用同一个缓存行. 16 并发下 5 插件链 23.4-24.5 -> 4.5-5.3 ns/op,
+> 并发重配置 83-97 -> 7-17 ns/op (ADR-015).
 
 ### 4.5 OnAccept 实现
 
 ```go
-func (c *PluginChain) OnAccept(sess core.Session) error {
-    plugins, logger := c.snapshot()
-    for i, p := range plugins {
-        if err := c.safeAccept(p, logger, sess); err != nil {
+// err 是具名返回值,因为 defer 里的 recover 必须能设置它: 否则 panic 路径
+// 会返回 nil, 一个崩掉的插件看起来像是 accept 成功了.
+func (c *PluginChain) OnAccept(sess core.Session) (err error) {
+    v := c.current()
+    // 整条链一次 recover, 而不是每个插件一次: at 记录当前插件下标, 足够
+    // 报出旧方案能报出的全部信息.
+    at := -1
+    defer func() {
+        if r := recover(); r != nil {
+            v.logger.Error("plugin accept panic", "plugin", v.plugins[at].Name(), "panic", r)
+            for j := at - 1; j >= 0; j-- {
+                c.safeClose(v.plugins[j], v.logger, sess)
+            }
+            err = core.ErrPluginPanic
+        }
+    }()
+    for i, p := range v.plugins {
+        at = i
+        if err := p.OnAccept(sess); err != nil {
             // 回滚:已成功 accept 的插件按逆序收到 OnClose,
             // 释放它们在 OnAccept 中分配的资源.
             for j := i - 1; j >= 0; j-- {
-                c.safeClose(plugins[j], logger, sess)
+                c.safeClose(v.plugins[j], v.logger, sess)
             }
             return err
         }
@@ -536,20 +599,35 @@ func (c *PluginChain) OnAccept(sess core.Session) error {
 
 链本身不调用 `sess.Close()`:关闭动作由传输层根据返回的错误决定,链只表达"拒绝"语义.
 中途失败时逆序回滚是 V9 的修复项,此前已 accept 的插件收不到 `OnClose`,会泄漏其资源.
+panic 走同一条回滚.
 
 ### 4.6 OnMessage 实现
 
 ```go
-func (c *PluginChain) OnMessage(sess core.Session, data []byte) ([]byte, error) {
-    plugins, logger := c.snapshot()
-    var err error
-    for _, p := range plugins {
-        data, err = c.safeMessage(p, logger, sess, data)
-        if err != nil {
-            return nil, err
+func (c *PluginChain) OnMessage(sess core.Session, data []byte) (out []byte, err error) {
+    v := c.current()
+    out = data
+    if len(v.plugins) == 0 {
+        return out, nil
+    }
+    // 整条链一次 recover: OnMessage 每条消息跑一次, 旧方案为 N 个插件各付
+    // 一个 defer 记录, 而 panic 本来就要中断整条链.
+    at := -1
+    defer func() {
+        if r := recover(); r != nil {
+            v.logger.Error("plugin message panic", "plugin", v.plugins[at].Name(), "panic", r)
+            out, err = nil, core.ErrPluginPanic
+        }
+    }()
+    for i, p := range v.plugins {
+        at = i
+        var e error
+        out, e = p.OnMessage(sess, out)
+        if e != nil {
+            return nil, e
         }
     }
-    return data, nil
+    return out, nil
 }
 ```
 
@@ -560,53 +638,55 @@ func (c *PluginChain) OnMessage(sess core.Session, data []byte) ([]byte, error) 
 
 ```go
 func (c *PluginChain) OnClose(sess core.Session) {
-    plugins, logger := c.snapshot()
-    for i := len(plugins) - 1; i >= 0; i-- {
-        c.safeClose(plugins[i], logger, sess)
+    v := c.current()
+    for i := len(v.plugins) - 1; i >= 0; i-- {
+        c.safeClose(v.plugins[i], v.logger, sess)
     }
 }
 ```
 
 逆序执行且不可中断:某个插件 panic 后,序号更靠前的插件仍然会收到 `OnClose`.
+这是 `OnClose` **保留**逐插件 recover 的原因 -- 若合成链级一次, 一个插件 panic
+就会拖住后面所有插件的资源释放.
 
-### 4.8 panic 隔离(safe 包装)
+### 4.8 panic 隔离
 
-五个钩子各有一个 `safe*` 包装,回调一律经由它们进入:
+`OnMessage` 与 `OnAccept` 用链级单次 recover(见 4.5 / 4.6),`OnClose` 与生命周期
+钩子保留逐插件包装:
 
 ```go
-func (c *PluginChain) safeAccept(p core.Plugin, logger core.Logger, sess core.Session) (err error) {
+func (c *PluginChain) safeClose(p core.Plugin, logger core.Logger, sess core.Session) {
     defer func() {
         if r := recover(); r != nil {
-            logger.Error("plugin accept panic", "plugin", p.Name(), "panic", r)
-            err = core.ErrPluginPanic
+            logger.Error("plugin close panic", "plugin", p.Name(), "panic", r)
         }
     }()
-    return p.OnAccept(sess)
+    p.OnClose(sess)
 }
 ```
 
-| 包装 | 覆盖钩子 | panic 后的行为 |
+| 钩子 | 隔离方式 | panic 后的行为 |
 |------|----------|----------------|
-| `safeAccept` | `OnAccept` | 返回 `ErrPluginPanic`,链逆序回滚 |
-| `safeMessage` | `OnMessage` | 返回 `ErrPluginPanic`,链终止 |
-| `safeClose` | `OnClose` | 记录日志后继续下一个插件 |
-| `safeStart` | `Start` | 返回 `ErrPluginPanic`,`StartAll` 回滚 |
-| `safeStop` | `Stop` | 返回 `ErrPluginPanic`,`StopAll` 继续 |
+| `OnMessage` | 链级单次 recover | 返回 `ErrPluginPanic`,链终止 |
+| `OnAccept` | 链级单次 recover | 返回 `ErrPluginPanic`,链逆序回滚 |
+| `OnClose` | `safeClose` 逐插件 | 记录日志后继续下一个插件 |
+| `Start` | `safeStart` | 返回 `ErrPluginPanic`,`StartAll` 回滚 |
+| `Stop` | `safeStop` | 返回 `ErrPluginPanic`,`StopAll` 继续 |
 
 ### 4.9 StartAll 与 StopAll
 
 ```go
 func (c *PluginChain) StartAll() error {
-    plugins, logger := c.snapshot()
+    v := c.current()
     var started []core.Plugin
-    for _, p := range plugins {
+    for _, p := range v.plugins {
         if _, ok := p.(core.LifecyclePlugin); !ok {
             continue
         }
-        if err := c.safeStart(p, logger); err != nil {
+        if err := c.safeStart(p, v.logger); err != nil {
             var rollbackErr error
             for i := len(started) - 1; i >= 0; i-- {
-                rollbackErr = errors.Join(rollbackErr, c.safeStop(started[i], logger))
+                rollbackErr = errors.Join(rollbackErr, c.safeStop(started[i], v.logger))
             }
             return errors.Join(fmt.Errorf("plugin %q start: %w", p.Name(), err), rollbackErr)
         }

@@ -62,7 +62,9 @@ var _ core.Session = (*Session)(nil)
 
 // Framer 解决 TCP 字节流的帧边界问题.
 // 实现约束:
-//   - ReadFrame 必须无状态,不跨调用保持预读缓冲(禁止使用 bufio.Reader 跨调用)
+//   - ReadFrame 必须无状态:不得在 framer 自身字段里缓存跨连接的读位置
+//   - ReadFrame 允许识别 *bufio.Reader 并走快路径(见 2.6),但无缓冲时必须
+//     仍按 io.Reader 契约工作
 //   - WriteFrame 必须保证完整写入(处理短写,不允许部分发送)
 //   - ReadFrame 和 WriteFrame 不需要并发安全(调用方保证单 goroutine 调用)
 type Framer interface {
@@ -71,18 +73,21 @@ type Framer interface {
 }
 ```
 
-**禁止使用 `bufio.Reader` 跨调用的原因:**
+**读缓冲的所有权规则(ADR-012):**
 
 ```
-问题场景:
-  bufio.Reader 内部预读缓冲跨 ReadFrame 调用保持状态
-  若 ReadFrame 返回后调用方切换到不同 reader 或重用连接
-  预读数据已被消费,后续 ReadFrame 从错误位置读取
-  导致帧错位,丢失后续消息
+缓冲由会话持有,不是 framer 持有:
+  会话创建时按 ReadBufferBytes 建一个 bufio.Reader,readLoop 每帧都传同一个.
 
-正确方案:
-  使用 io.ReadFull 精确读取固定字节数(无状态,每次调用独立)
-  逐字节读到分隔符(LineFramer 方案)
+旧规则写的是"禁止使用 bufio.Reader",当时担心的是预读数据跨调用错位.
+该风险的真实来源是"reader 在帧之间被换掉",而不是"存在预读"本身:
+只要 reader 的生命周期与连接一致(建连时创建,断开时丢弃),预读位置就不会错.
+
+因此现在的规则:
+  - framer 仍然无状态,不持有 reader
+  - 会话持有 reader,并在整个连接生命周期内只用它
+  - RawFramer 例外:它的语义是"一次 Read 返回多少就给多少",缓冲会缩小它
+    的帧,因此无论 ReadBufferBytes 取何值都不缓冲(framerAcceptsBufferedRead)
 ```
 
 ### 2.2 LengthPrefixFramer(默认推荐)
@@ -160,7 +165,8 @@ func (f *LengthPrefixFramer) WriteFrame(w io.Writer, payload []byte) error {
 
 ```go
 // LineFramer 以换行符 \n 作为帧分隔符,适用于文本行协议.
-// 使用逐字节读取,保持无状态(不使用 bufio.Reader).
+// 无缓冲时逐字节读取,保持无状态; 传入 *bufio.Reader 时用 ReadSlice 在
+// 缓冲内扫描,并把结果复制一次(ReadSlice 的切片不能跨调用持有).
 type LineFramer struct {
     MaxLineSize int // 默认 64KB,防内存耗尽
 }
@@ -262,6 +268,68 @@ func (f *RawFramer) WriteFrame(w io.Writer, payload []byte) error {
 
 ---
 
+### 2.6 缓冲读快路径与内存权衡
+
+三个内置 framer 在收到 `*bufio.Reader` 时走快路径, 无缓冲时行为不变:
+
+| Framer | 无缓冲 | 有缓冲 | 每帧分配 |
+| --- | --- | --- | --- |
+| LengthPrefixFramer | `io.ReadFull(header)` + `io.ReadFull(payload)`, 2 次 Read | `Peek(4)` 取头 + `Discard(4)` + `ReadFull(payload)` | 2 -> 1 |
+| LineFramer | 每字节 1 次 Read | `ReadSlice(分隔符)` 在缓冲内扫描 | 1 (显式复制) |
+| FixedSizeFramer | 1 次 ReadFull | 同左, 由 bufio 合并底层读 | 1 |
+| RawFramer | 1 次 Read | **不缓冲**, 保持"一次 Read 返回多少给多少" | 1 |
+
+`LengthPrefixFramer` 的 1 次分配来自 payload; header 通过 `Peek` 取到的是缓冲内
+切片, 不再像无缓冲路径那样因为传给 `io.ReadFull` 而逃逸到堆. `LineFramer` 的
+快路径不能直接把 `ReadSlice` 的结果返回: 该切片只在下一次读之前有效, 必须复制
+一次, 否则调用方持有的 payload 会被后续读取覆盖 (有专门测试守护).
+
+**错误语义保持不变**: 流恰好在帧边界结束是 `io.EOF`, 头读到一半结束是
+`io.ErrUnexpectedEOF`. `Peek` 无法区分两者, 因此按 `Buffered() > 0` 还原.
+
+**收益与代价** (开发机 Windows, Ryzen 7 8845HS, 内存流基准
+`BenchmarkTCPFramerReadCost`; 不是云基线, 云主机需重采):
+
+| 帧大小 | reads/frame (无缓冲) | reads/frame (1 KiB) | allocs/frame |
+| --- | --- | --- | --- |
+| 64 B | 2.000 | 0.078 | 2 -> 1 |
+| 256 B | 2.000 | 0.266 | 2 -> 1 |
+| 1 KiB | 2.000 | 1.016 | 2 -> 1 |
+
+代价是每连接正好 `ReadBufferBytes` 字节的常驻堆: 缓冲开启后 1,000 个空闲连接
+实测 7,888 B/连接, 关闭时 6,647 B/连接 (Windows 对照值, 差 1,241 B). 这是
+"用内存换系统调用"的显式取舍, 不是免费的优化:
+
+- 连接数是瓶颈 (IoT 海量小设备) -> 取小值或 0
+- 吞吐是瓶颈 (连接少, 消息密) -> 取 4-8 KiB, 让一次填充覆盖更多帧
+- 帧尺寸 >= 缓冲尺寸时, 每帧仍需一次填充, 收益降到"1 次读/帧"; 此时收益主要
+  来自分配的减少
+
+回环 echo 基准 (`BenchmarkTCPEchoReadBuffer`) 在 Windows 上看不出差别 (46-49 us,
+调度主导), 因此该改动不能用回环延迟证明, 只能用 reads/frame 与 allocs/frame 证明.
+
+### 2.7 写路径: 合并写与可选批处理
+
+`WriteFrame` 的相邻两段 (长度头 + payload, 或 payload + 分隔符) 由 `framedWrite`
+写出:
+
+| 平台 | 行为 | 每帧写次数 |
+| --- | --- | --- |
+| unix | `net.Buffers.WriteTo` -> writev (`framer_writev_unix.go`) | 1 |
+| 非 unix | 两次 `Write` (`framer_writev_other.go`) | 2 |
+
+分开实现而不是无条件调用 `WriteTo` 的原因: `WriteTo` 对不支持 writev 的 writer
+(如 `tls.Conn`) 会退化成两次写, 而向量形式的那 4 字节仍要分配, 在没有 writev 的
+平台上是纯亏.
+
+批处理 (`WriteBufferBytes`, 默认 0 即关闭) 在会话侧: `writeLoop` 把队列里已排队的
+帧全部写入 `bufio.Writer` 后 `Flush` 一次. 队列没有后继帧时立即冲刷, 因此低负载下
+延迟不变, 只在突发时体现为"一批一次系统调用". 写超时随之从每帧一次变为每批一次.
+
+**实测** (开发机 Windows): 3 帧排队时底层 `Write` 次数 6 -> 1, 解码校验通过.
+Windows 回环的 16 帧流水线 echo 两组无可分辨差异 (677-936 us 对 724-855 us),
+且 writev 在 Windows 不生效, 因此写路径的收益待 Linux 云主机复核.
+
 ## 3. TCPSession
 
 ### 3.1 结构定义
@@ -278,6 +346,13 @@ type Session struct {
     // 协议
     conn   net.Conn
     framer Framer
+    // reader 是 framer 实际读取的对象: ReadBufferBytes > 0 时是会话独占的
+    // bufio.Reader, 否则就是 conn 本身. 永不为 nil, readLoop 无需分支.
+    reader io.Reader
+    // writer 是 reader 的镜像: WriteBufferBytes > 0 时是会话独占的 bufio.Writer,
+    // 否则就是 conn 本身. bw 是同一个对象, 单独保存是因为 Flush 不在 io.Writer 里.
+    writer io.Writer
+    bw     *bufio.Writer
 
     // 状态
     state      atomic.Int32  // core.SessionState
@@ -485,7 +560,9 @@ func (s *Session) readLoop(
             s.conn.SetReadDeadline(time.Now().Add(options.ReadTimeout))
         }
 
-        payload, err := s.framer.ReadFrame(s.conn)
+        // 读缓冲由会话持有(见 2.6): 同一连接的每一帧都用同一个 reader,
+        // 预读位置因此不会在帧之间错位.
+        payload, err := s.framer.ReadFrame(s.reader)
         if err != nil {
             if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
                 return // 正常关闭
@@ -639,7 +716,10 @@ func (s *Server) Start(ctx context.Context) error {
         s.opts.WorkerCount, s.opts.TaskQueueSize, s.opts.FullPolicy)
     s.pool.Start(s.opts.WorkerCount)
 
-    ln, err := net.Listen("tcp", s.opts.Addr)
+    // shared.Listen 而不是 net.Listen: 零值时行为与 net.Listen 完全一致,
+    // 非零时在 socket 建立后, Listen 之前设置 SO_REUSEPORT 与 TCP keepalive
+    // (两者都必须在 bind/listen 之前或紧随其后设置, 标准库不暴露这个钩子).
+    ln, err := shared.Listen("tcp", s.opts.Addr, s.opts.Listen)
     if err != nil {
         // 监听失败必须回收已经启动的 worker,否则失败路径会泄漏 goroutine.
         s.pool.Stop()
@@ -657,7 +737,7 @@ func (s *Server) Start(ctx context.Context) error {
 }
 ```
 
-四个易被忽略的点:
+五个易被忽略的点:
 
 - **池先于监听启动**:监听失败时可以在同一函数里 `pool.Stop()` 回收;若顺序反过来,
   失败路径就多了一个"池已启动但没人会在需要时停止它"的窗口.
@@ -667,6 +747,10 @@ func (s *Server) Start(ctx context.Context) error {
   重复启动返回错误而不是留下两个 acceptLoop.
 - **`s.pool.Stop()` 先于 `s.started.Store(false)`**:保证任何观察到 `started == false`
   的调用方看到的是一个已经收拾干净的 Server.
+- **`shared.Listen` 取代 `net.Listen`**:keepalive 必须在连接建立前由 listener 携带,
+  而 socket 选项(SO_REUSEPORT)必须在 `bind` 之前由 `Control` 回调设置.两者都无法在
+  `net.Listen` 返回之后补上,所以只能自己做"建 socket -> 设选项 -> bind -> listen"这一步,
+  见 `sec.6.3`.
 
 ### 4.4 acceptLoop 实现
 
@@ -993,6 +1077,10 @@ type Options struct {
     WriteTimeout time.Duration // 默认 30s
     DrainTimeout time.Duration // 默认 5s
 
+    // 缓冲(每连接独占, 用堆换系统调用, 见 sec.2.6 / sec.2.7)
+    ReadBufferBytes  int // 默认 1024;0 表示直读 conn
+    WriteBufferBytes int // 默认 0(关闭);> 0 时 writeLoop 合并刷出
+
     // 帧长度上限(独立于 Framer 自身的限制)
     MaxFrameBytes int // 默认 1MB
 
@@ -1003,6 +1091,9 @@ type Options struct {
     WorkerCount   int        // 默认 4
     TaskQueueSize int        // 默认 512
     FullPolicy    FullPolicy // 默认 PolicyDrop
+
+    // 监听层 socket 选项(SO_REUSEPORT, TCP keepalive), 见 sec.6.3
+    Listen shared.ListenOptions
 }
 ```
 
@@ -1024,6 +1115,10 @@ type Options struct {
 - `MaxConnections`:在 `Accept` 之后立即判定,超额连接直接 `Close`,不进会话管理.
 - `AcceptRate`:`shared.Acceptor` 令牌桶(burst=1),压制连接风暴.
 
+`Listen` 与上面几项的区别是它不属于传输层语义,而是 socket 层的开关:传输层只负责
+"把它原样交给 `shared.Listen`",是否使用 SO_REUSEPORT, keepalive 取什么节奏由部署形态决定,
+见 `sec.6.3`.
+
 ### 6.2 Server Functional Options
 
 ```go
@@ -1035,10 +1130,14 @@ func WithHandler(handler core.Handler) Option
 func WithTLS(config *tls.Config) Option
 func WithFramer(framer Framer) Option                  // nil 忽略,保留默认
 func WithReadTimeout(timeout time.Duration) Option      // 无条件赋值,可把默认关闭
+func WithReadBufferBytes(n int) Option                 // < 0 当 0;默认 1024
+func WithWriteBufferBytes(n int) Option                // < 0 当 0;默认 0(关闭)
 func WithWriteQueue(size int) Option                   // <= 0 忽略
 func WithWorkers(count, queueSize int, policy FullPolicy) Option
 func WithMaxConnections(max int64) Option              // <= 0 不限制
 func WithAcceptRate(rate float64) Option               // <= 0 不限制
+func WithReusePort() Option                            // SO_REUSEPORT,仅 linux/darwin
+func WithKeepAlive(idle, interval time.Duration, count int) Option // idle < 0 关闭探活
 
 func defaultOptions() Options {
     return Options{
@@ -1047,6 +1146,8 @@ func defaultOptions() Options {
         WriteQueue:          128,
         WriteTimeout:        30 * time.Second,
         ReadTimeout:         5 * time.Minute,
+        ReadBufferBytes:     1024,
+        WriteBufferBytes:    0,
         WriteQueueHighWater: 0.8,
         WorkerCount:         4,
         TaskQueueSize:       512,
@@ -1063,6 +1164,48 @@ func defaultOptions() Options {
 
 **WorkerCount 默认 4 而不是 `NumCPU*2`:** handler 通常是 I/O 等待型,worker 数超过 4 之后
 吞吐收益迅速消失,而队列深度的影响更大(512).这个默认值来自压测,不是理论推导.
+
+### 6.3 监听层 socket 选项(shared.Listen)
+
+`net.Listen` 返回时 socket 已经处于 listen 状态,而 SO_REUSEPORT 必须在 `bind` 之前设置;
+TCP keepalive 虽然可以在 listener 上事后设置,但标准库只提供 `SetKeepAlive` 这一档开关,
+表达不了"多久开始探, 探几次".这两件事都需要在标准库的封装之内插一手,因此有了:
+
+```go
+// internal/transport/shared/listen.go
+type ListenOptions struct {
+    ReusePort         bool          // SO_REUSEPORT,仅 linux/darwin
+    KeepAliveIdle     time.Duration // 0 用平台默认;< 0 关闭探活
+    KeepAliveInterval time.Duration // 0 用平台默认
+    KeepAliveCount    int           // 0 用平台默认
+}
+
+func Listen(network, addr string, opts ListenOptions) (net.Listener, error)
+```
+
+零值 `ListenOptions` 产出的 listener 与 `net.Listen` 逐字节等价(同一 `net.ListenConfig`
+默认值,不做任何 `Set`,不装 `Control`),所以既有调用的行为不变:
+
+| 字段 | 生效位置 | 平台 | 说明 |
+|------|----------|------|------|
+| `ReusePort` | `Control` 回调,`bind` 之前 | linux / darwin | 其它平台返回 `ErrReusePortUnsupported` |
+| `KeepAliveIdle` | `net.ListenConfig.KeepAliveConfig.Idle` | 全部 | 仅对新建的 TCP 连接生效 |
+| `KeepAliveInterval` | 同上 `.Interval` | 全部 | |
+| `KeepAliveCount` | 同上 `.Count` | 全部 | 探活失败重试次数 |
+
+三点设计取舍:
+
+- **不支持时返回错误,不静默降级.**`WithReusePort()` 在非 linux/darwin 上得到的是
+  `shared.ErrReusePortUnsupported`,而不是"忽略这个开关继续跑".理由是它影响的是部署拓扑
+  (多进程共端口),静默失效会让滚动发布时新旧实例抢同一个端口失败,而错误现场离配置处很远.
+- **四路传输共用同一份实现.** TCP, HTTP, WebSocket, gRPC-Web 都通过 `shared.Listen` 建
+  listener;WebSocket / gRPC-Web 是 `shared.Listen` 建 socket 后再 `tls.NewListener` 包一层,
+  而不是自己写 `tls.Listen`,否则 `ListenOptions` 会被丢掉.
+- **不在传输层做 port 常量或默认开启.** SO_REUSEPORT 让"重复绑定"从错误变成分流,
+  一次误启动两个实例不会再被内核挡住.它必须是配置里明确写着的一项.
+
+UDP / CoAP 不走这条路径:它们用 `net.ListenUDP` 与 `dtls.Listen`,SO_REUSEPORT 对
+无连接 socket 的负载分担语义与 TCP 不同,不在本轮范围.
 
 ---
 
@@ -1137,7 +1280,7 @@ type session struct {
 ```
 收到 UDP 数据报
     v
-提取 remoteAddr 作为 key
+提取 remoteAddr 并构造 shared.PeerKey 作为 key (ADR-015: 零分配)
     v
 sessions.Load(key) -> 命中?-> 返回已有 session,touch()
     v 未命中
@@ -1168,9 +1311,13 @@ type Server struct {
     closed   atomic.Bool
     cancel   context.CancelFunc
     wg       sync.WaitGroup    // 跟踪 readLoop 和 sweepLoop
-    sessions sync.Map          // key: remoteAddr string, value: *session
+    sessions sync.Map          // key: shared.PeerKey (普通 UDP) 或 id (DTLS), value: *session
 }
 ```
+
+> **键的类型 (ADR-015)**: 普通 UDP 会话按 `shared.PeerKey` 索引, DTLS 会话按 `id`
+> 索引, 因此这张 `sync.Map` 是混合键的. 改键之前是 `remoteAddr string`, 每个数据报
+> 分配 3 次; `PeerKey` 是可比较结构体, 归零. 详见 4.7.1.
 
 ### 3.2 Start
 
@@ -2283,8 +2430,12 @@ type Server struct {
 }
 
 const (
-    maxRetransmit      = 4               // 通知最大重传次数(RFC 7641)
-    retransmitInterval = 2 * time.Second // 重传间隔
+    // RFC 7252 sec.4.2 参数, 规范值而非调优项. 完整调度见 4.10.
+    ackTimeout       = 2 * time.Second // ACK_TIMEOUT
+    ackRandomFactor  = 1.5             // ACK_RANDOM_FACTOR
+    ackTimeoutSpread = ackTimeout / 2  // ackTimeout*(factor-1), 抖动窗口宽度
+    maxRetransmit    = 4               // MAX_RETRANSMIT
+    retransmitTick   = 250 * time.Millisecond // 调度器分辨率, 不是重传间隔
 )
 
 func NewServer(opts ...Option) *Server
@@ -2441,6 +2592,10 @@ func (s *Server) handleDatagram(
 
 ### 4.5 handleCON 实现(CON 可靠性,RFC 7252 sec.4.2)
 
+> **注意**: 本节是早期设计草案(`sess.messageCache` / `core.CoAP` / `NewACK` 均
+> 未落地),保留作为设计沿革. 当前实现见 4.10 与 `coap/server.go` 的
+> `handleMessage` / `sendDedupResponse` / `replyToDuplicate`.
+
 ```go
 func (s *Server) handleCON(
     sess *Session,
@@ -2567,7 +2722,9 @@ func (s *Server) handleNON(
 
 ```go
 func (s *Server) getOrCreateUDPSession(addr *net.UDPAddr) *session {
-    key := addr.String()
+    // shared.PeerKey 而不是 addr.String(): 每个数据报都要在这里解析一次会话,
+    // 这是传输里最热的一段. 见 internal/transport/shared/peerkey.go.
+    key := shared.NewPeerKey(addr)
     if value, ok := s.sessions.Load(key); ok {
         sess := value.(*session)
         // 插件或错误路径可能已经关闭过这个会话(例如 AutoBan 击杀,handler 失败),
@@ -2613,6 +2770,28 @@ func (s *Server) getOrCreateUDPSession(addr *net.UDPAddr) *session {
   否则并发清扫可能观察到 `id == 0`.
 - **没有 per-session retransmit goroutine**:重传由全局 `retransmitLoop` 统一驱动,
   待确认通知存放在 `pendingNotifies`.因此 CoAP 的 goroutine 数量与活跃会话数无关.
+
+### 4.7.1 对端键 shared.PeerKey (ADR-015)
+
+UDP 与 CoAP 的会话表此前用 `addr.String()` 作键, 而每个数据报都要解析一次会话:
+`net.UDPAddr.String()` 内部分配两次 (`IP.String` 与 `JoinHostPort`), 再把字符串装箱
+进 `any` 键, 实测 3 allocs / 32 B / 99-113 ns 每包 -- 与 payload 拷贝同量级.
+
+`shared.PeerKey` 是可比较结构体 (`[16]byte` 地址 + `uint16` 端口 + zone):
+
+- **构造零分配**, 装箱进 `any` 的那一次也因接口值未逃逸而被编译器放到栈上,
+  实测归零: 46-47 ns / 0 B / 0 allocs
+- **地址统一存 16 字节形式** (`To16`), 使 `1.2.3.4` 与 `::ffff:1.2.3.4` 落到同一个键.
+  少了这一步, 同一对端会拿到两个会话, 每对端的资源上限因此被绕过
+- **键缓存在会话上** (`session.key`), 错误路径关闭会话时不再重新构造
+- `String()` 与 `net.UDPAddr.String()` 输出一致, 日志, observer 注册表与指标标签
+  的形状不变; 它分配, 因此只用于冷路径
+
+DTLS 会话仍按 `id` 键 (`s.sessions` 是混合键的 `sync.Map`), 其 PeerKey 为零值.
+
+**数据报路径的剩余一次分配**是 payload 拷贝 (`append([]byte(nil), buf[:n]...)`):
+读缓冲是复用的, 且 `Send` 契约要求调用方返回后即可释放缓冲. 要归零需要缓冲池并改
+`Send` 的所有权, 属 ADR-001 层面的改动.
 
 ### 4.8 sweepLoop 与 closeSession
 
@@ -2701,6 +2880,53 @@ func (s *Server) Stop(ctx context.Context) error {
 }
 ```
 
+### 4.10 重传调度(RFC 7252 sec.4.2)
+
+重传由服务端一条 `retransmitLoop` 统一驱动,按**每条消息自己的 deadline** 触发,
+不是"每个 tick 重发所有待确认". 实现在 `coap/retransmit.go`,那里只有纯函数
+(`decide` / `advance`),因为这条调度正是必须可证的部分:被它替换掉的方案是固定
+2s 全局 ticker,既测不出, 也不满足规范.
+
+**参数**(规范值,不是调优项):
+
+| 常量 | 值 | 含义 |
+| --- | --- | --- |
+| `ackTimeout` | 2s | ACK_TIMEOUT,首次超时下界 |
+| `ackRandomFactor` | 1.5 | ACK_RANDOM_FACTOR,首次超时上界倍数 |
+| `ackTimeoutSpread` | 1s | `ackTimeout*(factor-1)`,抖动窗口宽度 |
+| `maxRetransmit` | 4 | MAX_RETRANSMIT,最多重传 4 次 |
+| `retransmitTick` | 250ms | **调度器分辨率**,不是重传间隔 |
+
+**时序**:首次超时 `T1` 从 `[2s, 3s)` 随机抽取(抖动,避免大量设备同时掉线后
+同步重传),其后每个间隔翻倍. 每次的 `deadline` 从**上一个 deadline** 推出,
+所以 tick 延迟不累积:
+
+| 重传 # | 距上次发送 | 距首次发送 |
+| --- | --- | --- |
+| 1 | 2-3s | 2-3s |
+| 2 | 4-6s | 6-9s |
+| 3 | 8-12s | 14-21s |
+| 4 | 16-24s | 30-45s |
+| 放弃 | 16-24s | 62-93s (MAX_TRANSMIT_WAIT) |
+
+**迟到的 tick 不补发**:若一次 tick 比 deadline 晚了远超过一个间隔,只发一次,
+且新 deadline 以 tick 实际时刻起算,否则迟到的 tick 会连着喷出多条重传.
+
+**放弃时取消 observe 关系**:CON 通知始终未被 ACK 的客户端不可达,继续保留关系
+只会为非可达对端持续产生通知.
+
+`retransmitTick` 取 250ms 是折中:一条消息最多晚 250ms 被注意到,而 map 扫描是
+`O(8N)/s`,1 万条待确认通知每秒约 8 万次 map 迭代,可忽略.
+
+**去重与缓存响应**(RFC 7252 sec.4.5):`seen` 表的值是 `*seenEntry`,里面存放
+首次响应的**确切字节**. 重复 CON 直接重发这些字节,不重跑 handler -- 对 LwM2M 的
+write/execute 来说,重跑是语义错误而不只是性能问题. 若首次响应尚不存在(handler
+仍未返回,或失败且未产生响应),回一条空 ACK(0.00) 让对端停止重传,而不是像此前
+那样回 `2.03 Valid` -- 那是在声称一个服务器并没有的响应码.
+
+`seen` 每 5 分钟整体清空一次. CoAP MessageID 是 16 位且回绕,而 EXCHANGE_LIFETIME
+是 247s,所以 300s 的清空间隔足以覆盖对端仍可能重传的窗口.
+
 ---
 
 ## 5. 配置项完整参考
@@ -2725,8 +2951,8 @@ type Options struct {
 }
 ```
 
-**没有可配置的重传参数:** `maxRetransmit = 4` 与 `retransmitInterval = 2s` 是包级常量,
-对齐 RFC 7252 的 ACK_TIMEOUT 默认值(2s)与 MAX_RETRANSMIT 默认值(4).把两者暴露成配置项
+**没有可配置的重传参数:** `ackTimeout = 2s`, `ackRandomFactor = 1.5`,
+`maxRetransmit = 4` 是包级常量, 就是 RFC 7252 第 4.2 节的规范值. 把两者暴露成配置项
 意味着存在"不符合 RFC 默认"的部署,而互操作性问题只会在对接第三方 CoAP 栈时才暴露;
 真要调整时改常量并配套更新互操作测试,比放开一个配置项更安全.
 
@@ -3126,27 +3352,21 @@ func (s *Server) Start(context.Context) error {
     mux.HandleFunc(s.opts.Path, s.handleUpgrade)
 
     var ln net.Listener
-    var err error
-    if s.opts.TLSConfig != nil {
-        // 用 tls.Listen 而不是给 http.Server 设 TLSConfig:
-        // 后者会协商 HTTP/2,与 WebSocket 升级冲突.
-        s.server = &http.Server{
-            Addr:         s.opts.Addr,
-            Handler:      mux,
-            ReadTimeout:  s.opts.ReadTimeout,
-            WriteTimeout: s.opts.WriteTimeout,
-            IdleTimeout:  s.opts.IdleTimeout,
-        }
-        ln, err = tls.Listen("tcp", s.opts.Addr, s.opts.TLSConfig)
-    } else {
-        s.server = &http.Server{
-            Addr:         s.opts.Addr,
-            Handler:      mux,
-            ReadTimeout:  s.opts.ReadTimeout,
-            WriteTimeout: s.opts.WriteTimeout,
-            IdleTimeout:  s.opts.IdleTimeout,
-        }
-        ln, err = net.Listen("tcp", s.opts.Addr)
+    var ln net.Listener
+    // http.Server 只建一次,不再按 TLS/明文分两支.
+    s.server = &http.Server{
+        Addr:         s.opts.Addr,
+        Handler:      mux,
+        ReadTimeout:  s.opts.ReadTimeout,
+        WriteTimeout: s.opts.WriteTimeout,
+        IdleTimeout:  s.opts.IdleTimeout,
+    }
+    // 先建 socket 再按需包 TLS: tls.Listen 会自己建 socket,
+    // 从而把 ListenOptions(SO_REUSEPORT, keepalive)丢掉.
+    // TLSConfig 仍然不设在 http.Server 上, 否则会协商 HTTP/2 与升级冲突.
+    ln, err := shared.Listen("tcp", s.opts.Addr, s.opts.Listen)
+    if err == nil && s.opts.TLSConfig != nil {
+        ln = tls.NewListener(ln, s.opts.TLSConfig)
     }
     if err != nil {
         s.started.Store(false)
@@ -3168,6 +3388,12 @@ func (s *Server) Start(context.Context) error {
 **为什么先 `net.Listen` 再 `Serve`,而不是 `ListenAndServe`:** `ListenAndServe` 把绑定失败
 藏在内部 goroutine 里,调用方只能靠"等一小段时间看有没有报错"来猜测是否启动成功 --
 既不可靠又会引入固定延迟.显式 `net.Listen` 让绑定错误同步返回,`Serve` 只负责服务.
+
+**为什么不用 `tls.Listen`:** 早期实现是 TLS/明文各一支, 各写一遍 `&http.Server{...}`.
+按 `sec.6.3` 引入 `shared.Listen` 后这条路走不通了 -- `tls.Listen` 内部自己建 socket,
+`ListenOptions` 无处安放.现在统一成"`shared.Listen` 建 socket,TLS 再包一层",
+顺便把重复的 `http.Server` 构造提到分支之外.`tls.NewListener` 与 `tls.Listen` 的区别
+仅在于前者不建 socket,不影响 ALPN 行为.
 
 **超时必须显式设置:** `http.Server` 的三个超时默认都是 0(不限制).不设置的话,一个慢速
 HTTP 请求(未升级为 WebSocket)可以永久占用一条连接.
@@ -3415,7 +3641,7 @@ type Options struct {
     Addr           string                   // 默认 "127.0.0.1:18700"
     Path           string                   // 默认 "/ws"
     Handler        core.Handler             // 消息处理函数
-    TLSConfig      *tls.Config              // 非 nil 即用 tls.Listen
+    TLSConfig      *tls.Config              // 非 nil 即用 tls.NewListener 包一层
     CheckOrigin    func(*http.Request) bool // 默认恒 false(拒绝)
     PingInterval   time.Duration            // 默认 30s
     PongTimeout    time.Duration            // 默认 60s
@@ -3425,6 +3651,7 @@ type Options struct {
     IdleTimeout    time.Duration            // 默认 2m
     MaxConnections int64                    // 并发连接上限,<= 0 不限制
     AcceptRate     float64                  // 接受速率(连接/秒),<= 0 不限制
+    Listen         shared.ListenOptions     // 监听层 socket 选项,见 TCP 部分 sec.6.3
 }
 ```
 
@@ -3439,6 +3666,9 @@ type Options struct {
 
 新增 `MaxConnections` / `AcceptRate`:与 TCP 一致,用 `shared.Acceptor` 在升级前准入,
 超额请求直接返回 503 而不再尝试握手.
+
+`Listen` 与 TCP 同源(`shared.ListenOptions`),但这里的 TLS 是"包在 listener 外层"
+而不是由 `tls.Listen` 建 socket,原因见 `sec.3.3`.HTTP 与 gRPC-Web 传输同样具备该字段.
 
 ### 4.2 默认值
 
@@ -3478,6 +3708,8 @@ func WithPingInterval(interval time.Duration) Option
 func WithPongTimeout(timeout time.Duration) Option
 func WithMaxConnections(max int64) Option
 func WithAcceptRate(rate float64) Option
+func WithReusePort() Option
+func WithKeepAlive(idle, interval time.Duration, count int) Option
 ```
 
 与 Options 字段不一致之处(有意为之,不是遗漏):
@@ -3829,10 +4061,15 @@ CloseAll 阶段(串行,在所有协议阶段完成后执行):
 | `SweepInterval` | 无 | 30s | 30s | 无 |
 | `MaxConnections` | 有(`shared.Acceptor`) | 无 | 无 | 有 |
 | `AcceptRate` | 有(令牌桶) | 无 | 无 | 有 |
+| `SO_REUSEPORT` | 有(`shared.Listen`) | 无 | 无 | 有 |
+| TCP keepalive 节奏 | 有(`shared.Listen`) | 不适用 | 不适用 | 有 |
 
 会话上限不再由各传输层各自配置,而是由 `SessionManager` 统一持有(默认 100 万,
 `runtime.WithMaxSessions` 可调),这样多协议共存时上限是总量而不是每协议配额.
 `MaxConnections` 与 `AcceptRate` 是传输层的连接准入,与会话上限是两个层次的限制.
+
+`SO_REUSEPORT` 与 keepalive 走的是同一条路径(`shared.ListenOptions`),表中只列了
+四路,另外两路 TCP 系传输(`HTTP`, `gRPC-Web`)同样具备,见 TCP 部分 `sec.6.3`.
 
 ### 4.3 超时配置
 
@@ -3844,8 +4081,8 @@ CloseAll 阶段(串行,在所有协议阶段完成后执行):
 | `IdleTimeout` | 无(由 `ReadTimeout` + HeartbeatPlugin 表达) | 无(由 `SessionTTL` 表达) | 无(同左) | 2m |
 | `PingInterval` | 无 | 无 | 无 | 30s |
 | `PongTimeout` | 无 | 无 | 无 | 60s |
-| CON 重传间隔 | 无 | 无 | 2s(包级常量) | 无 |
-| CON 最大重传 | 无 | 无 | 4(包级常量) | 无 |
+| CON 重传间隔 | 无 | 无 | 每次重传独立随机于 `[ACK_TIMEOUT, ACK_TIMEOUT*1.5)`,见 CoAP 部分 `sec.4.10` | 无 |
+| CON 最大重传 | 无 | 无 | 4(包级常量 `maxRetransmit`) | 无 |
 
 关停阶段的超时不在传输层配置里,而是由 `Gateway` 的 `core.StageTimeouts`
 (`StopAccept` / `Drain` / `CloseSessions`,默认 5s / 5s / 10s)统一下发.

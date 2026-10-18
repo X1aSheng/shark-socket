@@ -148,14 +148,21 @@ func TestCoAPRetransmitExhaustionRemovesObserver(t *testing.T) {
 	server.observers.Register("/sensor/temp", remote, token)
 
 	// Inject a pending notification that has already exhausted its
-	// retransmission attempts (as the retransmit loop would leave it for a
-	// dead peer).
+	// retransmission attempts and whose final timeout has elapsed (as the
+	// retransmit loop would leave it for a dead peer).
 	key := notifyKey{remote: remote, msgID: 7}
+	now := time.Now()
 	server.retransmitMu.Lock()
-	server.pendingNotifies[key] = pendingNotify{data: []byte("x"), token: append([]byte(nil), token...), attempts: maxRetransmit}
+	server.pendingNotifies[key] = pendingNotify{
+		data:     []byte("x"),
+		token:    append([]byte(nil), token...),
+		attempts: maxRetransmit,
+		timeout:  ackTimeout,
+		deadline: now.Add(-time.Second),
+	}
 	server.retransmitMu.Unlock()
 
-	server.retransmitDue()
+	server.retransmitDue(now)
 
 	if len(server.observers.Notify("/sensor/temp")) != 0 {
 		t.Fatal("observer still registered after retransmission exhaustion")

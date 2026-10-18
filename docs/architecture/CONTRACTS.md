@@ -254,20 +254,40 @@ type SessionManager interface {
 |------|---------|
 | `NextID` | `atomic.Add(1)`,无锁 |
 | `Count` | `atomic.Load`,无锁 |
-| `Register/Unregister/Get` | P0:全局 `sync.RWMutex`;P2:32 分片锁(benchmark 证明后引入) |
+| `Register/Unregister/Get` | 64 分片锁 (ADR-015): 每片独立 `RWMutex` + map, 按 `id % 64` 选片 |
 | `Broadcast` | 见下文 Broadcast 实现模式 |
+
+### 5.3.1 分片会话表 (ADR-015)
+
+每个传输的每一次 accept 与 close 都要动会话表, 因此单表 + 单锁是全进程的一个
+争用点. 分片后:
+
+- **选片**: `id % 64`. ID 来自全局 `atomic` 计数器, 相邻 ID 落在不同片
+- **容量**: 全局语义不能按片计数 (两片各自未满, 合起来仍可能超限), 因此在共享
+  计数器上 CAS 认领名额; 未插入成功 (重复 ID) 时不占用名额
+- **判重先于判容量**: 与单表时代返回顺序一致 -- 重试已存在的会话 ID 时, 即使容量
+  已满也必须被告知"重复"而非"容量"
+- **`Snapshot` / `Range` 不再是时点快照**: 逐片取锁, 遍历期间新会话可能落在尚未
+  访问的片. 调用方只要求"活会话的超集", 且 `CloseAll` 循环到空, 故不受影响
+
+实测 (16 并发, 开发机 Windows): 注册/查询/注销 366-382 -> 149-163 ns/op
+(2.4 倍); 单线程在噪声内持平.
 
 ### 5.4 Broadcast 实现模式
 
 ```go
 func (m *manager) Broadcast(data []byte) error {
-    // 1. 快照:持锁收集所有 session 引用
-    m.mu.RLock()
-    snapshot := make([]Session, 0, len(m.sessions))
-    for _, s := range m.sessions {
-        snapshot = append(snapshot, s)
+    // 1. 快照:逐片持读锁收集所有 session 引用 (分片后不再是时点快照,
+    //    见 5.3.1; Broadcast 只需要活会话的超集)
+    snapshot := make([]Session, 0, m.Count())
+    for i := range m.shards {
+        sh := &m.shards[i]
+        sh.mu.RLock()
+        for _, s := range sh.sessions {
+            snapshot = append(snapshot, s)
+        }
+        sh.mu.RUnlock()
     }
-    m.mu.RUnlock()
 
     // 2. 释放锁后发送,避免持锁 Send 阻塞
     var errs []error
@@ -280,13 +300,40 @@ func (m *manager) Broadcast(data []byte) error {
 }
 ```
 
+### 5.4.1 Broadcast 的共享帧路径 (ADR-014)
+
+`Send` 按契约复制 payload (调用方返回后即可释放缓冲), 因此广播到 N 个会话是
+N 次复制. 可选接口 `core.SharedSender` 让排队型会话 (TCP) 改接引用计数的
+`core.SharedFrame`, 把 N 次复制变成 1 次:
+
+```go
+type SharedSender interface {
+    SendShared(*SharedFrame) error
+}
+```
+
+引用所有权: **成功调用转移一份引用, 失败调用不转移**. 会话在写出后释放,
+关闭时若队列中仍有共享帧也释放; 广播侧在 `SendShared` 返回错误时释放. 两条
+路径缺一条都会把 payload 钉住到进程结束 -- 有测试覆盖这三种情形.
+
+不支持该接口的会话 (UDP/WebSocket 的 `Send` 本就不复制) 仍走普通 `Send`,
+因此混合协议的广播也成立: 能共享的共享, 不能的照旧.
+
+实测 (`BenchmarkBroadcastFanOut`, 1 KiB payload, 开发机 Windows):
+
+| 收件人 | 共享帧 | 逐个复制 |
+| --- | --- | --- |
+| 100 | 7,264 B/op, 9 allocs, ~4-6 us | 215,895 B/op, 208 allocs, ~50-56 us |
+| 1,000 | 52,576 B/op, 12 allocs, ~33-35 us | 2,132,297 B/op, 2,011 allocs, ~1.0-1.1 ms |
+
 ### 5.5 P0 与 P2 实现对比
 
-| 维度 | P0(当前) | P2(演进) | 触发条件 |
+| 维度 | P0(原) | 当前 (ADR-015 已落地) | P2(演进) |
 |------|-----------|-----------|---------|
-| 锁粒度 | 全局 `sync.RWMutex` | 32 分片锁 | benchmark 证明锁竞争为瓶颈 |
-| LRU 淘汰 | 不实现 | per-shard LRU | 明确需要限制 MaxSessions |
-| 分片函数 | 不分片 | `id & 31` | - |
+| 锁粒度 | 全局 `sync.RWMutex` | 64 分片锁 | - |
+| LRU 淘汰 | 不实现 | 不实现 | per-shard LRU, 明确需要限制 MaxSessions 时 |
+| 分片函数 | 不分片 | `id % 64` | - |
+| 未做 | - | 传输内表与全局表仍是两张 (键与用途不同) | 全局表支持按 (协议, 对端地址) 查找后合并 |
 
 ---
 

@@ -7,6 +7,230 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### Listener Socket Options (2026-10-18)
+
+批 3 的 C5: 把 SO_REUSEPORT 与 TCP keepalive 节奏变成 listener 级配置, 四路 TCP 系
+传输 (TCP / HTTP / WebSocket / gRPC-Web) 共用一份实现. 说明见
+[`TRANSPORT.md`](docs/architecture/TRANSPORT.md) TCP 部分第 6.3 节.
+不改 `core` 契约, 零值时与 `net.Listen` 行为逐字节一致, 故未新增 ADR.
+
+**为什么需要自己建 socket**: `net.Listen` 返回时 socket 已在 listen 状态, 而
+`SO_REUSEPORT` 必须在 `bind` 之前由 `Control` 回调设置; keepalive 的节奏也超出
+`SetKeepAlive` 这一档开关能表达的范围.
+
+**改动**:
+
+- 新增 `shared.ListenOptions` / `shared.Listen` (`internal/transport/shared/listen.go`)
+- `listen_unix.go` (`//go:build unix && !solaris`) 用 `golang.org/x/sys/unix` 设
+  `SO_REUSEPORT`; `listen_other.go` 返回 `shared.ErrReusePortUnsupported`
+- 零值 `ListenOptions` 不装 `Control`, 不调任何 `Set`, 与 `net.Listen` 等价
+- TCP / HTTP / WebSocket / gRPC-Web 新增 `Options.Listen` 字段与
+  `WithReusePort()` / `WithKeepAlive(idle, interval, count)`
+- WebSocket 与 gRPC-Web 的 TLS 分支由 `tls.Listen` 改为
+  `shared.Listen` + `tls.NewListener`: 前者自己建 socket 会丢掉 `ListenOptions`;
+  顺带把重复的 `&http.Server{...}` 构造提到分支外
+- `golang.org/x/sys` 由间接依赖升为直接依赖 (`go mod tidy`)
+
+**行为变化 (有意)**: 平台不支持 `SO_REUSEPORT` 时返回错误而非静默忽略. 该开关影响
+部署拓扑 (多进程共端口), 静默失效会让滚动发布时的端口冲突出现在离配置很远的地方.
+
+**验证**: 新增 6 个测试 -- 零值绑定, keepalive 映射 (5 个子例), keepalive 对
+listener 生效, reuseport 在 linux/darwin 上成功 / 其它平台断言显式错误,
+server 级两个 (`TestServerServesWithListenOptions`, `TestServerReusePort`).
+Linux `SO_REUSEPORT` 正例未在本机执行 (开发机为 Windows, 容器不可用), 由
+`GOOS=linux go build` + `go vet` 保证编译期正确, 测试在 linux/darwin CI 上覆盖.
+
+### CoAP Reliability State Machine (2026-10-18)
+
+批 3 的前两项: 重传调度改为 RFC 7252 第 4.2 节规定的指数退避 + 随机抖动,
+去重改为重发缓存的响应. 说明见
+[`TRANSPORT.md`](docs/architecture/TRANSPORT.md) 第 4.10 节.
+两项都不改 `core` 契约, 故未新增 ADR.
+
+**C1 重传调度**:
+
+- 新增 `coap/retransmit.go`: 参数常量 (ACK_TIMEOUT/ACK_RANDOM_FACTOR/
+  MAX_RETRANSMIT) + 纯函数 `decide`/`advance`
+- `pendingNotify` 增加 `timeout` 与 `deadline`, 每条消息按自己的截止时刻触发
+- 首次超时从 `[2s, 3s)` 随机抽取 (原来固定 2s, 无抖动), 每次翻倍
+- `deadline` 从上一个 deadline 推出, 调度器 tick 延迟不累积; 迟到的 tick 不补发
+- `retransmitTick` 250ms 是调度器分辨率而非重传间隔
+
+时序 (RFC 7252 第 4.2 节表格): 重传 4 次, 每间隔 `[2,3) [4,6) [8,12) [16,24)`,
+累计 `[2,3) [6,9) [14,21) [30,45)`, 放弃在 `[62,93)` (MAX_TRANSMIT_WAIT).
+
+**修正报告自身的验收标准**: `COMPARISON-261018-OSS-PEERS.md` C1 写的是
+"第 n 次重传落在 `[2^n*2, 2^n*3]`" -- 既把每间隔量当成累计量, 指数又错一位.
+按 RFC 表格修正为每间隔 `[2^(n-1)*2, 2^(n-1)*3)`, 并在报告里记录了这次更正.
+
+**C2 去重**:
+
+- `seen` 的值从 `struct{}{}` 改为 `*seenEntry`, 保存首次响应的确切字节
+- 重复 CON 重发同样字节, 不重跑 handler (RFC 7252 第 4.5 节); 此前回的是
+  `2.03 Valid`, 相当于声称一个并不存在的响应码
+- 首次响应尚不存在时回空 ACK 0.00 (separate response), 而非猜测一个码
+
+**修正报告自身的取证**: C2 原文写"无 duplicate 检测", 但 `seen` 表早已存在且
+重复 CON 不会重跑 handler. 真实缺口只是"没有缓存响应", 已在报告里更正.
+
+**验证**: 新增 6 个测试 (RFC 表格逐行断言 + 极值抽样, 抖动, 调度器粒度不累积,
+ACK_TIMEOUT 之前绝不触发, 迟到 tick 不补发, 放弃前等待最后一个超时);
+`TestCoAPDuplicateCONDoesNotRerunHandler` 改用 `Responder` 返回可区分负载,
+断言重复请求拿到 `response-1` 而不是 `response-2`.
+
+### Shared Hot Path Overhead (2026-10-18)
+
+第四批: 消除共享结构本身的开销 -- 对端键, 插件链读路径, 会话表争用. 决策记录为
+[`ADR-015`](docs/decisions/ADR-015-remove-shared-hot-path-overhead.md).
+
+**改动**:
+
+- 新增 `shared.PeerKey` (`[16]byte` 地址 + `uint16` 端口 + zone) 代替 `addr.String()`
+  作 UDP / CoAP 的会话表键, 并在会话上缓存供错误路径复用. 地址统一存 16 字节形式,
+  使 IPv4 与 IPv4-mapped 落到同一个键
+- `runtime.PluginChain` 改为 `atomic.Pointer[pluginView]` 发布不可变视图, 读路径
+  不再加锁; `OnMessage` / `OnAccept` 改为链级单次 recover (用下标定位插件),
+  `OnClose` / `StartAll` / `StopAll` 保留逐插件 recover
+- `runtime.SessionManager` 按会话 ID 分 64 片 (每片独立 `RWMutex` + map, 按 64 字节
+  对齐); 全局容量改在共享计数器上 CAS 认领, 判重仍先于判容量
+- 清理 `scripts/protocolgen` 两处死代码 (`grpcWSHandler`, `readStream`),
+  `golangci-lint` 由 2 issues 降为 0
+
+**数据** (开发机 Windows / Ryzen 7 8845HS, 16 线程):
+
+| 项 | 改前 | 改后 |
+| --- | --- | --- |
+| UDP 会话解析 | 99-113 ns/包, 32 B, 3 allocs | 46-47 ns/包, 0 B, 0 allocs |
+| 插件链 5 插件 (16 并发) | 23.4-24.5 ns/op | 4.5-5.3 ns/op |
+| 插件链 + 并发重配置 (16 并发) | 83-97 ns/op | 7-17 ns/op |
+| 会话注册/查询/注销 (16 并发) | 366-382 ns/op | 149-163 ns/op |
+
+三项并发收益随核数放大, 分别为 4.6 倍, 6 倍, 2.4 倍. 单线程会话管理一项在噪声内
+持平 (184-194 -> 165-203 ns/op), 未回退.
+
+**未做**: 数据报 payload 拷贝仍在 (每包 4 次分配降到 1 次), 要归零需要缓冲池并改
+`Send` 的所有权; 传输内表与全局表的双表保留 -- 两者键与用途不同, 合并需要全局表
+支持按地址查找.
+
+**验证**: 新增 16 个测试, 覆盖 PeerKey 的四种区分维度与 v4-mapped 归一, 链级 recover
+的三条语义 (消息 panic 转错误, accept panic 回滚, close panic 继续), 零值链可用,
+以及分片后并发容量恰好等于上限, 重复注册归还名额, 重复注销不下溢, ID 均匀分片.
+
+### TCP Read Path Buffering (2026-10-18)
+
+第一批优化落地: 读路径按会话缓冲, 消除 header 逃逸. 决策记录为
+[`ADR-012`](docs/decisions/ADR-012-session-read-buffer.md), 规则与实测更新在
+[`TRANSPORT.md`](docs/architecture/TRANSPORT.md) 第 2.1 / 2.6 / 3.6 节.
+
+**改动**:
+
+- `tcp.Options.ReadBufferBytes` + `WithReadBufferBytes`, 默认 1024, 0 表示直读 conn
+- 会话持有 `bufio.Reader` 并在整个连接生命周期内复用 (`session.go`)
+- `LengthPrefixFramer` 走 `Peek(4)` + `Discard(4)`: header 不再逃逸, 每帧 1 次分配
+- `LineFramer` 走 `ReadSlice`: 每字节一次内存扫描, 结果显式复制一次
+  (`ReadSlice` 的切片不能跨调用持有)
+- `RawFramer` 例外不缓冲: 其语义依赖"一次 Read 返回多少", 由
+  `framerAcceptsBufferedRead` 统一判定
+
+**数据** (开发机 Windows / Ryzen 7 8845HS, `BenchmarkTCPFramerReadCost`):
+
+| 帧大小 | reads/frame 无缓冲 | reads/frame 1 KiB | allocs/frame |
+| --- | --- | --- | --- |
+| 64 B | 2.000 | 0.078 | 2 -> 1 |
+| 256 B | 2.000 | 0.266 | 2 -> 1 |
+| 1 KiB | 2.000 | 1.016 | 2 -> 1 |
+
+代价是每连接正好 `ReadBufferBytes` 字节常驻堆: 1,000 空闲连接 6,647 B -> 7,888 B
+(`BenchmarkTCPIdleConnectionFootprint`, Windows 对照). 回环 echo
+(`BenchmarkTCPEchoReadBuffer`) 在 Windows 上无显著差异 (46-49 us, 调度主导),
+因此本项不能靠回环延迟证明.
+
+**验证**: 新增 6 个测试 (覆盖 EOF 语义, ReadSlice 别名, 长行跨缓冲, RawFramer 例外,
+会话级读次数 7 -> 2) 与 1 个 fuzz 目标 (`FuzzBufferedFramerRead`, 30 万次执行无失败);
+`go test ./...`, `go test -race ./internal/transport/tcp/`, `go vet` 全绿.
+
+**未闭合**: 云端 Linux 资源阶梯未重采, README 的 6,219 B/连接 仍是改动前数值,
+已就地标注差额; 写路径批处理 (B2), 广播共享帧 (B4), 客户端 `Receive` 的读缓冲
+未开始.
+
+### Broadcast Shared Frame (2026-10-18)
+
+第三批优化: 广播不再每个收件人复制一份 payload. 决策记录为
+[`ADR-014`](docs/decisions/ADR-014-shared-broadcast-frame.md), 契约见
+[`CONTRACTS.md`](docs/architecture/CONTRACTS.md) 第 5.4.1 节.
+
+**改动**:
+
+- `core.SharedFrame`: 不可变 payload + 引用计数, `NewSharedFrame` 只复制一次
+- `core.SharedSender`: **可选**接口 (UDP/WebSocket 的 `Send` 本就不复制, 不需要它)
+- `SessionManager.Broadcast` 按能力分派: 能共享的共用一个帧, 其余走普通 `Send`;
+  只有一个共享者时不建帧
+- TCP 写队列元素 `[]byte` -> `pendingWrite{payload, frame}`; 会话在写出后, 关闭时释放引用; `SendShared` 失败则不转移引用, 由广播侧释放
+
+**实测** (`BenchmarkBroadcastFanOut`, 1 KiB payload, 开发机 Windows):
+
+| 收件人 | 共享帧 | 逐个复制 |
+| --- | --- | --- |
+| 100 | 7,264 B/op, 9 allocs, ~4-6 us | 215,895 B/op, 208 allocs, ~50-56 us |
+| 1,000 | 52,576 B/op, 12 allocs, ~33-35 us | 2,132,297 B/op, 2,011 allocs, ~1.0-1.1 ms |
+
+1,000 收件人: 2.13 MB -> 52.6 KB (40 倍), 2,011 -> 12 次分配, 1.05 ms -> 34 us.
+剩余的 O(N) 是 `Snapshot` 与分派切片的扩容 (每收件人 8 字节级), 不是 payload 复制.
+
+**代价**: 写队列每槽多 8 字节 (默认 128 槽约 +1 KiB/连接), 云阶梯需复核.
+
+**验证**: 8 个新测试 (共享同一对象/同一底层数组, 失败路径释放, 混合会话回退,
+调用方可立即复用缓冲, 会话关闭释放队列中帧, 背压不绕过, 关闭后返回同一哨兵),
+`go test ./...`, `-race` (core/runtime/tcp), `go vet`, `gofmt` 全绿.
+
+### TCP Write Path Batching (2026-10-18)
+
+第二批优化: 写路径合并写 + 可选批处理. 决策记录为
+[`ADR-013`](docs/decisions/ADR-013-write-batching.md), 规则在
+[`TRANSPORT.md`](docs/architecture/TRANSPORT.md) 第 2.7 / 3.6 节.
+
+**改动**:
+
+- `framedWrite(w, a, b)`: unix 构建走 `net.Buffers` (writev) 一次写出长度头 +
+  payload (或 payload + 分隔符); 非 unix 保持两次 `Write`. 分开实现而不是无条件
+  调用 `WriteTo` 是因为它在没有 writev 的平台上会退化成两次写, 却仍要分配那 4 字节
+- `tcp.Options.WriteBufferBytes` + `WithWriteBufferBytes`, **默认 0 (关闭)**:
+  开启后会话持有 `bufio.Writer`, `writeLoop` 把队列中已排队的帧全部写入后 `Flush`
+  一次; 队列无后继帧时立即冲刷, 低负载延迟不变
+- 写超时从每帧一次变为每批一次 (语义仍为"对端最多占用写路径多久")
+- `newSession` 改为接收 `sessionConfig`: 位置参数已排到 7 个, 其中两个是每连接
+  内存旋钮, 顺序写错编译器查不出来
+
+**验证**: 3 个新测试 (3 帧排队时底层 `Write` 6 -> 1, 且解码校验每帧完整;
+单帧立即冲刷; 批级超时), `go test ./...`, `-race`, `go vet`, `gofmt` 全绿,
+`GOOS=linux/darwin/windows` 三个构建均通过 (writev 分支只有 linux/darwin 编译).
+
+**未证明的部分**: Windows 回环的 16 帧流水线 echo 两组无可分辨差异
+(677-936 us 对 724-855 us, 调度主导), 且 writev 在 Windows 不生效. 本项收益需在
+Linux 云主机上用 `strace -c` 或阶梯压测复核后才能写进 README; 若复核无收益,
+按 ADR-013 的重新评估条件应删除该开关而不是留着.
+
+### Peer Comparison and Improvement Backlog (2026-10-18)
+
+新增 [`docs/reports/COMPARISON-261018-OSS-PEERS.md`](docs/reports/COMPARISON-261018-OSS-PEERS.md):
+把对比对象从 smart-socket 单一目标扩展到 gnet v2 / netpoll / Netty / t-io,
+只比机制不比吞吐 (沿用 261017 的口径), 产出 5 类共 29 项带 file:line 取证的差距
+与三批实施顺序.
+
+**取证的三个主要结论**:
+
+- 读路径在裸 conn 上按帧边界读: `LengthPrefixFramer` 每帧 2 次 Read,
+  `LineFramer` 每字节 1 次 Read; 写路径每帧 2 次 Write; 全仓 `sync.Pool` /
+  `bufio` / `net.Buffers` 各 0 命中
+- 可观测只到接口层: `ObserveHistogram` 生产代码 0 调用点, Prometheus 直方图导出为
+  无分位数的 summary, 生产代码只有 5 个指标名且 0 个 label, `Tracer` 除生命周期外无埋点
+- CoAP 重传为固定 2s + 4 次, 不符 RFC 7252 第 4.2 节的随机初始超时与指数退避;
+  无 duplicate 检测, 无 Block1/Block2
+
+**同时修正**: `docs/reports/README.md` 2.1 节把资源基线写成了 Windows 值
+(6,647 B / 164.5 MB), 与 261017 报告的云端 Linux 结论 (6,219 B / 40.3 MB) 不一致;
+现按 Linux 值更正并保留 Windows 对照说明.
+
 ### Documentation Reorganization (2026-10-17)
 
 全仓 67 份说明文档做了一次结构整理.新增 [`docs/README.md`](docs/README.md) 作为文档

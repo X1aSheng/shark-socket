@@ -59,27 +59,21 @@ func (s *Server) Start(context.Context) error {
 		mux.HandleFunc(s.opts.WebSocketPath, s.handleWebSocket)
 	}
 	var ln net.Listener
-	var err error
-	if s.opts.TLSConfig != nil {
-		// Use tls.Listen for TLS; do NOT set TLSConfig on http.Server
-		// to avoid HTTP/2 negotiation that conflicts with WebSocket/gRPC-Web.
-		s.server = &http.Server{
-			Addr:         s.opts.Addr,
-			Handler:      mux,
-			ReadTimeout:  s.opts.ReadTimeout,
-			WriteTimeout: s.opts.WriteTimeout,
-			IdleTimeout:  s.opts.IdleTimeout,
-		}
-		ln, err = tls.Listen("tcp", s.opts.Addr, s.opts.TLSConfig)
-	} else {
-		s.server = &http.Server{
-			Addr:         s.opts.Addr,
-			Handler:      mux,
-			ReadTimeout:  s.opts.ReadTimeout,
-			WriteTimeout: s.opts.WriteTimeout,
-			IdleTimeout:  s.opts.IdleTimeout,
-		}
-		ln, err = net.Listen("tcp", s.opts.Addr)
+	s.server = &http.Server{
+		Addr:         s.opts.Addr,
+		Handler:      mux,
+		ReadTimeout:  s.opts.ReadTimeout,
+		WriteTimeout: s.opts.WriteTimeout,
+		IdleTimeout:  s.opts.IdleTimeout,
+	}
+	// One listener for both the TLS and the plain case: tls.Listen would create
+	// its own socket and drop the ListenOptions (SO_REUSEPORT, keepalive) on
+	// the floor, so the options are applied first and TLS wraps the result.
+	// TLSConfig is still not set on http.Server, which would negotiate HTTP/2
+	// and conflict with WebSocket/gRPC-Web.
+	ln, err := shared.Listen("tcp", s.opts.Addr, s.opts.Listen)
+	if err == nil && s.opts.TLSConfig != nil {
+		ln = tls.NewListener(ln, s.opts.TLSConfig)
 	}
 	if err != nil {
 		s.started.Store(false)

@@ -17,7 +17,7 @@ func TestSessionMethods(t *testing.T) {
 	defer conn2.Close()
 	_ = conn2 // keep reference to prevent GC
 
-	sess := newSession(42, conn1, LengthPrefixFramer{MaxFrameBytes: 1024}, 128, 30*time.Second, 0.8)
+	sess := newSession(42, conn1, sessionConfig{framer: LengthPrefixFramer{MaxFrameBytes: 1024}, writeQueue: 128, writeTimeout: 30 * time.Second, writeQueueHighWater: 0.8})
 
 	// Protocol
 	if got := sess.Protocol(); got != core.ProtocolTCP {
@@ -78,7 +78,7 @@ func TestSessionSendCloseRace(t *testing.T) {
 	defer conn1.Close()
 	defer conn2.Close()
 
-	sess := newSession(1, conn1, LengthPrefixFramer{MaxFrameBytes: 1024}, 128, time.Second, 0.8)
+	sess := newSession(1, conn1, sessionConfig{framer: LengthPrefixFramer{MaxFrameBytes: 1024}, writeQueue: 128, writeTimeout: time.Second, writeQueueHighWater: 0.8})
 
 	// Drain writes so net.Pipe does not block the writer forever.
 	go func() {

@@ -94,7 +94,7 @@ func (s *Server) Start(ctx context.Context) error {
 	// kept running with no handle left to stop them. Creating the pool only
 	// once the listener exists removes that failure mode instead of cleaning up
 	// after it.
-	ln, err := net.Listen("tcp", s.opts.Addr)
+	ln, err := shared.Listen("tcp", s.opts.Addr, s.opts.Listen)
 	if err != nil {
 		s.started.Store(false)
 		return fmt.Errorf("tcp listen %s: %w", s.opts.Addr, err)
@@ -233,7 +233,14 @@ func (s *Server) acceptLoop(ctx context.Context) {
 
 func (s *Server) handleConn(conn net.Conn) {
 	id := s.rt.Sessions().NextID()
-	sess := newSession(id, conn, s.opts.Framer, s.opts.WriteQueue, s.opts.WriteTimeout, s.opts.WriteQueueHighWater)
+	sess := newSession(id, conn, sessionConfig{
+		framer:              s.opts.Framer,
+		writeQueue:          s.opts.WriteQueue,
+		writeTimeout:        s.opts.WriteTimeout,
+		writeQueueHighWater: s.opts.WriteQueueHighWater,
+		readBufferBytes:     s.opts.ReadBufferBytes,
+		writeBufferBytes:    s.opts.WriteBufferBytes,
+	})
 	sess.readTimeout = s.opts.ReadTimeout
 	sess.onIdleClose = func() {
 		s.rt.Metrics().IncCounter("sessions_reclaimed_total")

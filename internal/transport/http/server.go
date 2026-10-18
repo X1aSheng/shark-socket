@@ -70,7 +70,7 @@ func (s *Server) Start(context.Context) error {
 		WriteTimeout: s.opts.WriteTimeout,
 		IdleTimeout:  s.opts.IdleTimeout,
 	}
-	ln, err := net.Listen("tcp", s.opts.Addr)
+	ln, err := shared.Listen("tcp", s.opts.Addr, s.opts.Listen)
 	if err != nil {
 		s.started.Store(false)
 		return fmt.Errorf("http listen %s: %w", s.opts.Addr, err)

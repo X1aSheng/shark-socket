@@ -5,40 +5,57 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
 )
 
-type PluginChain struct {
-	mu      sync.RWMutex
+// pluginView is one immutable generation of the chain: the ordered plugin set
+// plus the logger used for panic reporting. The chain never mutates a view in
+// place; reconfiguration publishes a new one.
+type pluginView struct {
 	plugins []core.Plugin
 	logger  core.Logger
 }
 
+type PluginChain struct {
+	// mu guards publication of a new view only. Readers take no lock at all:
+	// they load the current view pointer atomically. Before this, every
+	// message took an RLock on one process-wide RWMutex, so all transports
+	// and all cores contended for the same cache line on the hot path.
+	mu   sync.Mutex
+	view atomic.Pointer[pluginView]
+}
+
 func NewPluginChain(plugins ...core.Plugin) *PluginChain {
-	c := &PluginChain{logger: core.NopLogger()}
+	c := &PluginChain{}
+	c.view.Store(&pluginView{logger: core.NopLogger()})
 	c.Append(plugins...)
 	return c
 }
 
-// SetLogger sets the logger used for panic recovery logging.
-// The write is locked so it is safe to call while the chain is serving.
+// SetLogger sets the logger used for panic recovery logging. Safe to call
+// while the chain is serving: it publishes a new view rather than mutating the
+// one readers are using.
 func (c *PluginChain) SetLogger(logger core.Logger) {
 	if logger == nil {
 		return
 	}
 	c.mu.Lock()
-	c.logger = logger
-	c.mu.Unlock()
+	defer c.mu.Unlock()
+	cur := c.view.Load()
+	c.view.Store(&pluginView{plugins: cur.plugins, logger: logger})
 }
 
 func (c *PluginChain) Append(plugins ...core.Plugin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// Copy-on-write: build a new sorted slice and swap it in. c.plugins is
-	// never mutated in place, so snapshot() can hand out the current slice
-	// reference with no per-message copy.
-	next := append([]core.Plugin(nil), c.plugins...)
+	// Copy-on-write: build a new sorted slice and publish it. The previous
+	// view stays valid for readers that already loaded it, so a message in
+	// flight sees one consistent generation instead of a slice being sorted
+	// underneath it.
+	cur := c.view.Load()
+	next := append([]core.Plugin(nil), cur.plugins...)
 	for _, p := range plugins {
 		if p == nil {
 			continue
@@ -51,7 +68,16 @@ func (c *PluginChain) Append(plugins ...core.Plugin) {
 	slices.SortStableFunc(next, func(a, b core.Plugin) int {
 		return a.Priority() - b.Priority()
 	})
-	c.plugins = next
+	c.view.Store(&pluginView{plugins: next, logger: cur.logger})
+}
+
+// current returns the published view. It is never nil: the constructor stores
+// an empty view before the first Append.
+func (c *PluginChain) current() *pluginView {
+	if v := c.view.Load(); v != nil {
+		return v
+	}
+	return &pluginView{logger: core.NopLogger()}
 }
 
 // StartAll starts every plugin that implements core.LifecyclePlugin, in
@@ -64,19 +90,19 @@ func (c *PluginChain) Append(plugins ...core.Plugin) {
 // isolation as OnAccept/OnMessage/OnClose: an escaping panic here would bypass
 // the gateway's error path and crash the process.
 func (c *PluginChain) StartAll() error {
-	plugins, logger := c.snapshot()
+	v := c.current()
 	var started []core.Plugin
-	for _, p := range plugins {
+	for _, p := range v.plugins {
 		if _, ok := p.(core.LifecyclePlugin); !ok {
 			continue
 		}
-		if err := c.safeStart(p, logger); err != nil {
+		if err := c.safeStart(p, v.logger); err != nil {
 			var rollbackErr error
 			for i := len(started) - 1; i >= 0; i-- {
 				// Rollback failures are reported alongside the original
 				// start error: a plugin left running after a failed
 				// startup is worth surfacing, not swallowing.
-				rollbackErr = errors.Join(rollbackErr, c.safeStop(started[i], logger))
+				rollbackErr = errors.Join(rollbackErr, c.safeStop(started[i], v.logger))
 			}
 			return errors.Join(fmt.Errorf("plugin %q start: %w", p.Name(), err), rollbackErr)
 		}
@@ -90,24 +116,44 @@ func (c *PluginChain) StartAll() error {
 // nothing was started (plugins tolerate Stop without Start) and from multiple
 // goroutines.
 func (c *PluginChain) StopAll() error {
-	plugins, logger := c.snapshot()
+	v := c.current()
 	var err error
-	for i := len(plugins) - 1; i >= 0; i-- {
-		if _, ok := plugins[i].(core.LifecyclePlugin); ok {
-			err = errors.Join(err, c.safeStop(plugins[i], logger))
+	for i := len(v.plugins) - 1; i >= 0; i-- {
+		if _, ok := v.plugins[i].(core.LifecyclePlugin); ok {
+			err = errors.Join(err, c.safeStop(v.plugins[i], v.logger))
 		}
 	}
 	return err
 }
 
-func (c *PluginChain) OnAccept(sess core.Session) error {
-	plugins, logger := c.snapshot()
-	for i, p := range plugins {
-		if err := c.safeAccept(p, logger, sess); err != nil {
+// err is a named result because the deferred recover has to set it: without a
+// name the panic path would return nil and a crashed plugin would look like a
+// successful accept.
+func (c *PluginChain) OnAccept(sess core.Session) (err error) {
+	v := c.current()
+	// One recover for the whole chain rather than one per plugin. OnAccept is
+	// per connection, and each recover costs a defer record; the index below
+	// identifies the offending plugin, which is all the old per-plugin
+	// recover could report anyway.
+	at := -1
+	defer func() {
+		if r := recover(); r != nil {
+			v.logger.Error("plugin accept panic", "plugin", v.plugins[at].Name(), "panic", r)
+			// Same rollback the error path performs: plugins that already
+			// accepted must release whatever OnAccept allocated.
+			for j := at - 1; j >= 0; j-- {
+				c.safeClose(v.plugins[j], v.logger, sess)
+			}
+			err = core.ErrPluginPanic
+		}
+	}()
+	for i, p := range v.plugins {
+		at = i
+		if err := p.OnAccept(sess); err != nil {
 			// Roll back: already-accepted plugins receive OnClose (in reverse
 			// order) so resources they allocated during OnAccept are released.
 			for j := i - 1; j >= 0; j-- {
-				c.safeClose(plugins[j], logger, sess)
+				c.safeClose(v.plugins[j], v.logger, sess)
 			}
 			return err
 		}
@@ -115,60 +161,45 @@ func (c *PluginChain) OnAccept(sess core.Session) error {
 	return nil
 }
 
-func (c *PluginChain) OnMessage(sess core.Session, data []byte) ([]byte, error) {
-	plugins, logger := c.snapshot()
-	var err error
-	for _, p := range plugins {
-		data, err = c.safeMessage(p, logger, sess, data)
-		if err != nil {
-			return nil, err
+func (c *PluginChain) OnMessage(sess core.Session, data []byte) (out []byte, err error) {
+	v := c.current()
+	out = data
+	if len(v.plugins) == 0 {
+		return out, nil
+	}
+	// One recover for the whole chain. OnMessage runs once per message, and
+	// the previous design paid a defer record per plugin per message to
+	// recover from a panic that has to abort the chain either way.
+	at := -1
+	defer func() {
+		if r := recover(); r != nil {
+			v.logger.Error("plugin message panic", "plugin", v.plugins[at].Name(), "panic", r)
+			// Report the panic as an error so the transport drops/closes the
+			// message path instead of treating it as a silent success.
+			out, err = nil, core.ErrPluginPanic
+		}
+	}()
+	for i, p := range v.plugins {
+		at = i
+		var e error
+		out, e = p.OnMessage(sess, out)
+		if e != nil {
+			return nil, e
 		}
 	}
-	return data, nil
+	return out, nil
 }
 
 func (c *PluginChain) OnClose(sess core.Session) {
-	plugins, logger := c.snapshot()
-	for i := len(plugins) - 1; i >= 0; i-- {
-		c.safeClose(plugins[i], logger, sess)
+	v := c.current()
+	for i := len(v.plugins) - 1; i >= 0; i-- {
+		c.safeClose(v.plugins[i], v.logger, sess)
 	}
 }
 
-// snapshot returns the current plugin slice (a stable, immutable copy-on-write
-// view) and the current logger. Plugin callbacks run against this view, outside
-// the RWMutex, so a plugin that calls SetLogger or Append from inside
-// OnAccept/OnMessage/OnClose no longer deadlocks (RWMutex is not reentrant) and
-// logger reads stay race-free even if SetLogger runs concurrently. Append only
-// swaps in a new slice, so the returned slice needs no clone — zero allocation
-// on the per-message OnMessage hot path.
-func (c *PluginChain) snapshot() ([]core.Plugin, core.Logger) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.plugins, c.logger
-}
-
-func (c *PluginChain) safeAccept(p core.Plugin, logger core.Logger, sess core.Session) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			logger.Error("plugin accept panic", "plugin", p.Name(), "panic", r)
-			err = core.ErrPluginPanic
-		}
-	}()
-	return p.OnAccept(sess)
-}
-
-func (c *PluginChain) safeMessage(p core.Plugin, logger core.Logger, sess core.Session, data []byte) (out []byte, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			logger.Error("plugin message panic", "plugin", p.Name(), "panic", r)
-			// Report the panic as an error so the transport drops/closes the
-			// message path instead of treating it as a silent success.
-			err = core.ErrPluginPanic
-		}
-	}()
-	return p.OnMessage(sess, data)
-}
-
+// safeClose keeps a per-plugin recover on purpose. OnClose must continue to the
+// remaining plugins after one of them panics, otherwise a panicking plugin
+// would strand the resources every later plugin owns.
 func (c *PluginChain) safeClose(p core.Plugin, logger core.Logger, sess core.Session) {
 	defer func() {
 		if r := recover(); r != nil {

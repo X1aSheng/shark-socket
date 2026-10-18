@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net"
 	"sync/atomic"
@@ -125,9 +126,11 @@ func TestCoAPDuplicateCONDoesNotRerunHandler(t *testing.T) {
 	var handled atomic.Int32
 	server := NewServer(
 		WithAddr("127.0.0.1:0"),
-		WithHandler(func(core.Session, core.Message) error {
-			handled.Add(1)
-			return nil
+		WithResponder(func(core.Session, core.Message) ([]byte, error) {
+			n := handled.Add(1)
+			// A distinguishable body proves the duplicate is answered from the
+			// cache rather than by a second handler run.
+			return []byte(fmt.Sprintf("response-%d", n)), nil
 		}),
 	)
 	gateway := runtime.NewGateway()
@@ -149,12 +152,25 @@ func TestCoAPDuplicateCONDoesNotRerunHandler(t *testing.T) {
 	if first.Code != CodeCreated {
 		t.Fatalf("first ack code = %d, want %d", first.Code, CodeCreated)
 	}
+	if string(first.Payload) != "response-1" {
+		t.Fatalf("first payload = %q, want %q", first.Payload, "response-1")
+	}
+
 	second := exchangeMessage(t, conn, req)
-	if second.Code != CodeValid {
-		t.Fatalf("second ack code = %d, want %d", second.Code, CodeValid)
+	// RFC 7252 section 4.5: the duplicate gets the *same* response again, not a
+	// freshly computed one. Re-running the handler would repeat the side effect
+	// (for an LwM2M write or execute that is a correctness bug).
+	if second.Code != first.Code {
+		t.Errorf("second ack code = %d, want the cached %d", second.Code, first.Code)
+	}
+	if string(second.Payload) != "response-1" {
+		t.Errorf("second payload = %q, want the cached %q (the responder ran twice)", second.Payload, "response-1")
+	}
+	if !bytes.Equal(second.Token, first.Token) || second.MessageID != first.MessageID {
+		t.Errorf("duplicate ack = %v, want the cached response %v", second, first)
 	}
 	if got := handled.Load(); got != 1 {
-		t.Fatalf("handler calls = %d, want 1", got)
+		t.Fatalf("responder calls = %d, want 1", got)
 	}
 }
 
@@ -276,7 +292,7 @@ func TestCoAPNONObserveInitialValue(t *testing.T) {
 // CON notification so it is not retransmitted.
 func TestCoAPNotificationAckClearsPending(t *testing.T) {
 	s := NewServer(WithAddr("127.0.0.1:0"))
-	s.trackNotify("127.0.0.1:1", 42, []byte("tok"), []byte("data"))
+	s.trackNotify(time.Now(), "127.0.0.1:1", 42, []byte("tok"), []byte("data"))
 	if got := len(s.pendingNotifies); got != 1 {
 		t.Fatalf("pending = %d, want 1", got)
 	}

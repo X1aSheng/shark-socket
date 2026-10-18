@@ -3,7 +3,7 @@
 ## meta-info
 
 - 用途: 本目录的导航、命名规则与"当前 / 历史"判定
-- 最近整理: 2026-10-16
+- 最近整理: 2026-10-18
 - 命名规则: `<类别>-YYMMDD[-HHMMSS][-<标签>].md`
 - 文档规范: 全文仅使用基本 ASCII 字符与中文
 
@@ -59,7 +59,7 @@
 | 方法论 | `ARCHITECTURE-METHODOLOGY-260626.md` | - |
 | 性能基准 | `BENCHMARK-260614-102513.md` | - |
 | 差距分析 | `GAP-ANALYSIS-260614.md` | - |
-| 横向对比 | `COMPARISON-261017-SMARTBOOT.md` (smart-socket 对比 + 资源基线) | - |
+| 横向对比 | `COMPARISON-261018-OSS-PEERS.md` (5 项目机制对比 + 改进清单) | `COMPARISON-261017-SMARTBOOT.md` (smart-socket 对比 + 资源基线) |
 | 压测 | `STRESS-INTRANET-261017.md` (内网重测 + 弹性池对比) | `STRESS-LADDER-261017.md` (公网压测) |
 | 协议测试 | `PROTOCOL-TEST-261017.md` (规范符合性 + 压测, 7 协议) | - |
 | 协议承载 | `PROTOCOL-CAPACITY-261017.md` (跨主机多协议承载对比) | - |
@@ -69,7 +69,12 @@
 ### 2.1 资源占用数据的归属
 
 `COMPARISON-261017-SMARTBOOT.md` 补齐了 `BENCHMARK-260614-102513.md` 缺失的资源维度:
-每连接常驻堆 6647 B、每连接 2 goroutine、10k 连接栈内存 164.5 MB。
+每连接常驻堆 6,219 B (Linux)、每连接 2 goroutine、10k 连接栈内存 40.3 MB。
+Windows 对照值为 6,647 B 与 164.5 MB, 栈差 3.89 倍, 不可用于 Linux 部署外推;
+部署容量以该报告 5.5 节的稳态 VmRSS (约 87 MB / 10k 连接) 为准。
+
+`COMPARISON-261018-OSS-PEERS.md` 不新增资源数据, 只引用上述基线, 对比范围扩到
+smart-socket / gnet / netpoll / Netty / t-io 的机制层.
 
 `BENCHMARK-260614-102513.md` 第六节名为"云服务器资源使用", 但记的是主机级指标
 (MemAvailable / Load1), 不是被测程序的占用。该节数据本身有效, 只是不能读作资源基线;

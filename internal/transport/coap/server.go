@@ -30,20 +30,45 @@ type notifyKey struct {
 	msgID  uint16
 }
 
-// pendingNotify tracks an unacknowledged CON observe notification for
-// retransmission (RFC 7641 / RFC 7252 reliability). token is the observe
-// relation token carried by the notification, used to cancel the relation
-// when the peer never acknowledges.
+// pendingNotify tracks an unacknowledged CON message for retransmission
+// (RFC 7252 section 4.2 reliability). token is the observe relation token
+// carried by a notification, used to cancel the relation when the peer never
+// acknowledges.
 type pendingNotify struct {
-	data     []byte
-	token    []byte
+	data  []byte
+	token []byte
+	// attempts counts transmissions after the first one, so 0 means "sent
+	// once, never retransmitted".
 	attempts int
+	// timeout is the interval that must elapse before the next transmission.
+	// It starts in [2s, 3s) and doubles on every retransmission.
+	timeout time.Duration
+	// deadline is the absolute time of the next transmission. It is advanced
+	// from itself rather than from "now" so scheduler latency does not
+	// accumulate across retransmissions.
+	deadline time.Time
 }
 
-const (
-	maxRetransmit      = 4
-	retransmitInterval = 2 * time.Second
-)
+// seenEntry is the deduplication record for one CON exchange (RFC 7252
+// section 4.5). resp holds the exact bytes of the piggybacked ACK once they
+// exist, so a retransmitted request receives the same response instead of
+// re-running the handler.
+type seenEntry struct {
+	mu   sync.Mutex
+	resp []byte
+}
+
+func (e *seenEntry) response() []byte {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.resp
+}
+
+func (e *seenEntry) setResponse(data []byte) {
+	e.mu.Lock()
+	e.resp = data
+	e.mu.Unlock()
+}
 
 type Server struct {
 	opts            Options
@@ -61,6 +86,9 @@ type Server struct {
 	observers       *ObserverRegistry
 	retransmitMu    sync.Mutex
 	pendingNotifies map[notifyKey]pendingNotify
+	// jitter draws the initial retransmission timeout. Nil means the real
+	// random source; tests set it to pin the schedule.
+	jitter func() time.Duration
 }
 
 func NewServer(opts ...Option) *Server {
@@ -391,14 +419,15 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 	// RFC 7252 deduplication applies to CON messages only. Only CON messages
 	// are recorded, so a NON/ACK/RST carrying the same msgID cannot later
 	// cause a legitimate CON request to be misclassified as a duplicate.
+	var dedup *seenEntry
 	if msg.Type == TypeCON {
 		sk := seenKey{remote: remote, msgID: msg.MessageID}
-		if _, loaded := s.seen.LoadOrStore(sk, struct{}{}); loaded {
-			if err := s.sendACK(sess, msg, CodeValid, nil); err != nil && s.rt != nil {
-				s.rt.Logger().Warn("coap dedup ack send failed", "error", err)
-			}
+		entry := &seenEntry{}
+		if actual, loaded := s.seen.LoadOrStore(sk, entry); loaded {
+			s.replyToDuplicate(sess, msg, actual.(*seenEntry))
 			return
 		}
+		dedup = entry
 	}
 
 	registeredObserve := s.handleObserve(sess, msg)
@@ -413,11 +442,11 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 			if sess.dtlsConn != nil {
 				_ = sess.Close(context.Background())
 			} else {
-				s.closeSession(context.Background(), sess.remote.String(), sess)
+				s.closeSession(context.Background(), sess.key, sess)
 			}
 		}
 		if msg.Type == TypeCON {
-			if err := s.sendACK(sess, msg, CodeInternalServerError, nil); err != nil && s.rt != nil {
+			if err := s.sendDedupResponse(sess, msg, CodeInternalServerError, nil, dedup, false); err != nil && s.rt != nil {
 				s.rt.Logger().Warn("coap error ack send failed", "error", err)
 			}
 		}
@@ -434,7 +463,7 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 			if sess.dtlsConn != nil {
 				_ = sess.Close(context.Background())
 			} else {
-				s.closeSession(context.Background(), sess.remote.String(), sess)
+				s.closeSession(context.Background(), sess.key, sess)
 			}
 			return
 		}
@@ -444,14 +473,12 @@ func (s *Server) handleCoAPMessage(sess *session, data []byte) {
 			if sess.dtlsConn != nil {
 				_ = sess.Close(context.Background())
 			} else {
-				s.closeSession(context.Background(), sess.remote.String(), sess)
+				s.closeSession(context.Background(), sess.key, sess)
 			}
 		}
 	}
 	if msg.Type == TypeCON {
-		resp := ACK(msg, responseCode(msg.Code), responsePayload)
-		s.addObserveSeq(sess, msg, &resp)
-		if err := s.sendACKMsg(sess, resp); err != nil && s.rt != nil {
+		if err := s.sendDedupResponse(sess, msg, responseCode(msg.Code), responsePayload, dedup, true); err != nil && s.rt != nil {
 			s.rt.Logger().Warn("coap ack send failed", "error", err)
 		}
 	} else if msg.Type == TypeNON && registeredObserve {
@@ -571,18 +598,32 @@ func (s *Server) NotifyObservers(resource string, payload []byte) {
 			s.observers.Remove(resource, obs.Remote, obs.Token)
 			continue
 		}
-		s.trackNotify(obs.Remote, notify.MessageID, notify.Token, data)
+		s.trackNotify(time.Now(), obs.Remote, notify.MessageID, notify.Token, data)
 	}
 }
 
-func (s *Server) trackNotify(remote string, msgID uint16, token []byte, data []byte) {
+func (s *Server) trackNotify(now time.Time, remote string, msgID uint16, token []byte, data []byte) {
+	timeout := s.initialTimeout()
 	s.retransmitMu.Lock()
 	s.pendingNotifies[notifyKey{remote: remote, msgID: msgID}] = pendingNotify{
 		data:     data,
 		token:    append([]byte(nil), token...),
 		attempts: 0,
+		timeout:  timeout,
+		deadline: now.Add(timeout),
 	}
 	s.retransmitMu.Unlock()
+}
+
+// initialTimeout draws the first retransmission timeout for one message. The
+// jitter field exists so a test can pin it; production always uses the random
+// source, because a fixed interval makes every device that loses connectivity
+// at the same moment retransmit in lockstep.
+func (s *Server) initialTimeout() time.Duration {
+	if s.jitter != nil {
+		return initialRetransmitTimeout(s.jitter())
+	}
+	return initialRetransmitTimeout(defaultJitter())
 }
 
 func (s *Server) untrackNotify(remote string, msgID uint16) {
@@ -612,19 +653,26 @@ func (s *Server) takePendingNotify(remote string, msgID uint16) ([]byte, bool) {
 
 func (s *Server) retransmitLoop(ctx context.Context) {
 	defer s.wg.Done()
-	ticker := time.NewTicker(retransmitInterval)
+	ticker := time.NewTicker(retransmitTick)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			s.retransmitDue()
+			s.retransmitDue(time.Now())
 		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func (s *Server) retransmitDue() {
+// retransmitDue transmits every pending entry whose own deadline has elapsed.
+//
+// The previous implementation retransmitted everything on every 2s tick, which
+// violated RFC 7252 section 4.2 twice over: an entry tracked just before a tick
+// was retransmitted after a few milliseconds instead of ACK_TIMEOUT, and the
+// interval never doubled. now is a parameter so the schedule can be exercised
+// without waiting for real time.
+func (s *Server) retransmitDue(now time.Time) {
 	// Snapshot the due entries under the lock, then send outside it so a
 	// stalled observer's blocking Write cannot stall ACK/RST clearing or every
 	// other observer's retransmission.
@@ -635,18 +683,21 @@ func (s *Server) retransmitDue() {
 		token  []byte
 	}
 	for key, pn := range s.pendingNotifies {
-		if pn.attempts >= maxRetransmit {
+		switch pn.decide(now) {
+		case retransmitWait:
+			continue
+		case retransmitGiveUp:
 			delete(s.pendingNotifies, key)
-			// The peer never acknowledged the notification: cancel the
-			// observe relation so a dead or unreachable client cannot keep a
+			// The peer never acknowledged the message: cancel the observe
+			// relation so a dead or unreachable client cannot keep a
 			// subscription (and its notification stream) alive forever.
 			abandoned = append(abandoned, struct {
 				remote string
 				token  []byte
 			}{remote: key.remote, token: pn.token})
-			continue
+		case retransmitSend:
+			due = append(due, key)
 		}
-		due = append(due, key)
 	}
 	s.retransmitMu.Unlock()
 
@@ -657,7 +708,7 @@ func (s *Server) retransmitDue() {
 			s.retransmitMu.Unlock()
 			continue
 		}
-		pn.attempts++
+		pn = pn.advance(now)
 		s.pendingNotifies[key] = pn
 		data := pn.data
 		remote := key.remote
@@ -734,7 +785,9 @@ func (s *Server) sweepLoop(ctx context.Context) {
 
 // seenCleanupLoop periodically clears the dedup map to prevent unbounded memory
 // growth from transient clients (e.g., IoT devices behind rotating NAT).
-// CoAP MessageIDs are 16-bit (wrapping at 65536), so a 5-minute interval is safe.
+// CoAP MessageIDs are 16-bit (wrapping at 65536), so a 5-minute interval is safe:
+// it exceeds EXCHANGE_LIFETIME (247s, RFC 7252 section 4.8.2), which is how long
+// a peer may still retransmit a request whose response is cached here.
 func (s *Server) seenCleanupLoop(ctx context.Context) {
 	defer s.wg.Done()
 	ticker := time.NewTicker(5 * time.Minute)
@@ -751,7 +804,9 @@ func (s *Server) seenCleanupLoop(ctx context.Context) {
 
 // getOrCreateUDPSession finds or creates a session for a UDP peer address.
 func (s *Server) getOrCreateUDPSession(addr *net.UDPAddr) *session {
-	key := addr.String()
+	// shared.PeerKey instead of addr.String(): every datagram resolves its
+	// session here. See internal/transport/shared/peerkey.go.
+	key := shared.NewPeerKey(addr)
 	if value, ok := s.sessions.Load(key); ok {
 		sess := value.(*session)
 		// A plugin or error path may have Closed this session while the peer
@@ -793,8 +848,45 @@ func (s *Server) getOrCreateUDPSession(addr *net.UDPAddr) *session {
 	return sess
 }
 
-func (s *Server) sendACK(sess *session, req Message, code byte, payload []byte) error {
-	return s.sendACKMsg(sess, ACK(req, code, payload))
+// sendDedupResponse sends the piggybacked ACK for a CON request and records the
+// exact bytes in the exchange's dedup entry, so a retransmitted request is
+// answered with the same response instead of running the handler again
+// (RFC 7252 section 4.5). withObserve appends the Observe option for a GET on a
+// registered relation.
+func (s *Server) sendDedupResponse(sess *session, req Message, code byte, payload []byte, dedup *seenEntry, withObserve bool) error {
+	resp := ACK(req, code, payload)
+	if withObserve {
+		s.addObserveSeq(sess, req, &resp)
+	}
+	data, err := resp.Marshal()
+	if err != nil {
+		return err
+	}
+	if dedup != nil {
+		dedup.setResponse(data)
+	}
+	return sess.Send(data)
+}
+
+// replyToDuplicate answers a retransmitted CON request (RFC 7252 section 4.5).
+// It must never reach the handler: the first request already produced a
+// response, and re-running it would repeat side effects - for an LwM2M write or
+// execute that is a correctness bug, not a performance one.
+func (s *Server) replyToDuplicate(sess *session, req Message, entry *seenEntry) {
+	if data := entry.response(); data != nil {
+		if err := sess.Send(data); err != nil && s.rt != nil {
+			s.rt.Logger().Warn("coap dedup response resend failed", "error", err)
+		}
+		return
+	}
+	// The first response does not exist yet (the handler is still running, or
+	// it failed without producing one). An empty ACK tells the client to stop
+	// retransmitting without claiming a response code the server does not
+	// have - RFC 7252 section 4.2, separate response.
+	err := s.sendACKMsg(sess, Message{Type: TypeACK, Code: CodeEmpty, MessageID: req.MessageID})
+	if err != nil && s.rt != nil {
+		s.rt.Logger().Warn("coap dedup ack send failed", "error", err)
+	}
 }
 
 func (s *Server) sendACKMsg(sess *session, msg Message) error {

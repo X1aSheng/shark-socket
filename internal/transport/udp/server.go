@@ -315,14 +315,14 @@ func (s *Server) readLoop(ctx context.Context) {
 				// Remove the session so the peer is not wedged to a closed
 				// session. Plain UDP has no per-peer conn whose close would
 				// unblock a read loop, so cleanup must happen here.
-				s.closeSession(context.Background(), sess.remote.String(), sess)
+				s.closeSession(context.Background(), sess.key, sess)
 			}
 			continue
 		}
 		if s.opts.Handler != nil {
 			msg := core.Message{SessionID: sess.ID(), Protocol: core.ProtocolUDP, Payload: payload}
 			if err := shared.CallHandler(func() error { return s.opts.Handler(sess, msg) }, s.rt.Logger()); err != nil {
-				s.closeSession(context.Background(), sess.remote.String(), sess)
+				s.closeSession(context.Background(), sess.key, sess)
 			}
 		}
 	}
@@ -355,7 +355,10 @@ func (s *Server) sweepLoop(ctx context.Context) {
 }
 
 func (s *Server) getOrCreateSession(addr *net.UDPAddr) *session {
-	key := addr.String()
+	// shared.PeerKey instead of addr.String(): the read loop resolves a
+	// session for every datagram, so the key is on the hottest path in the
+	// transport. See internal/transport/shared/peerkey.go.
+	key := shared.NewPeerKey(addr)
 	if value, ok := s.sessions.Load(key); ok {
 		sess := value.(*session)
 		// A plugin or error path may have Closed this session while the peer

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
+	"github.com/X1aSheng/shark-socket/internal/transport/shared"
 )
 
 type Options struct {
@@ -15,6 +16,8 @@ type Options struct {
 	WriteQueue          int
 	WriteTimeout        time.Duration
 	ReadTimeout         time.Duration // idle read timeout; 0 disables
+	ReadBufferBytes     int           // per-connection read buffer; 0 disables
+	WriteBufferBytes    int           // per-connection write buffer; 0 disables
 	WriteQueueHighWater float64
 	WorkerCount         int
 	TaskQueueSize       int
@@ -24,6 +27,9 @@ type Options struct {
 	TLSConfig           *tls.Config
 	MaxConnections      int64
 	AcceptRate          float64
+	// Listen configures socket-level listener behaviour (SO_REUSEPORT, TCP
+	// keepalive). The zero value produces exactly what net.Listen does.
+	Listen shared.ListenOptions
 	// ElasticPool swaps the fixed WorkerPool for a ScalablePool. Nil by default:
 	// a pool that grows and shrinks its own worker count should be an explicit
 	// choice, not a side effect of upgrading.
@@ -53,6 +59,8 @@ func defaultOptions() Options {
 		WriteQueue:          128,
 		WriteTimeout:        30 * time.Second,
 		ReadTimeout:         5 * time.Minute, // bounds idle connections (anti-slowloris)
+		ReadBufferBytes:     1024,
+		WriteBufferBytes:    0, // opt-in: only pays off for small bursts
 		WriteQueueHighWater: 0.8,
 		WorkerCount:         4,
 		TaskQueueSize:       512,
@@ -101,6 +109,53 @@ func WithFramer(framer Framer) Option {
 func WithReadTimeout(timeout time.Duration) Option {
 	return func(o *Options) {
 		o.ReadTimeout = timeout
+	}
+}
+
+// WithReadBufferBytes sets the per-connection read buffer, trading heap for
+// syscalls.
+//
+// Without a buffer each frame costs at least two Read calls (the length header
+// and the payload), and LineFramer costs one per byte. With a buffer of n
+// bytes one Read serves roughly n/frameSize frames: at the 1 KiB default a
+// 256 B frame costs about 0.26 reads instead of 2.
+//
+// The price is exactly n bytes of heap per connection, held for the
+// connection's lifetime, so this is a memory-for-CPU knob rather than a free
+// win: at 10k connections 1 KiB means ~10 MB. Raise it (4-8 KiB) for
+// throughput-oriented deployments with few connections; lower it, or pass 0 to
+// read straight from the conn, when connection count is the constraint.
+//
+// RawFramer is never buffered regardless of this value: its contract is
+// "return what one Read yields", so buffering would shrink its frames.
+func WithReadBufferBytes(n int) Option {
+	return func(o *Options) {
+		if n < 0 {
+			n = 0
+		}
+		o.ReadBufferBytes = n
+	}
+}
+
+// WithWriteBufferBytes sets the per-connection write buffer. 0 (the default)
+// writes each frame straight to the conn.
+//
+// With a buffer, writeLoop drains the whole queue into it and flushes once, so
+// a burst of small frames leaves in one syscall instead of two per frame
+// (header + payload). At low load the queue is empty after the first frame and
+// the flush is immediate, so latency is unchanged.
+//
+// The cost is n bytes of heap per connection, the same order as the read
+// buffer, and unlike the read buffer it buys nothing for a connection that
+// never bursts -- hence opt-in. Enable it for workloads that push many small
+// frames per connection (telemetry fan-out, chat); leave it off when
+// connection count dominates.
+func WithWriteBufferBytes(n int) Option {
+	return func(o *Options) {
+		if n < 0 {
+			n = 0
+		}
+		o.WriteBufferBytes = n
 	}
 }
 
@@ -188,4 +243,40 @@ func WithMaxConnections(max int64) Option {
 // excess connection attempts are closed immediately.
 func WithAcceptRate(rate float64) Option {
 	return func(o *Options) { o.AcceptRate = rate }
+}
+
+// WithReusePort lets several processes (or several listeners in one process)
+// bind the same address, with the kernel distributing incoming connections
+// across them.
+//
+// It exists because accept is a single goroutine on a single socket: adding
+// cores adds no accept capacity, so port sharing is the only way to scale a
+// port horizontally without rewriting the accept path as a reactor.
+//
+// The trade-off is not free: a duplicate bind no longer fails with "address in
+// use", so a deploy that accidentally starts two instances now splits traffic
+// instead of refusing to start. Enable it deliberately, together with a
+// process-level topology that expects it.
+//
+// Linux and Darwin only; elsewhere the listener reports
+// shared.ErrReusePortUnsupported instead of silently ignoring the request.
+func WithReusePort() Option {
+	return func(o *Options) { o.Listen.ReusePort = true }
+}
+
+// WithKeepAlive overrides the TCP keepalive schedule. idle is the quiet period
+// before the first probe; a negative idle disables keepalive probes entirely,
+// which Go does not otherwise expose. interval and count apply once probing
+// starts; zero leaves the platform default.
+//
+// The default (Go's 15s) is a compromise that fits neither end of the IoT
+// range: too eager for a battery device on a metered link, too slow to reclaim
+// a connection whose NAT mapping vanished. Both extremes are now expressible
+// per listener instead of per deployment.
+func WithKeepAlive(idle, interval time.Duration, count int) Option {
+	return func(o *Options) {
+		o.Listen.KeepAliveIdle = idle
+		o.Listen.KeepAliveInterval = interval
+		o.Listen.KeepAliveCount = count
+	}
 }

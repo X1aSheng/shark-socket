@@ -289,6 +289,58 @@ func allBenchmarkGroups() []benchmarkGroup {
 			cloud:     true,
 			medium:    true,
 		},
+		{
+			// Fan-out cost: shared frame vs one copy per recipient. The two
+			// arms live in the same binary, so the ratio is what matters and
+			// it is reproducible on the cloud baseline.
+			name:      "broadcast",
+			pattern:   "BenchmarkBroadcastFanOut",
+			packages:  []string{"./tests/benchmark"},
+			benchtime: 300 * time.Millisecond,
+			timeout:   300 * time.Second,
+			cloud:     true,
+			medium:    true,
+		},
+		{
+			// The read/write buffer A/B lives in one binary: buf0 is the
+			// pre-ADR-012/013 behaviour, buf1024/buf4096 the buffered one.
+			// Running it as a group is what makes the reads/frame and
+			// allocs/frame deltas reproducible on the cloud baseline instead
+			// of only on a development box.
+			name:      "io-buffer",
+			pattern:   "BenchmarkTCPFramerReadCost|BenchmarkTCPEchoReadBuffer|BenchmarkTCPEchoWriteBuffer",
+			packages:  []string{"./tests/benchmark"},
+			benchtime: 300 * time.Millisecond,
+			timeout:   300 * time.Second,
+			cloud:     true,
+			medium:    true,
+		},
+		{
+			// ADR-015. The three shared structures are only distinguishable
+			// under concurrency: an uncontended RWMutex.RLock costs a couple
+			// of nanoseconds, so the sequential plugin-chain and session
+			// benchmarks cannot see the change at all. These are the ones
+			// that scale with core count.
+			name:      "shared-hot-path",
+			pattern:   "BenchmarkPluginChain_5Plugins_Parallel|BenchmarkPluginChain_ReconfigureDuringMessage|BenchmarkSessionManager_RegisterGetUnregister_Parallel",
+			packages:  []string{"./tests/benchmark"},
+			benchtime: 300 * time.Millisecond,
+			timeout:   300 * time.Second,
+			cloud:     true,
+			medium:    true,
+		},
+		{
+			// ADR-015 datagram key. Both arms live in the udp package: the
+			// PeerKey path and the retained addr.String() baseline, so the
+			// allocs/per-datagram delta stays measurable.
+			name:      "datagram-key",
+			pattern:   "BenchmarkUDPSessionLookup|BenchmarkUDPAddrStringKey",
+			packages:  []string{"./internal/transport/udp"},
+			benchtime: 300 * time.Millisecond,
+			timeout:   180 * time.Second,
+			cloud:     true,
+			medium:    true,
+		},
 	}
 
 }

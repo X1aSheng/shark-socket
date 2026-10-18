@@ -104,6 +104,8 @@ func TestCoAPSpecCompliantRSTCancelsObserver(t *testing.T) {
 		data:     []byte("notify"),
 		token:    append([]byte(nil), token...),
 		attempts: 0,
+		timeout:  ackTimeout,
+		deadline: time.Now().Add(ackTimeout),
 	}
 	server.retransmitMu.Unlock()
 

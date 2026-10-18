@@ -1,6 +1,7 @@
 package tcp
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -11,6 +12,23 @@ import (
 type Framer interface {
 	ReadFrame(io.Reader) ([]byte, error)
 	WriteFrame(io.Writer, []byte) error
+}
+
+// framerAcceptsBufferedRead reports whether a framer may be handed a
+// *bufio.Reader instead of the raw conn.
+//
+// RawFramer is the one exclusion: it returns whatever a single Read yields and
+// caps the result at MaxFrameBytes, so its output depends on how much the
+// reader hands back per call. A 1 KiB read buffer would turn 32 KiB raw reads
+// into 1 KiB ones, which is a silent semantic change for its users.
+// Every other built-in framer defines frame boundaries itself, so buffering
+// only changes syscall counts, not results.
+func framerAcceptsBufferedRead(f Framer) bool {
+	switch f.(type) {
+	case RawFramer, *RawFramer:
+		return false
+	}
+	return true
 }
 
 type LengthPrefixFramer struct {
@@ -30,6 +48,9 @@ func (f LengthPrefixFramer) maxBytes() int {
 }
 
 func (f LengthPrefixFramer) ReadFrame(r io.Reader) ([]byte, error) {
+	if br, ok := r.(*bufio.Reader); ok {
+		return f.readFrameBuffered(br)
+	}
 	var header [4]byte
 	if _, err := io.ReadFull(r, header[:]); err != nil {
 		return nil, err
@@ -47,6 +68,37 @@ func (f LengthPrefixFramer) ReadFrame(r io.Reader) ([]byte, error) {
 	return payload, err
 }
 
+// readFrameBuffered is the *bufio.Reader path: the 4-byte header is read with
+// Peek, which returns a slice into the reader's own buffer, so the header never
+// becomes the second heap allocation it is on the plain path (where header[:]
+// escapes into io.ReadFull). One allocation per frame remains -- the payload --
+// which is what the zero-copy work in the redesign has to remove.
+func (f LengthPrefixFramer) readFrameBuffered(br *bufio.Reader) ([]byte, error) {
+	header, err := br.Peek(4)
+	if err != nil {
+		// Keep the plain path's error identity: a stream that ends exactly on a
+		// frame boundary is io.EOF, one that ends mid-header is
+		// io.ErrUnexpectedEOF. Peek cannot tell them apart on its own.
+		if err == io.EOF && br.Buffered() > 0 {
+			return nil, io.ErrUnexpectedEOF
+		}
+		return nil, err
+	}
+	raw := binary.BigEndian.Uint32(header)
+	max := f.maxBytes()
+	if raw > uint32(max) {
+		return nil, fmt.Errorf("%w: %d > %d", core.ErrFrameTooLarge, raw, max)
+	}
+	if _, err := br.Discard(4); err != nil {
+		return nil, err
+	}
+	payload := make([]byte, int(raw))
+	if _, err := io.ReadFull(br, payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
 func (f LengthPrefixFramer) WriteFrame(w io.Writer, payload []byte) error {
 	max := f.maxBytes()
 	if len(payload) > max {
@@ -54,11 +106,8 @@ func (f LengthPrefixFramer) WriteFrame(w io.Writer, payload []byte) error {
 	}
 	var header [4]byte
 	binary.BigEndian.PutUint32(header[:], uint32(len(payload)))
-	if _, err := w.Write(header[:]); err != nil {
-		return err
-	}
-	_, err := w.Write(payload)
-	return err
+	// One syscall instead of two where writev exists; see framedWrite.
+	return framedWrite(w, header[:], payload)
 }
 
 type LineFramer struct {
@@ -74,6 +123,9 @@ func (f LineFramer) delimiter() byte {
 }
 
 func (f LineFramer) ReadFrame(r io.Reader) ([]byte, error) {
+	if br, ok := r.(*bufio.Reader); ok {
+		return f.readFrameBuffered(br)
+	}
 	max := f.MaxFrameBytes
 	if max <= 0 {
 		max = defaultMaxFrameBytes
@@ -95,6 +147,50 @@ func (f LineFramer) ReadFrame(r io.Reader) ([]byte, error) {
 	return line[:len(line)-1], nil
 }
 
+// readFrameBuffered scans for the delimiter inside the reader's buffer via
+// ReadSlice. The plain path above performs one Read per byte, which on an
+// unbuffered conn is one syscall per byte; here the scan is memory-only and the
+// payload is copied exactly once (ReadSlice's result is only valid until the
+// next read, so it cannot be returned as-is).
+func (f LineFramer) readFrameBuffered(br *bufio.Reader) ([]byte, error) {
+	max := f.MaxFrameBytes
+	if max <= 0 {
+		max = defaultMaxFrameBytes
+	}
+	delim := f.delimiter()
+	var out []byte
+	for {
+		frag, err := br.ReadSlice(delim)
+		switch err {
+		case nil:
+			n := len(frag) - 1 // the delimiter is not part of the payload
+			if len(out) == 0 {
+				if n > max {
+					return nil, fmt.Errorf("%w: %d > %d", core.ErrFrameTooLarge, n, max)
+				}
+				line := make([]byte, n)
+				copy(line, frag[:n])
+				return line, nil
+			}
+			if len(out)+n > max {
+				return nil, fmt.Errorf("%w: %d > %d", core.ErrFrameTooLarge, len(out)+n, max)
+			}
+			return append(out, frag[:n]...), nil
+		case bufio.ErrBufferFull:
+			// No delimiter in the whole buffer: keep the fragment (it is about
+			// to be overwritten) and continue. A line longer than the read
+			// buffer costs extra copies, which is the price of not sizing the
+			// buffer to MaxFrameBytes.
+			out = append(out, frag...)
+			if len(out) > max {
+				return nil, fmt.Errorf("%w: %d > %d", core.ErrFrameTooLarge, len(out), max)
+			}
+		default:
+			return nil, err
+		}
+	}
+}
+
 func (f LineFramer) WriteFrame(w io.Writer, payload []byte) error {
 	max := f.MaxFrameBytes
 	if max <= 0 {
@@ -103,11 +199,7 @@ func (f LineFramer) WriteFrame(w io.Writer, payload []byte) error {
 	if len(payload)+1 > max {
 		return fmt.Errorf("%w: %d > %d", core.ErrFrameTooLarge, len(payload)+1, max)
 	}
-	if _, err := w.Write(payload); err != nil {
-		return err
-	}
-	_, err := w.Write([]byte{f.delimiter()})
-	return err
+	return framedWrite(w, payload, []byte{f.delimiter()})
 }
 
 type FixedSizeFramer struct {

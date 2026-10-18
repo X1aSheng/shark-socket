@@ -36,6 +36,10 @@
 | [ADR-008](ADR-008-mqtt-external-broker.md) | MQTT 外部 Broker | 已采纳 | MQTT 由 shark-MQTT 独立提供 |
 | [ADR-009](ADR-009-protocol-integration-boundary.md) | 协议整合边界 | 已采纳 | 统一业务运行时,不替代通用代理 |
 | [ADR-011](ADR-011-mqtt-adapter.md) | MQTT 外部适配器 | 已采纳 | 通过 paho 客户端连接外部 MQTT Broker |
+| [ADR-012](ADR-012-session-read-buffer.md) | 会话持有读缓冲 | 已采纳 | 缓冲归会话, framer 保留无状态快路径, RawFramer 不缓冲 |
+| [ADR-013](ADR-013-write-batching.md) | 写路径批处理可选 | 已采纳 | 写缓冲默认关闭, 合并写按平台生效 (unix writev) |
+| [ADR-014](ADR-014-shared-broadcast-frame.md) | 广播使用共享帧 | 已采纳 | 引用计数的 SharedFrame + 可选 SharedSender 接口 |
+| [ADR-015](ADR-015-remove-shared-hot-path-overhead.md) | 消除共享热路径开销 | 已采纳 | 对端键零分配, 插件链无锁读 + 链级 recover, 会话表 64 分片 |
 
 编号从 001 直接到 011, 缺 010。仓库中从未存在 `ADR-010` 文件 (查过全部提交历史),
 V9 审查 H12 曾记录某处引用了这个不存在的编号, 现已无残留引用。新 ADR 顺延 012 起编。
@@ -50,3 +54,7 @@ V9 审查 H12 曾记录某处引用了这个不存在的编号, 现已无残留�
 - 引入性能复杂度前先查 ADR-006.
 - 修改部署构建策略前先查 ADR-007.
 - 调整 MQTT 或协议整合边界前先查 ADR-008,ADR-009,ADR-011.
+- 修改 TCP 读路径或帧解码的内存策略前先查 ADR-012.
+- 修改 TCP 写路径或写批处理策略前先查 ADR-013.
+- 修改广播或会话发送的所有权语义前先查 ADR-001,ADR-014.
+- 修改会话表, 插件链读取或对端键的构造方式前先查 ADR-015.
