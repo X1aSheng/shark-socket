@@ -172,6 +172,13 @@ direct 与 WebSocket 两个入口被拒, 都直接返回 "server busy" 而不计
 
 ## 4. Tracer 接口
 
+> **实现状态 (ADR-021)**: 接口、nop 实现与 OpenTelemetry 适配器都已就位, 但**运行时
+> 自身不产生任何 span** -- 8 路传输没有一处 `Tracer().Start` 调用, `internal/app`
+> 也不配置 tracer. `WithTracer` 是唯一入口, 面向自己组装 `Gateway` 的嵌入方:
+> 在 handler/插件里取一个 tracer, 给自己的下游调用加 span. 不给消息路径埋 span 的
+> 理由见 ADR-021 (指标已回答延迟, 且 `Session`/handler/`PluginRunner` 都不带 ctx,
+> span 无法传播); 唯一在这一点上的保证是 `TestGatewayInjectsTheConfiguredTracer`.
+
 ### 4.1 接口定义
 
 ```go
@@ -197,12 +204,26 @@ type Span interface {
 - `RecordError` 同时调用 `span.RecordError(err)` 和 `span.SetStatus(codes.Error, ...)`
 - nil 安全:传入 nil tracer 时自动降级为 `NopTracer`
 
-```go
-import "go.opentelemetry.io/otel"
+接线方式 (组装 `Gateway` 时传入, 之后由 `Runtime.Tracer()` 交给传输与插件):
 
-tracer := otel.Tracer("shark-socket")
-t := observability.NewOpenTelemetryTracer(tracer)
-ctx, span := t.Start(ctx, "tcp.handleConn", "remote_addr", conn.RemoteAddr().String())
+```go
+import (
+    "go.opentelemetry.io/otel"
+
+    "github.com/X1aSheng/shark-socket/internal/infra/observability"
+    "github.com/X1aSheng/shark-socket/internal/runtime"
+)
+
+t := observability.NewOpenTelemetryTracer(otel.Tracer("shark-socket"))
+gateway := runtime.NewGateway(runtime.WithTracer(t))
+```
+
+使用方式 (嵌入方在 handler 里就近埋点 -- 这是本 ADR 认可的唯一用法):
+
+```go
+// rt 是交给你的传输/插件的 core.Runtime.
+_, span := rt.Tracer().Start(context.Background(), "orders.lookup",
+    "order_id", id)
 defer span.End()
 ```
 

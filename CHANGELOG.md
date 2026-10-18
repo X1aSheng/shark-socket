@@ -7,6 +7,35 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### Tracer: 明确定位为嵌入方扩展点, 并停止宣称"关键路径有 trace" (2026-10-18)
+
+对比报告 D4: `core.Tracer` / `NopTracer` / OpenTelemetry 适配器 / `WithTracer` 全都在,
+但生产代码里 `Tracer().Start` 调用点 **0 个**, `internal/app` 也不配置 tracer --
+README 却声明 "traces ... on critical paths". 结论不是"少一个埋点", 而是没先想清楚
+span 要回答什么就把接口建好了. 见 ADR-021.
+
+**运行时不发 span, 理由是结构性的**:
+
+- 单进程网关没有出站调用, span 唯"跨"的是 `读循环 -> worker -> handler`, 而这段的
+  时间边界已由 `handler_duration_seconds{protocol}` 与 `tcp_task_queue_full_total`
+  各自负责; 每消息一条 span 用约千倍代价回答同一个问题
+- `Session` / handler (`func(Session, Message) error`) / `PluginRunner` 都不带
+  `context.Context`, 运行时即使起了 span 也没有通道传给用户代码, 所有 span 都是无父
+  的根 span -- 那不是 trace, 是一组带时间戳的日志
+- 会话级 span 在长连接上是反模式: 导出器按 span 缓冲, 三天不收尾的 span 就是三天的
+  常驻内存, 且中途不可观察
+
+**保留接口, 但把定位写清**: 嵌入方在 handler/插件里 `rt.Tracer().Start(...)` 给自己
+的下游调用加 span. 之前这条路径**没有任何测试**, 接线断了不会有人发现 --
+`TestGatewayInjectsTheConfiguredTracer` 现在断言 `WithTracer` 的值确实经
+`UseRuntime` 到达传输且 `Start` 会分派到它; `TestGatewayDefaultsToNopTracer` 锁住
+默认值非 nil (返回 nil 会让第一个使用者 panic).
+
+**文档按事实改写**: README (双) 与 `ARCHITECTURE.md` 的原则表不再声称关键路径有
+trace, 改为"消息路径有 metrics + 结构化日志, tracer 是扩展点"; `OBSERVABILITY.md`
+第 4 章加实现状态, 并把原来那段像运行时调用的示例 (`tcp.handleConn`) 换成"接线"与
+"使用"两段 -- 前者是 `NewGateway(WithTracer(...))`, 后者是嵌入方 handler 里的用法.
+
 ### 存量指标 label 化, 并补回 4 处从未计数的准入拒绝 (2026-10-18)
 
 对比报告 D3: 所有指标都没有 label, 五个传输混在一个计数器里. 迁移时发现比报告说的

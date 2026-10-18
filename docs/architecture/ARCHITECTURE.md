@@ -66,7 +66,7 @@ Shark-Socket 是**高性能,可扩展的多协议服务端网络框架**,采用 
 | 分阶段关闭 | StagedServer 接口定义 StopAccept / Drain / CloseSessions 三阶段,每阶段语义清晰 |
 | 零值可用 | Functional Options 模式,所有配置项有合理默认值 |
 | 失败隔离 | 单连接/单协程 panic 不影响整体;插件 panic 在插件链 PluginChain 内隔离,不传播到协议层 |
-| 可观测优先 | 所有关键路径内置 metrics/trace/log,采集不阻塞业务;指标按业务点需要命名,标签维度保持收敛 |
+| 可观测优先 | 消息路径内置 metrics 与结构化日志,采集不阻塞业务;指标按业务点需要命名,标签维度保持收敛;`Tracer` 只作嵌入方扩展点,运行时不发 span (ADR-021) |
 | benchmark 驱动 | 性能优化必须有基准测试和 pprof 热点证据,禁止凭直觉改结构 |
 | 编译期验证 | `var _ Interface = (*Impl)(nil)` 接口满足检查;关键约束用类型系统表达 |
 

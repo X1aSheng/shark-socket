@@ -89,8 +89,11 @@ chain, and one observability plane.
   without touching a live session; a document that also moves a listener is
   rejected whole rather than half-applied, so the running configuration is
   always one the operator can reason about (ADR-019).
-- **Observability first**: metrics, traces, and logs on critical paths;
-  Prometheus metrics use a fixed key set (no cardinality explosion);
+- **Observability first**: metrics and structured logs on the message path;
+  a `Tracer` is exposed for embedders who want spans in their own handlers,
+  but the runtime itself emits none - `handler_duration_seconds{protocol}`
+  already answers "how slow" for a fraction of the cost of a span per message
+  (ADR-021). Prometheus metrics use a fixed key set (no cardinality explosion);
   `/healthz` and `/readyz` endpoints plus `sessions_active` /
   `sessions_reclaimed_total` session metrics. Handler latency is a real
   histogram labelled by protocol (`handler_duration_seconds{protocol}`), so

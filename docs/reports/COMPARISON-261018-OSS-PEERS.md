@@ -35,7 +35,8 @@
    消息总数与 handler 延迟这两个最该有的指标只出现在测试里 (`prometheus_test.go:12-16`),
    `sessions_reclaimed_total` 把 5 个传输混在一个计数器里;
    `Tracer` 除生命周期外无任何 `Start` 调用点, 而 README 声明 "traces on critical paths".
-   (前三条已按 ADR-020 关闭, 见 4.4 D1/D2/D3; `Tracer` 一项仍开放, 见 D4.)
+   (前三条已按 ADR-020 关闭, 见 4.4 D1/D2/D3; `Tracer` 一项按 ADR-021 以"明确不埋点"
+   关闭, 见 D4.)
 
 4. **CoAP 是"主路径可用", 不是"规范符合".** 重传用固定 2s 全局 ticker + 4 次,
    不符合 RFC 7252 第 4.2 节的随机初始超时与指数退避; 无 duplicate 检测;
@@ -586,6 +587,25 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
   `Tracer().Start` 调用点; README 声明 "traces ... on critical paths"
 - 处置: 二选一 -- 补埋点 (`OnAccept`/`OnMessage`/握手三段), 或改 README.
   不计为"未完成功能", 而是**文档与代码不一致**, 需在下一轮审查中关闭
+- **已处置 (2026-10-18, ADR-021): 改 README, 但把理由做成决策而不是删一句话.**
+  选了"不埋点", 依据是三条结构性事实:
+  (1) 单进程网关没有出站调用, span 唯一能"跨"的是 `读循环 -> worker -> handler`,
+  而这段的时间边界已由 `handler_duration_seconds{protocol}` 与
+  `tcp_task_queue_full_total` 分别负责, 每消息一条 span 用约千倍代价回答同一个问题;
+  (2) `Session` / handler (`func(Session, Message) error`) / `PluginRunner` 都不带
+  `context.Context`, 运行时起了 span 也没有通道传给用户代码, 所有 span 都是无父的
+  根 span -- 那不是 trace, 是一组带时间戳的日志;
+  (3) 会话级 span 在长连接上是反模式: 导出器按 span 缓冲, 三天不收尾的 span 就是
+  三天常驻内存, 中途不可观察.
+- **保留 `Tracer` 并把它说清楚**, 而不是删掉: 嵌入方在 handler/插件里
+  `rt.Tracer().Start(...)` 给自己的下游调用加 span, 这是它唯一被认可的用法
+- **顺手补上这个扩展点从未有过的保证**: 原先没有任何测试覆盖 `WithTracer` 的接线
+  (没有调用点, 断了也不会有人发现). `TestGatewayInjectsTheConfiguredTracer` 断言
+  值经 `UseRuntime` 到达传输且 `Start` 分派到它; `TestGatewayDefaultsToNopTracer`
+  锁住默认值非 nil
+- **报告建议的"握手段 span"未采纳**: 握手耗时更适合做成
+  `accept_duration_seconds{protocol}` 直方图 (复用 ADR-020 的机制), 已写进 ADR-021
+  的重新评估条件 -- 同一个数, 直方图能聚合, 单条 span 不能
 
 ### 4.5 E 类: 工程与生态 (P2)
 
@@ -653,8 +673,8 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
 
 进度 (2026-10-18): 批 2 的 B1 B2(部分) B3(a) B4 B5 B6 B7 已完成 (ADR-012 至
 ADR-015), 批 3 的 C1 C2 C4 C5 C7 E2 已完成 (ADR-016), 批 1 的 A1-A5 已完成
-(ADR-017), C3 (ADR-018) 与 C6 (ADR-019) 已完成, D1/D2/D3 (ADR-020) 已完成.
-其余 (B2 的端到端证明, D4) 未开始, 见各条目下的备注.
+(ADR-017), C3 (ADR-018) 与 C6 (ADR-019) 已完成, D1/D2/D3 (ADR-020) 与 D4 (ADR-021)
+已完成. 仅剩 B2 的端到端证明, 见该条目下的备注.
 
 不做: B8 (已记录决策), C3 的 Block1 (见 ADR-018 重新评估条件), C6 只做可热更子集.
 
