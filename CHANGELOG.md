@@ -7,6 +7,59 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### Benchmark Regression Gate (2026-10-18)
+
+批 3 的 E2: 基准有了 CI 门禁. 没有门禁的基准, 半年后就是过期数字.
+
+**新增 `scripts/benchgate/` 包**:
+
+- 用 `git archive` 把 base commit 导出到临时目录. 不用 `git worktree`: 它会往
+  `.git` 里写 ref 与锁文件, 在开发机上会被 IDE 的 git 集成抢占, 然后以一个脚本
+  从未申请的锁报 "Permission denied" -- 本地第一次跑就是卡在这个锁上
+- 只用 **CPU 型** 微基准 (`SessionManager`, `PluginChain`, CoAP 编解码,
+  framer round trip, peer key, 广播分派, 拷贝, 插件限流). socket 型基准
+  (`BenchmarkTCPEcho` 等) 在共享 runner 上两轮之间就能差几十个百分点,
+  拿它们做门禁只会得到噪声或一个再也没人看的阈值
+- **两侧交替采样** (base, head, base, head ...), 并且每轮**交换先后手**. 先跑完
+  一侧再跑另一侧, 在 16 线程开发机上把两个只差一个未使用的 HTTP handler 的 commit
+  判出了 6 项 20-45% 的"回归", 同时另有十几项"提升" 20-46% -- 那测的是机器的漂移.
+  交换先后手是因为先跑的一侧离上一个包的收尾更近, 要吃机器回落的那一段
+- 采样前先 `warmBuild` 两侧的测试二进制. 否则每个包的第一轮把编译也算进样本, 而
+  编译器只会落在某一侧的某一个样本里
+- 判定用**单侧 95% 置信下界**, 不是裸比值: 只有当下界仍然高于 `-threshold`
+  (默认 20%) 才失败. 判定规则一共试了三版, 前两版被同一组对照实验否掉:
+  - 比值比中位数: 同一 commit 的两个构建判出 6 项 20-48% 假回归
+  - best-of-N (取两侧各字段最小值), 理由是干扰只能让样本变慢. 被数据否掉: 一侧
+    三次采样读到 76930 / 22875 / 30185 ns/op, 最小值本身就是从 3.4 倍区间里抽出的
+    一个随机数, 不是成本下界. 仍剩 6 项假回归
+  - 当前规则: 配对比值 (head_i / base_i) 的均值减去 t 倍标准误. 用 t 表而不是固定
+    系数, 因为小样本时标准误本身就不准, 固定系数恰好在门禁最弱的地方最自信
+- 少于 3 次采样的基准不判定 (verdict 写 `n=N, not judged`), 报告里如实计数, 不假装
+  通过. 这也是 `-count 1/2` 只能当冒烟跑的原因
+- 分配数用**中位数**且不参与统计: 整数不是时长, 0 -> 1 不可能是噪声, 而"每条消息
+  多一次分配"正是本轮工作要消灭的东西. 只有一半迭代多分配也算回归, 时间变快也不能
+  抵掉
+- 不解析 benchstat 的渲染表格 (列会随 `-count` 与可用指标变化). 两轮原始输出都落
+  到 `-out`, 想人工看置信区间时 `benchstat base.txt head.txt` 仍然可用
+- 报告写入 `-out/report.md`: 两侧中位数, delta, 95% 下界, 分配数与 verdict. 下界是
+  否决依据, 所以一行 `+14.3% / -17.5%` 自己就说明了"这台机器判不了它"
+- 解析与判定逻辑拆到 `parse.go` (无构建标签), 因此有单测: 解析 (含多出来的 MB/s 列
+  不能把后面的列挤位), 配对统计, 小样本保护, t 表单调性, 阈值, 分配数回归, 豁免,
+  只在单侧出现的基准, 以及未判定的标注. `go run 单文件` 看不到同包其他文件, 所以
+  整个门禁是一个包目录 `scripts/benchgate/`, 不再是 `//go:build ignore` 的单文件脚本
+
+**验证**: 两个对照实验, 缺一不可 -- 只证明"不误报"的门禁, 可能永远不报.
+
+- 负对照: `-base HEAD`, 工作树相对 HEAD 只多了门禁脚本本身,`-count 6
+  -benchtime 100ms`, 52 项基准 **0 失败**
+- 正对照: 在 `shared.NewPeerKey` 里临时插一行 `addr.String()`, `-count 4
+  -benchtime 50ms`, 门禁报出 `BenchmarkUDPSessionLookup: +210.2% slower, 95%
+  bound +191.5%` 与 `allocs/op 0 -> 3`, 并连带报出复用同一条路径的 4 个 plugin
+  chain 基准的分配数回归. 扰动已回退, `git diff` 干净
+
+**CI**: 新增 `bench-gate` job (`fetch-depth: 0`, 因为要构建 base),
+`-count 6 -threshold 1.20`, 报告作为 artifact 上传.
+
 ### Optional Admin Listener (2026-10-18)
 
 批 3 的 C7: 新增可选的管理/调试监听, 默认关闭. 说明见

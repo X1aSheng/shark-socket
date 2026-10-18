@@ -249,15 +249,31 @@ docker compose -f deploy/docker/docker-compose.yml --profile test run mqtt-test
 | Unit tests (27 suites) | `go test ./...` | [OK] |
 | Race detection | `go test -race ./...` | [OK] |
 | Coverage (70% threshold) | `go run scripts/run_tests.go -mode cover` | [OK] 79.6-79.8% |
+| Lint (golangci-lint) | `golangci-lint run` | [OK] |
+| Security (govulncheck) | `govulncheck ./...` | [OK] |
+| Deploy manifests | `go run scripts/run_tests.go -mode deploy` | [OK] |
+| Stress (6 suites incl. leak detection) | `go test ./tests/stress/ -count=1 -p 1` | [OK] |
+| Benchmark regression | `go run ./scripts/benchgate -base origin/main` | [OK] |
 
 Coverage is reproducible as a range rather than to the digit: the timer-driven
 goroutine loops (`Start`, `readLoop`, `pingLoop`) can exit before or after test
 teardown, so which of them registers as fully covered varies by about 0.1
 percentage point between runs of the same commit.
-| Lint (golangci-lint) | `golangci-lint run` | [OK] |
-| Security (govulncheck) | `govulncheck ./...` | [OK] |
-| Deploy manifests | `go run scripts/run_tests.go -mode deploy` | [OK] |
-| Stress (6 suites incl. leak detection) | `go test ./tests/stress/ -count=1 -p 1` | [OK] |
+
+The benchmark gate compares the merge base against the working tree and fails
+when a benchmark gets slower, or starts allocating more per operation. It
+measures CPU-only microbenchmarks: socket echo benchmarks on a shared CI runner
+move by tens of percent between runs, so gating on them produces noise rather
+than signal.
+
+The slowdown rule is a one-sided confidence bound, not a bare ratio. A
+benchmark fails only when the pessimistic end of its 95% interval is still above
+the 20% limit, which means a benchmark the machine cannot resolve passes and
+shows a wide bound instead of inventing a verdict. The 20% allowance is
+deliberately loose - it catches the step changes (an extra copy, a lost buffer,
+a new lock) that this kind of work actually introduces, and leaves single-digit
+noise alone. Allocation counts need no statistics: they are exact integers, so
+0 -> 1 per op fails on its own.
 
 Fast validation:
 
@@ -305,6 +321,7 @@ go run scripts/run_tests.go -mode unit
 go run scripts/run_tests.go -mode integration
 go run scripts/run_tests.go -mode benchmark
 go run scripts/run_benchmarks.go -profile local -stage light
+go run ./scripts/benchgate -base HEAD~1
 go run scripts/run_tests.go -mode deploy
 ```
 

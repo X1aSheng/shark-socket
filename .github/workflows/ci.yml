@@ -285,3 +285,60 @@ jobs:
           name: coverage-logs-ubuntu-latest
           path: logs/
           if-no-files-found: ignore
+
+  bench-gate:
+    name: Benchmark Gate (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # The gate builds the merge base as well as the head, so the whole
+          # history of the base branch has to be present.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Resolve base ref
+        id: base
+        run: |
+          if [ -n "${{ github.base_ref }}" ]; then
+            echo "ref=origin/${{ github.base_ref }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=HEAD~1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Benchmark gate
+        # CPU-only microbenchmarks. A benchmark fails only when the lower end of
+        # its 95% confidence interval is still above the 20% limit, so a
+        # benchmark the runner cannot resolve passes instead of flaking.
+        # 6 runs, because the interval is built from the spread of 6 paired
+        # samples; below 3 the gate declines to judge ns/op at all. Socket
+        # benchmarks are deliberately excluded: on a shared runner they move by
+        # tens of percent between runs, so gating on them produces either noise
+        # or a threshold nobody looks at again.
+        run: >
+          go run ./scripts/benchgate
+          -base "${{ steps.base.outputs.ref }}"
+          -count 6
+          -threshold 1.20
+          -out logs/bench-gate
+
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: bench-gate-ubuntu-latest
+          path: logs/bench-gate/
+          if-no-files-found: ignore

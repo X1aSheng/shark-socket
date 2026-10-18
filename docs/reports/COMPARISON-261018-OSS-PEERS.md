@@ -426,6 +426,17 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
   (`netpoll-benchmark`) 可直接借鉴: 让对手成为可复现的依赖, 而不是 README 里的引用
 - **E2 无 benchstat 回归门禁.** 基准只在 `scripts/run_benchmarks.go` 手工跑, CI 不跑;
   资源基准只在 `.workbuddy/cloud/` 手工跑. 没有门禁的基准, 半年后就是过期数字
+- **已实施 (2026-10-18)**: 新增 `scripts/benchgate/` 包与 CI job `bench-gate`.
+  base commit 用 `git archive` 导到临时目录 (不用 `git worktree`: 它往 `.git` 写
+  ref 与锁文件, 会被 IDE 抢锁), 两侧**交替采样**并每轮交换先后手, 采样前先 warm
+  build 两侧的测试二进制. 判定用**单侧 95% 置信下界**: 只有下界仍高于 20% 才失败,
+  判不了的基准标 `not judged` 而不是假装通过. 这一点是被对照实验逼出来的 -- 比值
+  比中位数与 best-of-N 两版都在同一 commit 的两个构建之间判出 6 项假回归, 只有带上
+  不确定度的规则把假回归归零, 同时仍能在注入一行 `addr.String()` 后报出 +210% 与
+  `allocs/op 0 -> 3`. 门禁只看 **CPU 型**微基准 -- socket 型基准在共享 runner 上
+  两轮就能差几十个百分点, 用它做门禁得到的是噪声或一个再没人看的阈值. 分配数是
+  中位数且精确比较 (整数, 0 -> 1 不可能是噪声). 不解析 benchstat 的渲染表格, 但
+  两轮原始输出都落盘, 人工仍可 `benchstat base.txt head.txt`
 - **E3 fuzz 覆盖窄.** 5 个 `Fuzz` 目标集中于 TCP framer, CoAP message,
   LwM2M TLV; 缺 gRPC-Web framing, WS 帧, config JSON, QUIC 路径
 - **E4 发布成熟度.** 仅 `v0.1.0` 与 `v0.1.0-rc.1`; v0.x 允许破坏性变更, 但应有一页
@@ -473,8 +484,8 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
 | 批 3 (P2 能力) | C1 C2 C4 C5 C7 E2 | CoAP 状态机, listener, admin, CI | 批 2 有基准数据后 |
 
 进度 (2026-10-18): 批 2 的 B1 B2(部分) B3(a) B4 B5 B6 B7 已完成 (ADR-012 至
-ADR-015), 批 3 的 C1 C2 C4 C5 已完成 (ADR-016). 其余 (A 类 5 项, B2 的端到端
-证明, C3 C6 C7, D1 D2, E2) 未开始, 见各条目下的备注.
+ADR-015), 批 3 的 C1 C2 C4 C5 C7 E2 已完成 (ADR-016). 其余 (A 类 5 项, B2 的
+端到端证明, C3 C6, D1 D2) 未开始, 见各条目下的备注.
 
 不做: B8 (已记录决策), C3 视 LwM2M 业务需求, C6 只做可热更子集.
 
