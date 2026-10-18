@@ -93,17 +93,22 @@ run_arm() {
 
 printf 'arm\tconns\tsize\tpipeline\tmsgs\tsecs\tmsg/s\tMB/s\tp50_round_us\tp99_round_us\n' | tee -a "$OUT"
 
-for arm in shark gnet netpoll; do
+# Four arms, three of them projects. shark-wb is the same shark-socket binary
+# with the ADR-013 write buffer switched on: the gap this benchmark is most
+# likely to expose is per-frame write syscalls, and a configuration arm
+# separates "the design costs this much" from "this knob does not pay off here".
+#
+# A failed arm must not take the others down with it: one unusable arm is a
+# result too, and the remaining rows are still comparable with each other.
+for arm in shark shark-wb gnet netpoll; do
     case $arm in
-        shark) port=19001;;
-        gnet) port=19002;;
-        *) port=19003;;
+        shark)    port=19001; bin=shark;   extra=;;
+        shark-wb) port=19001; bin=shark;   extra="-write-buffer 4096";;
+        gnet)     port=19002; bin=gnet;    extra=;;
+        *)        port=19003; bin=netpoll; extra=;;
     esac
-    # A failed arm must not take the other two down with it: one unusable arm is
-    # a result too (netpoll has no Windows implementation), and the remaining
-    # rows are still comparable with each other.
-    run_arm "$arm" "$arm" "$port" "$CONNS" "$PIPELINE" "$DURATION" || true
-    run_arm "$arm-rtt" "$arm" "$port" "1" "1" "$RTT_DURATION" || true
+    run_arm "$arm" "$bin" "$port" "$CONNS" "$PIPELINE" "$DURATION" $extra || true
+    run_arm "$arm-rtt" "$bin" "$port" "1" "1" "$RTT_DURATION" $extra || true
 done
 
 echo
