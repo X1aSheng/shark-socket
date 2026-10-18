@@ -125,6 +125,25 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
   (`udp_sessions_rejected_total`), 复用 `shared.Acceptor` 的计数思路
 - 验收: 新增压测: 10 万个伪造源地址打 UDP, 断言 RSS 与 `sessions_active` 有上限,
   且正常源地址仍能建会话
+- **已实施 (2026-10-18, ADR-017)**: `udp/options.go` 与 `coap/options.go` 新增
+  `MaxSessions` / `MaxSessionsPerPeer`, 由 `shared.PeerQuota` 执行, 归还绑在
+  `session.Close` 的 `closeOnce.Do` 内. 三条路径各自恰好归还一次: 主动关闭,
+  TTL 淘汰, `LoadOrStore` 竞态丢弃.
+  - 指标名沿用既有惯例 `sessions_rejected_total`, 而不是报告建议的
+    `udp_sessions_rejected_total`: 传输层已经共用 `sessions_*` 前缀, 加协议前缀
+    会让"跨协议汇总拒绝数"变成一次正则匹配.
+  - 验收压测**按比例缩小**: 测试进程无法伪造源地址 (需要 raw socket), 现实做法是
+    从 200 个不同的 `127.1.x.7` 地址发包. 这个替代是有效的, 因为被检验的性质是
+    "表的大小由 `MaxSessions` 决定, 不由来源数量决定", 而每个准入只占一个**有界**
+    的 map 条目, 200 与 10 万走的是同一段代码.
+    `TestUDPMaxSessionsHoldsUnderManySourceAddresses`: 200 个来源, 上限 64,
+    最终 `SessionCount() == 64`, `sessions_rejected_total == 136` (逐源 +1).
+  - "正常源地址仍能建会话"由两个测试覆盖: `TestUDPMaxSessionsPerPeer`
+    (同址第二份被拒, 另一地址仍进) 与 `TestUDPMaxSessionsReleasesOnExpiry`
+    (TTL 淘汰后, 先前被拒的地址重新可用且拒绝计数不增).
+  - 未测的一项: 10 万来源下的 RSS 曲线. 单个条目是 (netip.Addr, int64), 上界由
+    `MaxSessions` 直接决定, 因此 RSS 上界可以算而不必压测; 压测只能验证这条推理,
+    不能改变它.
 
 **A2 握手无独立超时**
 
@@ -139,6 +158,29 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
   WS 侧 `HandshakeTimeout=10s`, 缓冲大小可配
 - 验收: 打开 N 个只发 ClientHello 的连接, 断言在 timeout 内被回收且
   `sessions_reclaimed_total` 增长; 握手失败计入 `tls_handshake_failed_total`
+- **已实施 (2026-10-18, ADR-017)**: 握手从 `tls.NewListener` 的懒式首读前移到
+  `handleConn` 开头的 `handshakeTLS`, 拥有独立预算与失败计数; 成功后
+  `SetDeadline(time.Time{})` 清零, 否则健康连接会被握手预算准时关掉.
+  - 默认语义: `TLSHandshakeTimeout` 为 0 时回落 `ReadTimeout`, 因为旧实现里
+    `ReadTimeout` 本来就是这个上界. 默认成"无上限"会是藏在特性里的回归,
+    `TestTCPTLSHandshakeSucceedsThenServes` 锁住"握手后天数不受限"这一侧.
+  - 验收实测 `TestTCPTLSHandshakeTimeoutIsEnforced`: `ReadTimeout=5m` 不变,
+    `TLSHandshakeTimeout=150ms`, 静默对端在 **150.6ms** 被断开 (原实现要等 5 分钟),
+    `tls_handshake_failed_total == 1`.
+  - **与报告的验收口径有偏差**: 报告期望 `sessions_reclaimed_total` 增长.
+    握手前移后失败发生在会话存在之前, 因此那个计数器不会动, 计数在
+    `tls_handshake_failed_total` 上. 这是有意的: 一个从未完成握手的连接不该被
+    记成"被回收的会话".
+  - 实现期发现的一个坑: 用带超时的 `context` 限制 `HandshakeContext` 时,
+    crypto/tls 会在 `context.AfterFunc` 里从**另一个 goroutine** 关闭连接,
+    对端可以早于计数与日志看到断开. 20 次重复里 6 次 `tls_handshake_failed_total`
+    停在 0. 改为只用 `SetDeadline` 后稳定.
+  - WS 侧: 新增 `HandshakeTimeout` / `ReadTimeout` / `ReadBufferSize` /
+    `WriteBufferSize` 四个可配项 (`WithHandshakeTimeout` / `WithReadTimeout` /
+    `WithUpgradeBuffers`). **gorilla 的 `HandshakeTimeout` 只给 101 响应写设截止
+    时间**, 升级请求头由 `http.Server.ReadTimeout` 约束; 一个只发半个请求头的
+    对端由后者回收 (`TestWebSocketHeaderReadBoundedByReadTimeout`, 150ms 内关闭).
+    把两者混为一谈会让人以为设了握手超时就安全了, 因此这条边界写进了字段注释.
 
 **A3 HTTP 传输缺连接上限与接收速率**
 
@@ -147,6 +189,21 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
 - 影响: 同一个网关里, WS 与 gRPC-Web 有闸门, 纯 HTTP (Mode A/B) 没有; 攻击者选最软的一扇门
 - 改法: 复用 `shared.Acceptor`, 用 `http.Server.ConnState` 维护在连数
 - 验收: 与 TCP 同构的连接上限测试 (并发超限时返回 503 而非接受后丢弃)
+- **已实施 (2026-10-18, ADR-017)**: HTTP 传输新增 `MaxConnections`,
+  `MaxConnectionsPerIP`, `AcceptRate`. 落地方式**偏离报告建议**:
+  没有用 `http.Server.ConnState`, 而是 `shared.NewGateListener` 包装 listener.
+  理由是 `ConnState` 是事后通知 -- 回调触发时会话已被接受, 只能立刻关掉, 客户端
+  看到的是连接重置而不是状态码; 在 listener 层判定才能写出真的 503.
+  - 包装顺序 PROXY -> gate -> TLS(ADR-016): gate 在 TLS 之下因为 `net/http` 对
+    `*tls.Conn` 做类型断言, 在 PROXY 之上因为配额要按真实客户端算.
+  - 拒绝实现 `rejectWithServiceUnavailable` 先在 5ms 内排空最多 8x512 字节,
+    再写 `HTTP/1.1 503`, 最后 `CloseWrite()`. 不排空的话, 带未读数据关闭 socket
+    会换来 RST (RFC 1122), 把刚写出的 503 一起丢掉 -- 测试里第一次就是拿到
+    `ECONNRESET` 而不是 503.
+  - 验收实测: `TestHTTPMaxConnectionsAnswers503`, `TestHTTPMaxConnectionsPerIPAnswers503`,
+    `TestHTTPUnlimitedKeepsServing` 全部拿到真 503 (`-count=5` 稳定).
+  - 实现期修掉的一个竞态: 指标自增原本写在 `Reject` 之后, 客户端可能在计数落地
+    之前就观测到拒绝. `gateListener.Accept` 改为先 `OnReject` 后 `Reject`.
 
 **A4 accept 错误处理无分类, 无退避, 无指标**
 
@@ -157,6 +214,18 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
 - 改法: 复用 `shared.NewBackoff`, 区分 `net.ErrClosed` (终止) 与临时错误 (退避);
   对 EMFILE 单独计数
 - 验收: 用 `ulimit -n` 压到极小复现 EMFILE, 断言进程不刷日志风暴, 恢复后自动继续
+- **已实施 (2026-10-18, ADR-017)**: `shared.ClassifyAcceptError` 分三类
+  (`closed` / `resource` / `temporary`), `shared.NewBackoff` 取代固定 100ms,
+  日志按连续失败段折叠成一行, 新增 `accept_errors_total` 与
+  `accept_resource_errors_total`. 只有资源类额外计数: 混在一个计数器里会让
+  "fd 用尽"这个信号被瞬时抖动淹没.
+  - 验收实测用**注入式 listener** 而不是 `ulimit -n`: `TestTCPAcceptLoopSurvivesResourceErrors`
+    用一个先返回两次 `EMFILE`、之后正常的 listener, 断言循环退避后自动恢复
+    (耗时 >= 2 次退避), 两个计数器各为 2; `TestTCPAcceptLoopStopsOnClosedListener`
+    断言 `net.ErrClosed` 直接终止而不重试.
+  - 未按报告用 `ulimit -n` 压到极小: 本机是 Windows, 压 fd 会连带影响测试进程
+    自身的日志与临时文件写入, 复现出来的是"整个进程失败"而不是"accept 失败".
+    注入式 listener 精确复现了同一段分支, 且不依赖平台.
 
 **A5 无单 IP 连接配额**
 
@@ -166,6 +235,22 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
 - 影响: 单个 IP 可以合法地占满全部连接名额; AutoBan 的阈值是消息维度, 建连阶段不触发
 - 改法: `shared.Acceptor` 增加 per-IP 计数 (带 TTL 清理), 超限直接关闭
 - 验收: 单 IP 建连打到上限, 断言其他 IP 仍可接入
+- **已实施 (2026-10-18, ADR-017)**: `shared.PeerQuota` 同时持有总量与单来源两个
+  维度, 全局名额用 CAS 在分片锁内领取, 因此两个数是同一份计数的两种读法, 不可能
+  漂移. **没有做 TTL 清理**: 条目在计数归零时立即删除, 表里只留下真正持有连接的
+  来源, TTL 清理器会引入第二个时间源且在"刚删完又建连"时低估用量.
+  - 单来源的键是 IP 而不是 `IP:port`, 否则换源端口就换一份配额; `PeerIP` 用
+    `Unmap` 把 IPv4-mapped IPv6 折叠成 IPv4, 否则 `::ffff:1.2.3.4` 与 `1.2.3.4`
+    会是两个来源.
+  - 五路同构: `TestTCPPerPeerConnectionLimit`, `TestWebSocketPerPeerConnectionLimit`,
+    `TestGRPCWebPerPeerConnectionLimit`, `TestQUICPerPeerConnectionLimit`,
+    `TestHTTPMaxConnectionsPerIPAnswers503`. 全部用 `127.0.0.2` / `127.0.0.3`
+    作为两个真实对端 (本机可绑定), 不伪造源地址.
+  - 每个测试都断言三件事, 缺一就可能"为错误的理由通过": 同址第二份被拒;
+    **另一地址仍被服务**; 释放名额后同一地址重新可用 (否则每次拒绝都泄漏一个名额).
+  - 一个与报告不同的取舍: 报告建议"超限直接关闭", TCP/WS/QUIC 确实是关闭,
+    但 HTTP 与 gRPC-Web 回 503 -- 它们已经有一个状态码通道, 用它比直接断连
+    对客户端更友好, 也不会让客户端误判成网络故障.
 
 ### 4.2 B 类: 数据面性能与资源 (P1)
 

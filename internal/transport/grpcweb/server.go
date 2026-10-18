@@ -52,7 +52,7 @@ func (s *Server) Start(context.Context) error {
 	if s.rt == nil {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
-	s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate)
+	s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate, s.opts.MaxConnectionsPerIP)
 	mux := http.NewServeMux()
 	mux.HandleFunc(s.opts.Path, s.handle)
 	if s.opts.WebSocket {
@@ -151,11 +151,12 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
 	}
-	if s.acceptor != nil && !s.acceptor.TryAccept() {
+	peer := shared.PeerIPString(r.RemoteAddr)
+	if s.acceptor != nil && s.acceptor.TryAccept(peer) != shared.AcceptOK {
 		http.Error(w, "server busy", http.StatusServiceUnavailable)
 		return
 	}
-	defer s.acceptor.Done()
+	defer s.acceptor.Done(peer)
 	if s.opts.MaxMessageBytes > 0 {
 		r.Body = http.MaxBytesReader(w, r.Body, s.opts.MaxMessageBytes)
 	}
@@ -238,14 +239,18 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	if s.acceptor != nil && !s.acceptor.TryAccept() {
+	peer := shared.PeerIPString(r.RemoteAddr)
+	if s.acceptor != nil && s.acceptor.TryAccept(peer) != shared.AcceptOK {
 		http.Error(w, "server busy", http.StatusServiceUnavailable)
 		return
 	}
-	upgrader := websocket.Upgrader{CheckOrigin: s.opts.CheckOrigin}
+	upgrader := websocket.Upgrader{
+		CheckOrigin:      s.opts.CheckOrigin,
+		HandshakeTimeout: s.opts.HandshakeTimeout,
+	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		s.acceptor.Done()
+		s.acceptor.Done(peer)
 		return
 	}
 	if s.opts.MaxMessageBytes > 0 {
@@ -260,6 +265,9 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	id := s.rt.Sessions().NextID()
 	sess := newWebSocketSession(id, conn, s.opts.WriteTimeout)
+	// The release happens in closeWebSocketSession, which does not see the
+	// request, so the peer travels on the session.
+	sess.quotaPeer = peer
 	s.sessions.Store(id, sess)
 	if err := s.rt.Sessions().Register(sess); err != nil {
 		// Never accepted: discard without OnClose.
@@ -267,7 +275,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			s.rt.Sessions().Unregister(id)
 			_ = sess.Close(context.Background())
 		}
-		s.acceptor.Done()
+		s.acceptor.Done(peer)
 		return
 	}
 	if err := s.rt.Plugins().OnAccept(sess); err != nil {
@@ -277,7 +285,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			s.rt.Sessions().Unregister(id)
 			_ = sess.Close(context.Background())
 		}
-		s.acceptor.Done()
+		s.acceptor.Done(peer)
 		return
 	}
 	s.wg.Add(1)
@@ -352,7 +360,7 @@ func (s *Server) closeWebSocketSession(ctx context.Context, id uint64, sess *web
 	_ = sess.Close(ctx)
 	s.rt.Plugins().OnClose(sess)
 	if s.acceptor != nil {
-		s.acceptor.Done()
+		s.acceptor.Done(sess.quotaPeer)
 	}
 }
 

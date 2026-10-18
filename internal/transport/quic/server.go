@@ -55,7 +55,7 @@ func (s *Server) Start(ctx context.Context) error {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
 	s.closed.Store(false)
-	s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate)
+	s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate, s.opts.MaxConnectionsPerIP)
 	// stopCtx is the server's shared cancellation signal. StopAccept cancels
 	// it so every per-connection goroutine blocked in AcceptStream returns.
 	// Without it, handleConn would only exit once CloseSessions closed the
@@ -140,14 +140,15 @@ func (s *Server) acceptLoop(ctx context.Context) {
 			}
 			continue
 		}
-		if s.acceptor != nil && !s.acceptor.TryAccept() {
+		peer := shared.PeerIP(conn.RemoteAddr())
+		if s.acceptor != nil && s.acceptor.TryAccept(peer) != shared.AcceptOK {
 			conn.CloseWithError(0, "server busy")
 			continue
 		}
 		s.wg.Add(1)
 		go func(conn *quicgo.Conn) {
 			defer s.wg.Done()
-			defer s.acceptor.Done()
+			defer s.acceptor.Done(peer)
 			s.handleConn(s.stopCtx, conn)
 		}(conn)
 	}

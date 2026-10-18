@@ -22,7 +22,18 @@ type Options struct {
 	ReadTimeout    time.Duration
 	IdleTimeout    time.Duration
 	MaxConnections int64
-	AcceptRate     float64
+	// MaxConnectionsPerIP caps how many concurrent connections one peer address
+	// may hold, so a global ceiling cannot be filled by a single host.
+	MaxConnectionsPerIP int64
+	AcceptRate          float64
+	// HandshakeTimeout bounds the HTTP upgrade. The gorilla default is zero,
+	// which means no timeout at all: a client that sends half an upgrade header
+	// holds the connection until the server's ReadTimeout expires.
+	HandshakeTimeout time.Duration
+	// ReadBufferSize and WriteBufferSize set the per-connection gorilla
+	// buffers. Zero keeps gorilla's 4 KiB default.
+	ReadBufferSize  int
+	WriteBufferSize int
 	// Listen configures socket-level listener behaviour (SO_REUSEPORT, TCP
 	// keepalive). The zero value produces exactly what net.Listen does.
 	Listen shared.ListenOptions
@@ -105,6 +116,52 @@ func WithMaxConnections(max int64) Option {
 // excess upgrade attempts are rejected with 503.
 func WithAcceptRate(rate float64) Option {
 	return func(o *Options) { o.AcceptRate = rate }
+}
+
+// WithMaxConnectionsPerIP caps how many concurrent connections one peer address
+// may hold. Values <= 0 mean unlimited. See tcp.WithMaxConnectionsPerIP for the
+// trade-off: a peer behind CGNAT shares one quota.
+func WithMaxConnectionsPerIP(max int64) Option {
+	return func(o *Options) { o.MaxConnectionsPerIP = max }
+}
+
+// WithHandshakeTimeout bounds how long the upgrade response write may take.
+// Zero keeps gorilla's default, which is no timeout at all.
+//
+// This is not a slowloris defence: gorilla sets a *write* deadline, so the
+// request header is bounded by ReadTimeout instead. Set both.
+func WithHandshakeTimeout(timeout time.Duration) Option {
+	return func(o *Options) {
+		if timeout > 0 {
+			o.HandshakeTimeout = timeout
+		}
+	}
+}
+
+// WithReadTimeout bounds how long a peer may take to send a complete upgrade
+// request, and how long an idle frame read may block. Values <= 0 keep the
+// default (10s); it cannot be disabled, because an unbounded header read lets
+// one client hold a connection slot for free.
+func WithReadTimeout(timeout time.Duration) Option {
+	return func(o *Options) {
+		if timeout > 0 {
+			o.ReadTimeout = timeout
+		}
+	}
+}
+
+// WithUpgradeBuffers sets gorilla's per-connection read and write buffers.
+// Zero values keep gorilla's 4 KiB default. Larger buffers reduce syscalls for
+// big frames; the cost is per connection, so it multiplies by MaxConnections.
+func WithUpgradeBuffers(read, write int) Option {
+	return func(o *Options) {
+		if read > 0 {
+			o.ReadBufferSize = read
+		}
+		if write > 0 {
+			o.WriteBufferSize = write
+		}
+	}
 }
 
 // WithReusePort lets several processes bind the same address, with the kernel

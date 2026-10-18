@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/X1aSheng/shark-socket/internal/core"
 	"github.com/X1aSheng/shark-socket/internal/runtime"
@@ -21,6 +22,7 @@ type Server struct {
 	rt       core.Runtime
 	listener net.Listener
 	server   *stdhttp.Server
+	acceptor *shared.Acceptor
 	closed   atomic.Bool
 	started  atomic.Bool
 	wg       sync.WaitGroup
@@ -77,6 +79,21 @@ func (s *Server) Start(context.Context) error {
 	}
 	if s.opts.Proxy.Mode != shared.ProxyProtocolOff {
 		ln = shared.NewProxyListener(ln, s.opts.Proxy.WithRejectHook(s.rt.Logger(), s.rt.Metrics()))
+	}
+	// The gate goes above the PROXY listener, so the peer it counts is the
+	// client behind the balancer rather than the balancer: the header has
+	// already been read by the time Accept returns.
+	//
+	// This transport is plaintext-only, which is what lets a refusal be a real
+	// HTTP 503 rather than a closed socket.
+	if s.opts.MaxConnections > 0 || s.opts.MaxConnectionsPerIP > 0 || s.opts.AcceptRate > 0 {
+		s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate, s.opts.MaxConnectionsPerIP)
+		ln = shared.NewGateListener(ln, s.acceptor, shared.GateOptions{
+			Reject: rejectWithServiceUnavailable,
+			OnReject: func(shared.RejectReason) {
+				s.rt.Metrics().IncCounter("sessions_rejected_total")
+			},
+		})
 	}
 	s.listener = ln
 	s.wg.Add(1)
@@ -226,3 +243,30 @@ var (
 	_ core.RuntimeConfigurable = (*Server)(nil)
 	_ core.StagedServer        = (*Server)(nil)
 )
+
+// rejectWithServiceUnavailable answers a refused connection before closing it.
+//
+// A gate listener sits below the HTTP layer, so this writes the status line by
+// hand; there is no ResponseWriter in sight.
+//
+// The request the peer already sent is drained first, briefly. Closing a socket
+// that still has unread data earns an RST (RFC 1122), and an RST makes the
+// client discard the response it just received - it then reports a connection
+// reset instead of "service unavailable", which is strictly less useful. The
+// drain is bounded by both a 5ms deadline and eight reads: a peer that sends
+// nothing must not turn the accept path into the bottleneck.
+func rejectWithServiceUnavailable(conn net.Conn, _ shared.RejectReason) {
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Millisecond))
+	var scratch [512]byte
+	for i := 0; i < 8; i++ {
+		if _, err := conn.Read(scratch[:]); err != nil {
+			break
+		}
+	}
+	_ = conn.SetWriteDeadline(time.Now().Add(200 * time.Millisecond))
+	_, _ = io.WriteString(conn, "HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n")
+	// Half-close so the response is flushed before the socket is torn down.
+	if cw, ok := conn.(interface{ CloseWrite() error }); ok {
+		_ = cw.CloseWrite()
+	}
+}

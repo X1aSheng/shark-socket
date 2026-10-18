@@ -25,7 +25,14 @@ type Options struct {
 	DrainTimeout        time.Duration
 	MaxFrameBytes       int
 	TLSConfig           *tls.Config
+	// TLSHandshakeTimeout bounds the handshake on a TLS listener. The handshake
+	// happens on the first Read, so without it a client that sends only a
+	// ClientHello holds a connection slot for the whole ReadTimeout.
+	TLSHandshakeTimeout time.Duration
 	MaxConnections      int64
+	// MaxConnectionsPerIP caps how many concurrent connections one peer address
+	// may hold, so a global ceiling cannot be filled by a single host.
+	MaxConnectionsPerIP int64
 	AcceptRate          float64
 	// Listen configures socket-level listener behaviour (SO_REUSEPORT, TCP
 	// keepalive). The zero value produces exactly what net.Listen does.
@@ -247,6 +254,29 @@ func WithMaxConnections(max int64) Option {
 // excess connection attempts are closed immediately.
 func WithAcceptRate(rate float64) Option {
 	return func(o *Options) { o.AcceptRate = rate }
+}
+
+// WithMaxConnectionsPerIP caps concurrent connections from one peer address.
+// Values <= 0 mean unlimited. It is a separate dimension from
+// WithMaxConnections: the global cap says how full the server may get, this one
+// says how much of it one peer may take.
+//
+// The peer is the address RemoteAddr reports, so with PROXY protocol enabled it
+// is the client behind the balancer rather than the balancer itself.
+func WithMaxConnectionsPerIP(max int64) Option {
+	return func(o *Options) { o.MaxConnectionsPerIP = max }
+}
+
+// WithTLSHandshakeTimeout bounds the TLS handshake. Values <= 0 keep the
+// previous behaviour, where the handshake is bounded only by ReadTimeout.
+//
+// The handshake is CPU-expensive and happens before any application data, so it
+// needs its own bound: ReadTimeout exists to reclaim idle sessions and is
+// measured in minutes, which is far too long to let an unauthenticated peer
+// hold a connection slot. A handshake that exceeds the timeout is closed and
+// counted in tls_handshake_failed_total.
+func WithTLSHandshakeTimeout(timeout time.Duration) Option {
+	return func(o *Options) { o.TLSHandshakeTimeout = timeout }
 }
 
 // WithReusePort lets several processes (or several listeners in one process)

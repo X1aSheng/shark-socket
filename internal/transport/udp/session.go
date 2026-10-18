@@ -29,6 +29,11 @@ type session struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	closeOnce sync.Once
+	// release returns this session's admission slot to the quota. It is nil for
+	// DTLS sessions, which are bounded by their own accept path, and it runs
+	// inside closeOnce so the slot is returned exactly once no matter which
+	// path closes the session.
+	release func()
 }
 
 func newSession(id uint64, conn *net.UDPConn, remote *net.UDPAddr) *session {
@@ -103,6 +108,9 @@ func (s *session) Close(context.Context) error {
 			err = s.dtlsConn.Close()
 		}
 		s.cancel()
+		if s.release != nil {
+			s.release()
+		}
 	})
 	return err
 }

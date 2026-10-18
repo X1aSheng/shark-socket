@@ -66,6 +66,19 @@ chain, and one observability plane.
   deadline, WebSocket/gRPC-Web PongTimeout, configurable QUIC idle timeout) and
   counted in `sessions_reclaimed_total`, so ghost connections can never live
   forever and their reclamation is monitorable.
+- **One admission path, three dimensions**: every transport refuses excess
+  connections (or pseudo-sessions) through the same `shared.PeerQuota` /
+  `shared.Acceptor` - a server-wide ceiling, a per-source-IP ceiling and an
+  accept rate. Capacity and per-peer counts are two reads of one counter, so
+  they cannot drift apart (ADR-017).
+- **Bounded handshakes**: the TLS handshake runs under its own budget
+  (`TLSHandshakeTimeout`, falling back to `ReadTimeout`) with failure counted in
+  `tls_handshake_failed_total`, instead of riding the 5-minute session read
+  timeout; WebSocket upgrades carry an explicit `HandshakeTimeout` and buffer
+  sizes. A peer that sends half a ClientHello cannot hold a connection slot.
+- **Classified accept errors**: `net.ErrClosed` stops the loop, resource
+  exhaustion (`EMFILE`/`ENFILE`/`ENOMEM`) is counted separately and backed off,
+  and a failure streak collapses into one log line instead of a flood.
 - **Observability first**: metrics, traces, and logs on critical paths;
   Prometheus metrics use a fixed key set (no cardinality explosion);
   `/healthz` and `/readyz` endpoints plus `sessions_active` /
@@ -82,16 +95,16 @@ chain, and one observability plane.
 | Area | Status | Notes |
 | --- | --- | --- |
 | Runtime/Gateway | Implemented | Runtime injection, shared SessionManager, plugin chain, staged stop |
-| TCP | Implemented | Length-prefix, line, fixed-size, raw framers, TLS server/client, worker pool, per-connection read buffer (1 KiB default), optional write batching, accept rate limiting, connection caps, write deadlines, idle read timeout |
-| UDP | Implemented | Pseudo-sessions, TTL sweep, DTLS support (configurable read buffer), plugin path |
-| HTTP | Implemented | Mode A router and Mode B session/plugin/handler flow |
-| WebSocket | Implemented | Binary message path, origin check, ping loop, write deadlines, accept rate limiting, connection caps |
-| CoAP | Implemented | Message parse/marshal, CON ACK, pseudo-sessions, DTLS (configurable read buffer), option encoding (RFC 7252), Observe (RFC 7641) |
+| TCP | Implemented | Length-prefix, line, fixed-size, raw framers, TLS server/client, worker pool, per-connection read buffer (1 KiB default), optional write batching, accept rate limiting, connection caps (global + per-IP), TLS handshake timeout, write deadlines, idle read timeout |
+| UDP | Implemented | Pseudo-sessions with session caps (global + per-peer), TTL sweep, DTLS support (configurable read buffer), plugin path |
+| HTTP | Implemented | Mode A router and Mode B session/plugin/handler flow, accept rate limiting, connection caps (global + per-IP) answered with a real 503 |
+| WebSocket | Implemented | Binary message path, origin check, ping loop, write deadlines, accept rate limiting, connection caps (global + per-IP), upgrade handshake timeout and buffer sizes |
+| CoAP | Implemented | Message parse/marshal, CON ACK, pseudo-sessions with session caps, DTLS (configurable read buffer), option encoding (RFC 7252), Observe (RFC 7641) |
 | LwM2M | Implemented | Object/resource model with operation masks, TLV binary codec, discover/register/update/deregister/write/read, Observer notifications |
-| QUIC | Implemented | TLS-required stream transport using quic-go, write deadlines, accept rate limiting, connection caps, configurable idle timeout |
-| gRPC-Web | Implemented | Direct HTTP mode, binary framing/trailers, WebSocket mode, connection caps |
+| QUIC | Implemented | TLS-required stream transport using quic-go, write deadlines, accept rate limiting, connection caps (global + per-IP), configurable idle timeout |
+| gRPC-Web | Implemented | Direct HTTP mode, binary framing/trailers, WebSocket mode, connection caps (global + per-IP) |
 | Plugins | Implemented | Blacklist (exact + CIDR), RateLimit (32-shard sliding window), Heartbeat, Persistence (Store+MessageLog), AutoBan, SlowHandler, Cluster |
-| Security | Implemented | TLS cert hot-reload via file watcher, mTLS client auth, DTLS for UDP/CoAP |
+| Security | Implemented | TLS cert hot-reload via file watcher, mTLS client auth, DTLS for UDP/CoAP, per-source-IP quotas on every transport |
 | Persistence | Implemented | Store interface (error-returning), BoltDB backend, durable message log with sequence numbers, session snapshots |
 | Infra | Implemented | In-memory cache/store/pubsub/circuitbreaker/observability, Prometheus metrics exporter, OpenTelemetry tracer adapter, TLS cert cache |
 | MQTT | Integrated | External broker adapter (paho client), docker-compose mosquitto for E2E tests |

@@ -51,7 +51,7 @@ func (s *Server) Start(context.Context) error {
 	if s.rt == nil {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
-	s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate)
+	s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate, s.opts.MaxConnectionsPerIP)
 	mux := http.NewServeMux()
 	mux.HandleFunc(s.opts.Path, s.handleUpgrade)
 	var ln net.Listener
@@ -140,14 +140,20 @@ func (s *Server) Addr() net.Addr {
 }
 
 func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
-	if s.acceptor != nil && !s.acceptor.TryAccept() {
+	peer := shared.PeerIPString(r.RemoteAddr)
+	if s.acceptor != nil && s.acceptor.TryAccept(peer) != shared.AcceptOK {
 		http.Error(w, "server busy", http.StatusServiceUnavailable)
 		return
 	}
-	upgrader := websocket.Upgrader{CheckOrigin: s.opts.CheckOrigin}
+	upgrader := websocket.Upgrader{
+		CheckOrigin:      s.opts.CheckOrigin,
+		HandshakeTimeout: s.opts.HandshakeTimeout,
+		ReadBufferSize:   s.opts.ReadBufferSize,
+		WriteBufferSize:  s.opts.WriteBufferSize,
+	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		s.acceptor.Done()
+		s.acceptor.Done(peer)
 		return
 	}
 	if s.opts.MaxMessageSize > 0 {
@@ -165,7 +171,7 @@ func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 	sess := newSession(id, conn, s.opts.WriteTimeout)
 	s.sessions.Store(id, sess)
 	if err := s.rt.Sessions().Register(sess); err != nil {
-		s.acceptor.Done()
+		s.acceptor.Done(peer)
 		// Never accepted: drop without OnClose (the plugin chain never ran).
 		if _, loaded := s.sessions.LoadAndDelete(id); loaded {
 			s.rt.Sessions().Unregister(id)
@@ -174,7 +180,7 @@ func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.rt.Plugins().OnAccept(sess); err != nil {
-		s.acceptor.Done()
+		s.acceptor.Done(peer)
 		// OnAccept failed: the plugin chain rolled back partial accepts; do not
 		// call OnClose again here.
 		if _, loaded := s.sessions.LoadAndDelete(id); loaded {
@@ -186,7 +192,7 @@ func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		defer s.acceptor.Done()
+		defer s.acceptor.Done(peer)
 		s.readLoop(sess)
 	}()
 	if s.opts.PingInterval > 0 {

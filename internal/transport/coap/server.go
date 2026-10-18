@@ -71,17 +71,19 @@ func (e *seenEntry) setResponse(data []byte) {
 }
 
 type Server struct {
-	opts            Options
-	rt              core.Runtime
-	udpConn         *net.UDPConn
-	dtlsLn          net.Listener
-	dtlsConns       sync.Map // active DTLS connections, closed on shutdown
-	lastMsgID       atomic.Uint32
-	closed          atomic.Bool
-	started         atomic.Bool
-	cancel          context.CancelFunc
-	wg              sync.WaitGroup
-	sessions        sync.Map
+	opts      Options
+	rt        core.Runtime
+	udpConn   *net.UDPConn
+	dtlsLn    net.Listener
+	dtlsConns sync.Map // active DTLS connections, closed on shutdown
+	lastMsgID atomic.Uint32
+	closed    atomic.Bool
+	started   atomic.Bool
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+	sessions  sync.Map
+	// quota bounds the session table. Nil when both limits are unlimited.
+	quota           *shared.PeerQuota
 	seen            sync.Map
 	observers       *ObserverRegistry
 	retransmitMu    sync.Mutex
@@ -113,6 +115,9 @@ func (s *Server) Start(ctx context.Context) error {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
 	s.closed.Store(false)
+	if s.opts.MaxSessions > 0 || s.opts.MaxSessionsPerPeer > 0 {
+		s.quota = shared.NewPeerQuota(s.opts.MaxSessions, s.opts.MaxSessionsPerPeer)
+	}
 	addr, err := net.ResolveUDPAddr("udp", s.opts.Addr)
 	if err != nil {
 		s.started.Store(false)
@@ -822,10 +827,23 @@ func (s *Server) getOrCreateUDPSession(addr *net.UDPAddr) *session {
 			return sess
 		}
 	}
+	// Admission control before anything is allocated. See the UDP transport for
+	// why the ceiling has to sit here rather than on the SessionManager: by the
+	// time the manager refuses, every legitimate peer is refused too.
+	ip := shared.PeerIP(addr)
+	if s.quota != nil && !s.quota.TryAcquire(ip) {
+		s.rt.Metrics().IncCounter("sessions_rejected_total")
+		return nil
+	}
 	// Allocate the ID up front so the published session never carries a
 	// provisional id=0 that a concurrent sweep/close could observe (a data
 	// race on sess.id). Wasting an ID on a duplicate race is harmless.
 	sess := newUDPSession(s.rt.Sessions().NextID(), s.udpConn, addr)
+	if s.quota != nil {
+		// The slot is returned by session.Close, which every exit path below
+		// already calls exactly once.
+		sess.release = func() { s.quota.Release(ip) }
+	}
 	actual, loaded := s.sessions.LoadOrStore(key, sess)
 	if loaded {
 		_ = sess.Close(context.Background())

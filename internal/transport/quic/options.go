@@ -16,7 +16,10 @@ type Options struct {
 	ReadTimeout    time.Duration // stream read deadline; 0 disables
 	MaxMessageSize int
 	MaxConnections int64
-	AcceptRate     float64
+	// MaxConnectionsPerIP caps how many concurrent connections one peer address
+	// may hold, so a global ceiling cannot be filled by a single host.
+	MaxConnectionsPerIP int64
+	AcceptRate          float64
 	// MaxIdleTimeout is the quic-go connection idle timeout: a peer that
 	// stops sending any packet for this long is closed by quic-go itself
 	// (the last line of defense against half-open QUIC connections). 0 uses
@@ -52,6 +55,12 @@ func WithHandler(handler core.Handler) Option {
 // unlimited; excess connections are closed with an application error.
 func WithMaxConnections(max int64) Option {
 	return func(o *Options) { o.MaxConnections = max }
+}
+
+// WithMaxConnectionsPerIP caps concurrent connections from one peer address.
+// Values <= 0 mean unlimited; excess requests or upgrades are rejected with 503.
+func WithMaxConnectionsPerIP(max int64) Option {
+	return func(o *Options) { o.MaxConnectionsPerIP = max }
 }
 
 // WithAcceptRate limits the connection acceptance rate in connections per

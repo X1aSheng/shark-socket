@@ -17,6 +17,16 @@ type Options struct {
 	WriteTimeout time.Duration
 	IdleTimeout  time.Duration
 	CORSOrigins  []string
+	// MaxConnections caps concurrent connections. Values <= 0 mean unlimited;
+	// excess connections are refused at the listener, before a descriptor or a
+	// goroutine is spent on them. See shared.NewGateListener.
+	MaxConnections int64
+	// MaxConnectionsPerIP caps concurrent connections from one peer address, so
+	// one host cannot fill MaxConnections on its own.
+	MaxConnectionsPerIP int64
+	// AcceptRate limits how many connections per second are admitted (token
+	// bucket with a burst of one). Values <= 0 mean unlimited.
+	AcceptRate float64
 	// Listen configures socket-level listener behaviour (SO_REUSEPORT, TCP
 	// keepalive). The zero value produces exactly what net.Listen does.
 	Listen shared.ListenOptions
@@ -61,6 +71,25 @@ func WithCORSAllowedOrigins(origins []string) Option {
 	return func(o *Options) {
 		o.CORSOrigins = append([]string(nil), origins...)
 	}
+}
+
+// WithMaxConnections caps concurrent connections. Values <= 0 mean unlimited;
+// excess connections are answered with 503 (or closed, when the listener is
+// wrapped in TLS and an HTTP reply cannot be produced before the handshake).
+func WithMaxConnections(max int64) Option {
+	return func(o *Options) { o.MaxConnections = max }
+}
+
+// WithMaxConnectionsPerIP caps concurrent connections from one peer address.
+// Values <= 0 mean unlimited.
+func WithMaxConnectionsPerIP(max int64) Option {
+	return func(o *Options) { o.MaxConnectionsPerIP = max }
+}
+
+// WithAcceptRate limits the connection acceptance rate in connections per
+// second (token bucket with a burst of one). Values <= 0 mean unlimited.
+func WithAcceptRate(rate float64) Option {
+	return func(o *Options) { o.AcceptRate = rate }
 }
 
 // WithReusePort lets several processes bind the same address, with the kernel

@@ -16,14 +16,18 @@ type Options struct {
 	TLSConfig       *tls.Config
 	MaxMessageBytes int64
 	MaxConnections  int64
-	AcceptRate      float64
-	ReadTimeout     time.Duration
-	WriteTimeout    time.Duration
-	IdleTimeout     time.Duration
-	WebSocket       bool
-	WebSocketPath   string
-	PingInterval    time.Duration
-	PongTimeout     time.Duration
+	// MaxConnectionsPerIP caps how many concurrent connections one peer address
+	// may hold, so a global ceiling cannot be filled by a single host.
+	MaxConnectionsPerIP int64
+	AcceptRate          float64
+	HandshakeTimeout    time.Duration
+	ReadTimeout         time.Duration
+	WriteTimeout        time.Duration
+	IdleTimeout         time.Duration
+	WebSocket           bool
+	WebSocketPath       string
+	PingInterval        time.Duration
+	PongTimeout         time.Duration
 	// Listen configures socket-level listener behaviour (SO_REUSEPORT, TCP
 	// keepalive). The zero value produces exactly what net.Listen does.
 	Listen      shared.ListenOptions
@@ -125,6 +129,19 @@ func WithCheckOrigin(fn func(*http.Request) bool) Option {
 // unlimited; excess requests/upgrades are rejected with 503.
 func WithMaxConnections(max int64) Option {
 	return func(o *Options) { o.MaxConnections = max }
+}
+
+// WithMaxConnectionsPerIP caps concurrent connections from one peer address.
+// Values <= 0 mean unlimited; excess requests or upgrades are rejected with 503.
+func WithMaxConnectionsPerIP(max int64) Option {
+	return func(o *Options) { o.MaxConnectionsPerIP = max }
+}
+
+// WithHandshakeTimeout bounds the WebSocket upgrade in WebSocket mode. Values
+// <= 0 mean no timeout, which is what previous versions did; the unary POST path
+// is bounded by ReadTimeout instead.
+func WithHandshakeTimeout(timeout time.Duration) Option {
+	return func(o *Options) { o.HandshakeTimeout = timeout }
 }
 
 // WithAcceptRate limits the connection acceptance rate in connections per

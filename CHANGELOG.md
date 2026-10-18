@@ -7,6 +7,98 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### 连接准入与握手预算 (2026-10-18)
+
+对比报告 A 类 (P0 安全与稳定性) 五项一次落地, 见 ADR-017. 五项的共同根因不是
+"某个传输有洞", 而是**准入没有单一实现点**: TCP 有 `MaxConnections`, HTTP 一个都没有;
+WS/QUIC/gRPC-Web 有闸门, UDP/CoAP 没有; 有总量上限的地方都能被一个 IP 合法占满.
+
+**新增共享原语 `internal/transport/shared/quota.go`**:
+
+- `PeerQuota` 同时持有"总量"与"单来源"两个维度. 全局名额在**分片锁内 CAS 领取**,
+  单来源计数在同一把锁下增减, 于是"打开了多少"与"这个来源占了多少"是同一份计数的
+  两种读法, 不存在"归还了总量却漏了单来源"的路径
+- 单来源的键是 **IP 而不是 `IP:port`**: 换源端口就换一份配额, 限制等于没有.
+  `PeerIP` 用 `Unmap` 把 IPv4-mapped IPv6 折叠成 IPv4, 否则 `::ffff:1.2.3.4` 与
+  `1.2.3.4` 是两个来源
+- **没有 TTL 清理器**. 条目在计数归零时立即删除, 表里只留下真正持有连接的来源,
+  规模天然被 `maxTotal` 界定. TTL 清理会引入第二个时间源, 并在"刚删完又建连"时
+  短暂低估用量, 而收益是零
+- 无法归属的空地址只计入总量: 否则所有不可归属的连接会共用 `maxPeer` 那一份配额,
+  互相把对方挤掉
+
+**`shared.acceptor.go` 从二维扩到三维** (总量 + 单来源 + 速率), 拒绝原因分为
+`capacity` / `peer` / `rate` 返回给调用方, 由调用方归到自己的指标上. 速率拒绝时
+归还刚拿到的名额 -- 否则每次限速都泄漏一个配额. `Acceptor` 在 nil 上安全
+(`TryAccept` 放行, `Done` 空操作), 因为延迟清理会在从未领取名额的情况下调用它.
+
+**五路 TCP 系传输同构接入**:
+
+- TCP: `MaxConnectionsPerIP`; 握手从 `tls.NewListener` 的懒式首读前移到
+  `handleConn` 开头的 `handshakeTLS`, 拥有独立预算 `TLSHandshakeTimeout` 与失败计数
+  `tls_handshake_failed_total`; 成功后 `SetDeadline(time.Time{})` 清零
+- WebSocket: `MaxConnectionsPerIP`, `HandshakeTimeout`, `ReadTimeout`,
+  `ReadBufferSize`/`WriteBufferSize`(`WithUpgradeBuffers`)
+- gRPC-Web / QUIC: `MaxConnectionsPerIP`, `HandshakeTimeout`. gRPC-Web 的 WS 模式
+  把来源挂在会话上, 因为释放发生在 `closeWebSocketSession`, 那里看不到 request
+- HTTP: 第一次有准入 (`MaxConnections` / `MaxConnectionsPerIP` / `AcceptRate`).
+  实现**不是** `http.Server.ConnState`(报告的建议), 而是 `shared.NewGateListener`
+  包装 listener: `ConnState` 是事后通知, 回调触发时会话已被接受, 能做的只有立刻关掉,
+  客户端看到连接重置; 在 listener 层判定才能写出真的 503. 顺序 PROXY -> gate -> TLS:
+  gate 在 TLS 之下因为 `net/http` 对 `*tls.Conn` 做类型断言, 在 PROXY 之上因为配额
+  要按真实客户端算
+
+**UDP / CoAP 伪会话准入**: `MaxSessions` / `MaxSessionsPerPeer`, 超限丢包并计
+`sessions_rejected_total`. 归还绑在 `session.Close` 的 `closeOnce.Do` 内, 于是主动
+关闭, TTL 淘汰, `LoadOrStore` 竞态丢弃三条路径都恰好归还一次. 写在清扫循环里会漏掉
+"先被主动关闭, 再被清扫"的那次. 没有速率维度: 数据报没有"建连"这个可计数时机,
+对每个数据报计数就是对流量限速, 那是 `RateLimit` 插件的职责.
+
+**accept 错误分三类 + 退避**: 新增 `shared/accept_error.go`
+(`closed` / `resource` / `temporary`) 与 `shared/backoff.go` 复用. `net.ErrClosed`
+直接终止; `EMFILE`/`ENFILE`/`ENOMEM` 额外计 `accept_resource_errors_total`; 其余退避
+后继续. 日志按连续失败段折叠成一行 -- fd 耗尽会持续到有 fd 被释放, 每次重试打一行
+会把一次事故变成日志风暴. 取代了原来对任何错误固定 `time.Sleep(100ms)` 的写法.
+
+**三个实现期被数据纠正的判断**:
+
+- `handshakeTLS` 最初用带超时的 `context` 限制 `HandshakeContext`. crypto/tls 在 ctx
+  取消时通过 `context.AfterFunc` 从**另一个 goroutine** 关掉底层连接, 对端可以早于
+  计数与日志看到断开; 20 次重复里 6 次 `tls_handshake_failed_total` 停在 0.
+  改为只用 `SetDeadline` 后稳定: 读同步失败, "计数 -> 日志 -> Close"顺序确定
+- HTTP 拒绝路径最初直接写 503 再关连接, 测试拿到的是 `ECONNRESET` 而不是 503.
+  带未读数据关闭 socket 会换来 RST (RFC 1122), RST 会丢掉刚写出的响应.
+  改为先在 5ms 内排空最多 8x512 字节再写 503 并 `CloseWrite()`. 排空必须**有界**
+- 指标自增原本写在 `Reject` 之后, 客户端可能在计数落地之前就观测到拒绝.
+  `gateListener.Accept` 改为先 `OnReject` 后 `Reject`
+
+**`TLSHandshakeTimeout` 的 0 值回落 `ReadTimeout`**, 不是"无上限": 旧实现里握手本来
+就被 `ReadTimeout` 覆盖, 默认成无上限是一次藏在特性里的回归.
+
+**验证** (`go test ./internal/transport/... -count=1`, 8 个包全绿; `-race` 全绿;
+`golangci-lint` 0 issues):
+
+- A1: `TestUDPMaxSessionsHoldsUnderManySourceAddresses` -- 200 个来源, 上限 64,
+  最终 `SessionCount() == 64`, `sessions_rejected_total == 136`. 未按报告用 10 万
+  伪造地址: 测试进程无法伪造源地址(需要 raw socket), 而被检验的性质是"表的大小由
+  `MaxSessions` 决定, 不由来源数量决定", 200 与 10 万走同一段代码
+- A2: 静默 TLS 对端在 **150.6ms** 被断开(原实现要等 5 分钟), `ReadTimeout=5m` 不变;
+  握手成功后清 deadline 的一侧有 `TestTCPTLSHandshakeSucceedsThenServes` 锁住
+- A3: `TestHTTPMaxConnectionsAnswers503` / `...PerIPAnswers503` / `...UnlimitedKeepsServing`,
+  客户端拿到真 503 (`-count=5` 稳定)
+- A4: `TestTCPAcceptLoopSurvivesResourceErrors`(注入两次 EMFILE, 断言退避后自动恢复
+  且两个计数器各为 2) 与 `TestTCPAcceptLoopStopsOnClosedListener`(`net.ErrClosed`
+  直接终止). 未用 `ulimit -n`: 本机是 Windows, 压 fd 会先打垮测试进程自身
+- A5: TCP / WS / gRPC-Web / QUIC / HTTP 各一个测试, 全部用 `127.0.0.2` 与
+  `127.0.0.3` 作为两个真实对端. 每个测试断言三件事: 同址第二份被拒, **另一地址
+  仍被服务**, 释放后同一地址重新可用(否则每次拒绝都泄漏一个名额)
+
+**默认行为不变**: 所有新字段零值即"不限制", 既有部署的行为与计数不变.
+
+**文档**: 新增 ADR-017; `TRANSPORT.md` 更新 TCP sec.4.3/4.4/4.5 与
+sec.6.1/6.2, UDP sec.2.2/4, WebSocket sec.4, 汇总 sec.4.2/4.3;
+`OBSERVABILITY.md` 3.3 的内置指标表从 1 项补到 10 项.
+
 ### Benchmark Regression Gate (2026-10-18)
 
 批 3 的 E2: 基准有了 CI 门禁. 没有门禁的基准, 半年后就是过期数字.

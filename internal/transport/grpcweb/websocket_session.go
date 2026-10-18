@@ -3,6 +3,7 @@ package grpcweb
 import (
 	"context"
 	"net"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,6 +24,9 @@ type webSocketSession struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	closeOnce    sync.Once
+	// quotaPeer is the address this session was admitted under, kept so the
+	// acceptor slot can be released from the close path.
+	quotaPeer netip.Addr
 }
 
 func newWebSocketSession(id uint64, conn *websocket.Conn, writeTimeout time.Duration) *webSocketSession {

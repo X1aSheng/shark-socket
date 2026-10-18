@@ -128,9 +128,27 @@ Labels 以 key-value 交替传入:`IncCounter("name", "protocol", "tcp", "status
 
 | 指标名 | 类型 | 标签 | 触发位置 |
 |--------|------|------|---------|
+| `sessions_accepted_total` | Counter | - | `SessionManager.Register` 成功 |
+| `sessions_closed_total` | Counter | - | `SessionManager.Unregister` |
+| `sessions_active` | Gauge | - | 会话表当前条目数 |
+| `sessions_reclaimed_total` | Counter | - | 读截止时间到期(对端消失),5 路传输共用 |
+| `sessions_rejected_total` | Counter | - | 准入拒绝(TCP/WS/QUIC/HTTP/gRPC-Web/UDP/CoAP 共用) |
 | `tcp_task_queue_full_total` | Counter | - | TCP WorkerPool 队列满 |
+| `accept_errors_total` | Counter | - | TCP accept 返回错误(不含 `net.ErrClosed`) |
+| `accept_resource_errors_total` | Counter | - | 其中 `EMFILE`/`ENFILE`/`ENOMEM` 子集 |
+| `tls_handshake_failed_total` | Counter | - | TCP TLS 握手失败或超时 |
+| `proxy_header_rejected_total` | Counter | - | PROXY protocol 头缺失或非法 |
 
-> 当前 v0.2.x-alpha 内置指标较少,P1 阶段将补充连接数,消息吞吐,延迟等全量指标.
+`accept_resource_errors_total` 是 `accept_errors_total` 的子集而不是替代:
+前者是容量事故信号,后者含瞬时抖动. 混在一个计数器里, "fd 用尽"会被噪声淹没.
+
+`sessions_rejected_total` 不按协议加前缀, 尽管报告 (`COMPARISON-261018-OSS-PEERS.md`)
+曾建议 `udp_sessions_rejected_total`. 传输层已共用 `sessions_*` 前缀, 加协议前缀会让
+"跨协议汇总拒绝数"退化成一次正则匹配; 需要按协议区分时应使用 label(见 5.3), 而不是
+把协议编进指标名.
+
+> 内置指标仍偏少: 消息总数与 handler 延迟只在测试里出现, 完整的缺口清单见
+> `COMPARISON-261018-OSS-PEERS.md` 第 4 节 D 类.
 
 ---
 
@@ -192,8 +210,10 @@ handler_duration_seconds_count 500
 handler_duration_seconds_sum 12.345
 ```
 
-框架自身目前只写入 5 个指标(`sessions_accepted_total` / `sessions_closed_total` /
-`sessions_active` / `sessions_reclaimed_total` / `tcp_task_queue_full_total`),完整清单见
+框架自身目前写入 10 个指标(`sessions_accepted_total` / `sessions_closed_total` /
+`sessions_active` / `sessions_reclaimed_total` / `sessions_rejected_total` /
+`tcp_task_queue_full_total` / `accept_errors_total` / `accept_resource_errors_total` /
+`tls_handshake_failed_total` / `proxy_header_rejected_total`),完整清单见
 `docs/architecture/OBSERVABILITY.md` 3.3 节.
 
 ### 5.2 HTTP 端点

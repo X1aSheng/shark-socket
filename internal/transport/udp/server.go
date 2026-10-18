@@ -26,6 +26,8 @@ type Server struct {
 	cancel    context.CancelFunc
 	wg        sync.WaitGroup
 	sessions  sync.Map
+	// quota bounds the session table. Nil when both limits are unlimited.
+	quota *shared.PeerQuota
 }
 
 func NewServer(opts ...Option) *Server {
@@ -50,6 +52,9 @@ func (s *Server) Start(ctx context.Context) error {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
 	s.closed.Store(false)
+	if s.opts.MaxSessions > 0 || s.opts.MaxSessionsPerPeer > 0 {
+		s.quota = shared.NewPeerQuota(s.opts.MaxSessions, s.opts.MaxSessionsPerPeer)
+	}
 	addr, err := net.ResolveUDPAddr("udp", s.opts.Addr)
 	if err != nil {
 		s.started.Store(false)
@@ -374,10 +379,25 @@ func (s *Server) getOrCreateSession(addr *net.UDPAddr) *session {
 			return sess
 		}
 	}
+	// Admission control before anything is allocated. A forged-source flood
+	// reaches this line with a new key every packet, so an unbounded table grows
+	// with the attack until the shared SessionManager hits its own ceiling - and
+	// from then on every new session is refused, including legitimate peers'.
+	// Rejecting here keeps the damage to one dropped datagram.
+	ip := shared.PeerIP(addr)
+	if s.quota != nil && !s.quota.TryAcquire(ip) {
+		s.rt.Metrics().IncCounter("sessions_rejected_total")
+		return nil
+	}
 	// Allocate the ID up front so the published session never carries a
 	// provisional id=0 that a concurrent sweep/close could observe (a data
 	// race on sess.id). Wasting an ID on a duplicate race is harmless.
 	sess := newSession(s.rt.Sessions().NextID(), s.conn, addr)
+	if s.quota != nil {
+		// The slot is returned by session.Close, which every exit path below
+		// already calls exactly once.
+		sess.release = func() { s.quota.Release(ip) }
+	}
 	actual, loaded := s.sessions.LoadOrStore(key, sess)
 	if loaded {
 		_ = sess.Close(context.Background())

@@ -21,6 +21,15 @@ type Options struct {
 	// headroom; larger payloads should use blockwise transfer (RFC 7959).
 	DTLSReadBufferBytes int
 	TLSConfig           *tls.Config
+	// MaxSessions caps how many datagram-peer sessions the server keeps. Values
+	// <= 0 mean unlimited, which is what every previous version did: a single
+	// forged-source flood could grow the table - and the shared SessionManager -
+	// until it hit the manager's own ceiling, at which point new sessions are
+	// rejected for everyone, including legitimate devices.
+	MaxSessions int64
+	// MaxSessionsPerPeer caps one source address. Spoofing the source spreads a
+	// flood over MaxSessions; without this dimension it still fills the table.
+	MaxSessionsPerPeer int64
 }
 
 type Option func(*Options)
@@ -45,6 +54,18 @@ func WithHandler(handler core.Handler) Option {
 
 func WithResponder(responder func(core.Session, core.Message) ([]byte, error)) Option {
 	return func(o *Options) { o.Responder = responder }
+}
+
+// WithMaxSessions caps the number of concurrent datagram-peer sessions. Values
+// <= 0 mean unlimited.
+func WithMaxSessions(max int64) Option {
+	return func(o *Options) { o.MaxSessions = max }
+}
+
+// WithMaxSessionsPerPeer caps concurrent sessions from one source address.
+// Values <= 0 mean unlimited.
+func WithMaxSessionsPerPeer(max int64) Option {
+	return func(o *Options) { o.MaxSessionsPerPeer = max }
 }
 
 func WithSessionTTL(ttl time.Duration) Option {

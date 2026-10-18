@@ -710,26 +710,24 @@ func (s *Server) Start(ctx context.Context) error {
         s.rt = runtime.NewRuntime(nil, nil)
     }
     s.closed.Store(false)
-    // 连接准入:并发上限 + 接受速率(令牌桶,burst=1).
-    s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate)
-    s.pool = shared.NewWorkerPool(s.opts.Handler, s.rt.Logger(),
-        s.opts.WorkerCount, s.opts.TaskQueueSize, s.opts.FullPolicy)
-    s.pool.Start(s.opts.WorkerCount)
+    // 连接准入: 全局并发上限 + 单来源上限 + 接受速率(令牌桶,burst=1).
+    s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate, s.opts.MaxConnectionsPerIP)
 
-    // shared.Listen 而不是 net.Listen: 零值时行为与 net.Listen 完全一致,
-    // 非零时在 socket 建立后, Listen 之前设置 SO_REUSEPORT 与 TCP keepalive
-    // (两者都必须在 bind/listen 之前或紧随其后设置, 标准库不暴露这个钩子).
+    // 先监听, 后建池: 监听失败时无需回收池, 也就没有"池已启动但没人会停它"的窗口.
     ln, err := shared.Listen("tcp", s.opts.Addr, s.opts.Listen)
     if err != nil {
-        // 监听失败必须回收已经启动的 worker,否则失败路径会泄漏 goroutine.
-        s.pool.Stop()
         s.started.Store(false)
         return fmt.Errorf("tcp listen %s: %w", s.opts.Addr, err)
+    }
+    // PROXY 在 TLS 之外: 均衡器写明文, 加密记录无法先于握手.
+    if s.opts.Proxy.Mode != shared.ProxyProtocolOff {
+        ln = shared.NewProxyListener(ln, s.opts.Proxy.WithRejectHook(s.rt.Logger(), s.rt.Metrics()))
     }
     if s.opts.TLSConfig != nil {
         ln = tls.NewListener(ln, s.opts.TLSConfig)
     }
     s.listener = ln
+    s.pool, s.elastic = s.buildPool()
 
     s.acceptWG.Add(1)
     go s.acceptLoop(ctx)
@@ -739,14 +737,14 @@ func (s *Server) Start(ctx context.Context) error {
 
 五个易被忽略的点:
 
-- **池先于监听启动**:监听失败时可以在同一函数里 `pool.Stop()` 回收;若顺序反过来,
-  失败路径就多了一个"池已启动但没人会在需要时停止它"的窗口.
+- **监听先于池启动**:顺序反过来的话,监听失败必须回头 `pool.Stop()`;现行顺序让失败
+  路径没有需要清理的东西,而不是"清理得对".
 - **`tls.NewListener` 包装 `net.Listener`**:让绑定失败与证书失败在错误信息上区分得更清楚,
   也避免 `tls.Listen` 内部重复解析地址.
 - **`started` 用 `CompareAndSwap` 而非 `Load`**:并发调用 `Start` 时只有一个能继续,
   重复启动返回错误而不是留下两个 acceptLoop.
-- **`s.pool.Stop()` 先于 `s.started.Store(false)`**:保证任何观察到 `started == false`
-  的调用方看到的是一个已经收拾干净的 Server.
+- **包装顺序 PROXY -> TLS**:见 `sec.6.4`. 准入(`acceptor`)在 `Accept` 之后判定,
+  因此它看到的是 PROXY 头声明的真实对端, 而不是均衡器地址.
 - **`shared.Listen` 取代 `net.Listen`**:keepalive 必须在连接建立前由 listener 携带,
   而 socket 选项(SO_REUSEPORT)必须在 `bind` 之前由 `Control` 回调设置.两者都无法在
   `net.Listen` 返回之后补上,所以只能自己做"建 socket -> 设选项 -> bind -> listen"这一步,
@@ -755,46 +753,108 @@ func (s *Server) Start(ctx context.Context) error {
 ### 4.4 acceptLoop 实现
 
 ```go
-func (s *Server) acceptLoop() {
-    logger := s.runtime.Logger()
-    backoff := newExponentialBackoff(5*time.Millisecond, 1*time.Second)
-    consecutiveErrors := 0
+func (s *Server) acceptLoop(ctx context.Context) {
+    defer s.acceptWG.Done()
+    backoff := shared.NewBackoff(shared.DefaultBackoffMin, shared.DefaultBackoffMax)
+    reported := false // 一轮失败只打一行日志
 
     for {
         conn, err := s.listener.Accept()
         if err != nil {
-            if errors.Is(err, net.ErrClosed) {
-                return // listener 已关闭,正常退出
-            }
-
-            consecutiveErrors++
-            logger.Error("accept error",
-                "protocol", "tcp",
-                "error", err,
-                "consecutive_errors", consecutiveErrors)
-
-            if consecutiveErrors > s.options.MaxConsecutiveErrors {
-                logger.Error("max consecutive accept errors, stopping server",
-                    "protocol", "tcp")
+            if s.closed.Load() || ctx.Err() != nil {
                 return
             }
-
-            // 指数退避
-            time.Sleep(backoff.Next())
+            kind := shared.ClassifyAcceptError(err)
+            if kind == shared.AcceptErrorClosed {
+                return // listener 已关闭, 正常退出
+            }
+            // 计数与日志在退避之前: 运维看到的是"正在被 fd 卡住", 不是沉默.
+            s.rt.Metrics().IncCounter("accept_errors_total")
+            if kind == shared.AcceptErrorResource {
+                s.rt.Metrics().IncCounter("accept_resource_errors_total")
+            }
+            if !reported {
+                s.rt.Logger().Warn("tcp accept failed", "error", err, "kind", kind.String())
+                reported = true
+            }
+            if !backoff.Wait(ctx) {
+                return // 关停中, 退避被取消
+            }
             continue
         }
-
-        consecutiveErrors = 0
         backoff.Reset()
-        go s.handleConn(conn)
+        reported = false
+        peer := shared.PeerIP(conn.RemoteAddr())
+        if reason := s.acceptor.TryAccept(peer); reason != shared.AcceptOK {
+            s.rt.Metrics().IncCounter("sessions_rejected_total")
+            conn.Close()
+            continue
+        }
+        s.connWG.Add(1)
+        go func() {
+            defer s.connWG.Done()
+            defer s.acceptor.Done(peer)
+            s.handleConn(conn)
+        }()
     }
 }
 ```
 
+accept 错误分三类, 处理方式不同(ADR-017):
+
+| 类别 | 触发 | 处理 |
+|------|------|------|
+| `AcceptErrorClosed` | `net.ErrClosed` | 直接返回, 不计数、不重试 |
+| `AcceptErrorResource` | `EMFILE` / `ENFILE` / `ENOMEM` | 额外计 `accept_resource_errors_total`, 退避后继续 |
+| `AcceptErrorTemporary` | 其余(含 `ECONNABORTED`) | 退避后继续 |
+
+三类都退避, 但只有资源类会额外计数: 前者是容量事故, 后者是瞬时抖动, 混在一个
+计数器里会让"fd 用尽"这个信号被噪声淹没. 日志按连续失败段折叠成一行, 因为 fd
+耗尽会持续到有 fd 被释放, 每次重试都打一行会把一次事故变成日志风暴.
+
 ### 4.5 handleConn 实现
+
+`handleConn` 的第一件事是完成 TLS 握手(A2, ADR-017):
+
+```go
+func (s *Server) handshakeTLS(conn net.Conn) (net.Conn, bool) {
+    tlsConn, ok := conn.(*tls.Conn)
+    if !ok {
+        return conn, true // 明文路径: 只付一次失败的断言
+    }
+    timeout := s.opts.TLSHandshakeTimeout
+    if timeout <= 0 {
+        timeout = s.opts.ReadTimeout // 旧实现的真实上界, 不能变成无上限
+    }
+    if timeout > 0 {
+        _ = tlsConn.SetDeadline(time.Now().Add(timeout))
+    }
+    // 用 deadline 而不是带超时的 context 来限时: context 取消时
+    // crypto/tls 会从 AfterFunc goroutine 关掉底层连接, 对端可能先于
+    // 计数与日志看到断开, 账目就落在 goroutine 调度上.
+    // SetDeadline 让读同步失败, 于是"计数 -> 日志 -> Close"顺序确定.
+    if err := tlsConn.HandshakeContext(context.Background()); err != nil {
+        s.rt.Metrics().IncCounter("tls_handshake_failed_total")
+        _ = conn.Close()
+        return nil, false
+    }
+    // 会话自己的读写截止时间必须从握手结束算起, 否则健康连接也会被
+    // 握手预算准时关掉.
+    _ = tlsConn.SetDeadline(time.Time{})
+    return conn, true
+}
+```
+
+握手前移的收益不只是超时: `tls.NewListener` 把握手推迟到首次 `Read`, 那时会话
+已经 `Register` 并跑过插件链 `OnAccept`, 一次失败的握手会走完整的"接受再关闭"
+流程. 现在失败发生在会话存在之前, 只留一个计数器.
 
 ```go
 func (s *Server) handleConn(conn net.Conn) {
+    conn, ok := s.handshakeTLS(conn)
+    if !ok {
+        return
+    }
     manager := s.runtime.Sessions()
     plugins := s.runtime.Plugins()
     logger  := s.runtime.Logger()
@@ -1070,12 +1130,14 @@ type Options struct {
     WriteQueue          int     // 每连接写队列容量,默认 128
     WriteQueueHighWater float64 // 写队列高水位比例,默认 0.8(用于反压判定)
     MaxConnections      int64   // 并发连接上限,<= 0 不限制
+    MaxConnectionsPerIP int64   // 单来源地址并发连接上限,<= 0 不限制
     AcceptRate          float64 // 接受速率(连接/秒,令牌桶 burst=1),<= 0 不限制
 
     // 超时
-    ReadTimeout  time.Duration // 每帧读超时,默认 5m(防止 slowloris);0 关闭
-    WriteTimeout time.Duration // 默认 30s
-    DrainTimeout time.Duration // 默认 5s
+    ReadTimeout         time.Duration // 每帧读超时,默认 5m(防止 slowloris);0 关闭
+    WriteTimeout        time.Duration // 默认 30s
+    DrainTimeout        time.Duration // 默认 5s
+    TLSHandshakeTimeout time.Duration // 握手预算,0 表示沿用 ReadTimeout
 
     // 缓冲(每连接独占, 用堆换系统调用, 见 sec.2.6 / sec.2.7)
     ReadBufferBytes  int // 默认 1024;0 表示直读 conn
@@ -1118,6 +1180,15 @@ type Options struct {
 - `MaxConnections`:在 `Accept` 之后立即判定,超额连接直接 `Close`,不进会话管理.
 - `AcceptRate`:`shared.Acceptor` 令牌桶(burst=1),压制连接风暴.
 
+`MaxConnectionsPerIP` 与 `TLSHandshakeTimeout` 是 P0 安全项的产物(ADR-017):
+
+- `MaxConnectionsPerIP`:与 `MaxConnections` 共用一个 `shared.PeerQuota`,所以
+  全局数与单来源数是同一份计数的两种读法,不会互相漂移. 代价是同一 NAT 后的
+  客户端共享一份配额,取值要按最大共享出口来定.
+- `TLSHandshakeTimeout`:握手从 `tls.NewListener` 的懒式首读提前到 `handleConn`
+  开头, 有了自己的预算和失败计数(`tls_handshake_failed_total`). 0 值回落
+  `ReadTimeout`,不是"无上限".
+
 `Listen` 与上面几项的区别是它不属于传输层语义,而是 socket 层的开关:传输层只负责
 "把它原样交给 `shared.Listen`",是否使用 SO_REUSEPORT, keepalive 取什么节奏由部署形态决定,
 见 `sec.6.3`. `Proxy` 同理,差别在于它改的是 `RemoteAddr` 的语义而不只是 socket 选项,
@@ -1139,7 +1210,9 @@ func WithWriteBufferBytes(n int) Option                // < 0 当 0;默认 0(关
 func WithWriteQueue(size int) Option                   // <= 0 忽略
 func WithWorkers(count, queueSize int, policy FullPolicy) Option
 func WithMaxConnections(max int64) Option              // <= 0 不限制
+func WithMaxConnectionsPerIP(max int64) Option         // <= 0 不限制
 func WithAcceptRate(rate float64) Option               // <= 0 不限制
+func WithTLSHandshakeTimeout(timeout time.Duration) Option // <= 0 回落 ReadTimeout
 func WithReusePort() Option                            // SO_REUSEPORT,仅 linux/darwin
 func WithKeepAlive(idle, interval time.Duration, count int) Option // idle < 0 关闭探活
 func WithProxyProtocol(mode shared.ProxyProtocolMode) Option        // 零值即关闭
@@ -1368,9 +1441,14 @@ type session struct {
     v
 sessions.Load(key) -> 命中?-> 返回已有 session,touch()
     v 未命中
-NextID() -> newSession()
+配额判定 (ADR-017): quota.TryAcquire(PeerIP(addr))
+    +-- 总量满 -> 丢包 + sessions_rejected_total, 返回 nil
+    +-- 单来源满 -> 丢包 + sessions_rejected_total, 返回 nil
+    v 允许
+NextID() -> newSession() (sess.release = quota.Release)
     v
 sessions.LoadOrStore(key, sess) -> 竞态保护
+    +-- 已存在 -> 关闭多余 session(走 Close, 于是 release 被调用)
     v 成功存储
 Register(sess) -> SessionManager
     v
@@ -1380,6 +1458,18 @@ Plugins.OnAccept(sess) -> 插件链
 ```
 
 **竞态安全:** `LoadOrStore` 保证同一远端地址只创建一个 session.若两个 goroutine 同时为同一地址创建 session,后到者关闭多余的 session.
+
+**配额归还是 `Close` 的一部分**, 不是 sweepLoop 的额外动作: `session.release` 在
+`closeOnce.Do` 里调用, 于是主动关闭、TTL 淘汰、`LoadOrStore` 竞态丢弃三条路径
+都恰好归还一次. 把归还写在清扫循环里会漏掉"先被主动关闭、再被清扫"的那次.
+
+**为什么键是 IP 而不是 IP:port**: 一个源地址可以换源端口, 若按 `IP:port` 计配额,
+换一次端口就多一份配额, 限制形同虚设. 归一化在 `shared.PeerIP` 里做(IPv4-mapped
+IPv6 会 `Unmap` 成 IPv4, 否则 `::ffff:1.2.3.4` 与 `1.2.3.4` 会是两个来源).
+
+**为什么没有准入速率**: 数据报没有"建连"这个可计数的时机, 对每个数据报计数就是
+对流量限速, 那是插件(`RateLimit`)的职责而不是传输层的. 只在"新建会话"这个事件上
+设配额, 语义才与 TCP 的 `MaxConnections` 对齐.
 
 ---
 
@@ -1607,6 +1697,11 @@ type Options struct {
     // 16 KiB 覆盖典型 IoT/UDP 应用报文;更大的 CoAP 载荷应使用分块传输(RFC 7959).
     DTLSReadBufferBytes int
 
+    // 伪会话准入(ADR-017). 没有连接, 所以限制的是会话条目数而不是并发连接数;
+    // 两个维度共用一个 shared.PeerQuota.
+    MaxSessions        int64 // 伪会话总数上限, <= 0 不限制
+    MaxSessionsPerPeer int64 // 单来源地址伪会话上限, <= 0 不限制
+
     TLSConfig *tls.Config // 非 nil 即启用 DTLS
 }
 ```
@@ -1619,6 +1714,8 @@ type Options struct {
 | `WithHandler(handler)` | nil | 消息处理回调 |
 | `WithSessionTTL(ttl)` | `2m` | 伪会话空闲超时,`<= 0` 忽略 |
 | `WithSweepInterval(interval)` | `30s` | 清扫周期,`<= 0` 忽略 |
+| `WithMaxSessions(max)` | 0(不限制) | 伪会话总数上限,`<= 0` 不限制 |
+| `WithMaxSessionsPerPeer(max)` | 0(不限制) | 单来源地址上限,`<= 0` 不限制 |
 | `WithDTLS(cfg)` | nil | 传入 `*tls.Config` 启用 DTLS |
 | `WithDTLSReadBufferBytes(size)` | `16KiB` | 每 DTLS 连接读缓冲,`<= 0` 忽略 |
 
@@ -3031,6 +3128,10 @@ type Options struct {
     // 16 KiB 覆盖典型 CoAP / LwM2M 报文,更大载荷应使用分块传输(RFC 7959).
     DTLSReadBufferBytes int
 
+    // 伪会话准入(ADR-017), 与 UDP 同源, 共用 shared.PeerQuota.
+    MaxSessions        int64 // 伪会话总数上限, <= 0 不限制
+    MaxSessionsPerPeer int64 // 单来源地址伪会话上限, <= 0 不限制
+
     TLSConfig *tls.Config // 非 nil 即启用 DTLS
 }
 ```
@@ -3041,6 +3142,10 @@ type Options struct {
 真要调整时改常量并配套更新互操作测试,比放开一个配置项更安全.
 
 同理,`MaxDatagram` 也没有 setter:它是单一共享缓冲,改动要同时评估单包上限与内存占用.
+
+`MaxSessions` / `MaxSessionsPerPeer` 与 UDP 的字段同名同义: 超限的报文被**丢弃**
+而不是回错误码, 因为 CoAP 的错误响应本身也要占带宽, 而被丢弃的一方是伪造源地址,
+它收不到也不在乎. 拒绝计入 `sessions_rejected_total`.
 
 ### 5.2 默认值与 Functional Options
 
@@ -3062,6 +3167,8 @@ func WithHandler(handler core.Handler) Option
 func WithResponder(responder func(core.Session, core.Message) ([]byte, error)) Option
 func WithSessionTTL(ttl time.Duration) Option          // <= 0 忽略
 func WithSweepInterval(interval time.Duration) Option  // <= 0 忽略
+func WithMaxSessions(max int64) Option                 // <= 0 不限制
+func WithMaxSessionsPerPeer(max int64) Option          // <= 0 不限制
 func WithDTLS(cfg *tls.Config) Option
 func WithDTLSReadBufferBytes(size int) Option          // <= 0 忽略
 
@@ -3748,13 +3855,14 @@ type Options struct {
 
 | 草案字段 | 现状 | 原因 |
 |----------|------|------|
-| `ReadBufferSize` / `WriteBufferSize` | 去掉 | 未实现,gorilla 使用默认缓冲大小 |
-| `UpgradeTimeout` | 去掉 | 未实现;升级耗时由 `ReadTimeout` 覆盖 |
+| `ReadBufferSize` / `WriteBufferSize` | 已实现(`WithUpgradeBuffers`) | 草案期未实现;0 值仍是 gorilla 的 4 KiB 默认 |
+| `UpgradeTimeout` | 改为 `HandshakeTimeout` | 名字对齐 net/http;语义只覆盖 101 响应写,请求头由 `ReadTimeout` 约束 |
 | `AllowedOrigins []string` | 改为 `CheckOrigin func` | 传输层不知道配置字段名,只接受一个判断函数,便于组合 |
 | `MaxSessions` | 去掉 | 会话上限统一由 `SessionManager` 管 |
 
-新增 `MaxConnections` / `AcceptRate`:与 TCP 一致,用 `shared.Acceptor` 在升级前准入,
-超额请求直接返回 503 而不再尝试握手.
+新增 `MaxConnections` / `MaxConnectionsPerIP` / `AcceptRate`:与 TCP 一致,用
+`shared.Acceptor` 在升级前准入,超额请求直接返回 503 而不再尝试握手. 单来源配额
+与全局配额共用一个 `shared.PeerQuota`(ADR-017),所以两者不会各自计数而漂移.
 
 `Listen` 与 TCP 同源(`shared.ListenOptions`),但这里的 TLS 是"包在 listener 外层"
 而不是由 `tls.Listen` 建 socket,原因见 `sec.3.3`.HTTP 与 gRPC-Web 传输同样具备该字段.
@@ -3796,7 +3904,11 @@ func WithCheckOrigin(fn func(*http.Request) bool) Option
 func WithPingInterval(interval time.Duration) Option
 func WithPongTimeout(timeout time.Duration) Option
 func WithMaxConnections(max int64) Option
+func WithMaxConnectionsPerIP(max int64) Option
 func WithAcceptRate(rate float64) Option
+func WithHandshakeTimeout(timeout time.Duration) Option  // 只约束 101 响应写
+func WithReadTimeout(timeout time.Duration) Option       // 约束升级请求头与空闲读
+func WithUpgradeBuffers(read, write int) Option
 func WithReusePort() Option
 func WithKeepAlive(idle, interval time.Duration, count int) Option
 func WithProxyProtocol(mode shared.ProxyProtocolMode) Option
@@ -3808,11 +3920,16 @@ func WithProxyHeaderTimeout(timeout time.Duration) Option
 | 字段 | 有无对应 Option | 说明 |
 |------|------------------|------|
 | `MaxMessageSize` | 无 | 只有字段与默认值 1MB;当前没有 `WithMaxMessageSize` |
-| `ReadTimeout` / `WriteTimeout` / `IdleTimeout` | 无 | 只有字段与默认值;当前没有对应 Option |
+| `WriteTimeout` / `IdleTimeout` | 无 | 只有字段与默认值;当前没有对应 Option |
 | `TLSConfig` | 有,名为 `WithTLSConfig` | 不是 `WithTLS` |
 
-即上述四个超时/大小字段目前只能通过默认值生效;需要运行期可调时应先补一个 Option 函数,
-再在 `internal/app` 里接线,而不是假定它已经存在.
+`MaxMessageSize`, `WriteTimeout`, `IdleTimeout` 目前只能通过默认值生效;需要运行期
+可调时应先补 Option 函数,再在 `internal/app` 里接线,而不是假定它已经存在.
+
+`WithReadTimeout` 有 `> 0` 守卫, 因此**无法把读超时关掉**: 一个只发半个升级头的
+连接会一直占着连接名额, 而 gorilla 的 `HandshakeTimeout` 只管写 101 响应
+(`TestWebSocketHeaderReadBoundedByReadTimeout` 锁住这条边界). 这个"不能关闭"是
+有意保留的.
 
 ### 4.4 配置使用示例
 
@@ -4150,8 +4267,11 @@ CloseAll 阶段(串行,在所有协议阶段完成后执行):
 | 会话上限 | `SessionManager` 默认 100 万(全局共享) | 同左 | 同左 | 同左 |
 | `SessionTTL` | 无(连接关闭决定) | 2m | 2m | 无(Ping/Pong 决定) |
 | `SweepInterval` | 无 | 30s | 30s | 无 |
+| `MaxSessions`(传输层) | 无(用 `MaxConnections`) | 有 | 有 | 无(用 `MaxConnections`) |
 | `MaxConnections` | 有(`shared.Acceptor`) | 无 | 无 | 有 |
-| `AcceptRate` | 有(令牌桶) | 无 | 无 | 有 |
+| `MaxConnectionsPerIP` | 有 | 无(见 `MaxSessionsPerPeer`) | 无(同左) | 有 |
+| `MaxSessionsPerPeer` | 无 | 有 | 有 | 无 |
+| `AcceptRate` | 有(令牌桶) | 无(无准入时机) | 无(同左) | 有 |
 | `SO_REUSEPORT` | 有(`shared.Listen`) | 无 | 无 | 有 |
 | TCP keepalive 节奏 | 有(`shared.Listen`) | 不适用 | 不适用 | 有 |
 | `PROXY protocol` v1/v2 | 有(`shared.ProxyListener`) | 无 | 无 | 有 |
@@ -4159,6 +4279,15 @@ CloseAll 阶段(串行,在所有协议阶段完成后执行):
 会话上限不再由各传输层各自配置,而是由 `SessionManager` 统一持有(默认 100 万,
 `runtime.WithMaxSessions` 可调),这样多协议共存时上限是总量而不是每协议配额.
 `MaxConnections` 与 `AcceptRate` 是传输层的连接准入,与会话上限是两个层次的限制.
+
+两列用不同名字表达同一件事,因为准入时机不同(ADR-017): TCP 系传输在 `Accept`
+之后拥有一个真实连接,限制的是**并发连接数**; UDP/CoAP 没有连接,每收到一个新源
+地址才创建伪会话,限制的是**会话条目数**. 两者共用 `shared.PeerQuota`,所以
+"总量"与"单来源"两个维度在所有传输上的语义一致.
+
+`MaxConnections`, `MaxConnectionsPerIP`, `AcceptRate` 三者在 TCP, WebSocket,
+gRPC-Web, HTTP, QUIC 五路同构存在; UDP/CoAP 只有配额,没有速率(数据报没有
+"建连"动作,限速应由上游或插件做).
 
 `SO_REUSEPORT` 与 keepalive 走的是同一条路径(`shared.ListenOptions`),表中只列了
 四路,另外两路 TCP 系传输(`HTTP`, `gRPC-Web`)同样具备,见 TCP 部分 `sec.6.3`.
@@ -4171,11 +4300,22 @@ CloseAll 阶段(串行,在所有协议阶段完成后执行):
 | `ReadTimeout` | 5m(每帧) | 无(读循环靠 socket 关闭退出) | 无(同左) | 10s |
 | `WriteTimeout` | 30s | 无 | 无 | 10s |
 | `DrainTimeout` | 5s | 无 | 无 | 无(`Drain` 是空操作) |
+| `TLSHandshakeTimeout` | 有(默认回落 `ReadTimeout`) | 不适用(由 DTLS 握手超时表达) | 不适用(同左) | 无(无 TLS 握手入口) |
+| `HandshakeTimeout`(HTTP 升级) | 不适用 | 不适用 | 不适用 | 有(默认 0,仅约束 101 响应写) |
 | `IdleTimeout` | 无(由 `ReadTimeout` + HeartbeatPlugin 表达) | 无(由 `SessionTTL` 表达) | 无(同左) | 2m |
 | `PingInterval` | 无 | 无 | 无 | 30s |
 | `PongTimeout` | 无 | 无 | 无 | 60s |
 | CON 重传间隔 | 无 | 无 | 每次重传独立随机于 `[ACK_TIMEOUT, ACK_TIMEOUT*1.5)`,见 CoAP 部分 `sec.4.10` | 无 |
 | CON 最大重传 | 无 | 无 | 4(包级常量 `maxRetransmit`) | 无 |
+
+`TLSHandshakeTimeout` 默认 0 表示"沿用 `ReadTimeout`",而不是"无上限": 旧实现里
+握手发生在首次 Read,本来就被 `ReadTimeout` 覆盖,新增字段若默认成无上限会是一次
+藏在特性里的回归(ADR-017).
+
+WebSocket 的 `HandshakeTimeout` 只给 101 响应写设截止时间(gorilla 的实现),
+**不约束升级请求头读取**: 一个只发半个请求头的对端由 `ReadTimeout` 回收,有一个
+测试(`TestWebSocketHeaderReadBoundedByReadTimeout`)锁住这条边界. 调整 WS 的超时
+时两个都要设.
 
 关停阶段的超时不在传输层配置里,而是由 `Gateway` 的 `core.StageTimeouts`
 (`StopAccept` / `Drain` / `CloseSessions`,默认 5s / 5s / 10s)统一下发.

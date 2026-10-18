@@ -87,7 +87,7 @@ func (s *Server) Start(ctx context.Context) error {
 		s.rt = runtime.NewRuntime(nil, nil)
 	}
 	s.closed.Store(false)
-	s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate)
+	s.acceptor = shared.NewAcceptor(s.opts.MaxConnections, s.opts.AcceptRate, s.opts.MaxConnectionsPerIP)
 	// Listen before creating the pool. The pool used to be built and started
 	// first, which meant a failed listen had to stop it again -- and if Start
 	// were ever retried, the previous pool was overwritten while its workers
@@ -211,32 +211,117 @@ func (s *Server) Addr() net.Addr {
 
 func (s *Server) acceptLoop(ctx context.Context) {
 	defer s.acceptWG.Done()
+	backoff := shared.NewBackoff(shared.DefaultBackoffMin, shared.DefaultBackoffMax)
+	// reported collapses a failure streak into one log line. A descriptor
+	// exhaustion lasts for as long as the process cannot free an fd, so logging
+	// every retry turns one operational incident into a log flood; the counters
+	// keep counting whether or not the line is printed.
+	reported := false
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
 			if s.closed.Load() || ctx.Err() != nil {
 				return
 			}
-			if s.rt != nil {
-				s.rt.Logger().Warn("tcp accept failed", "error", err)
+			kind := shared.ClassifyAcceptError(err)
+			if kind == shared.AcceptErrorClosed {
+				return
 			}
-			time.Sleep(100 * time.Millisecond)
+			if s.rt != nil {
+				s.rt.Metrics().IncCounter("accept_errors_total")
+				if kind == shared.AcceptErrorResource {
+					s.rt.Metrics().IncCounter("accept_resource_errors_total")
+				}
+			}
+			if !reported {
+				if s.rt != nil {
+					s.rt.Logger().Warn("tcp accept failed", "error", err, "kind", kind.String())
+				}
+				reported = true
+			}
+			if !backoff.Wait(ctx) {
+				return
+			}
 			continue
 		}
-		if s.acceptor != nil && !s.acceptor.TryAccept() {
-			conn.Close()
-			continue
+		backoff.Reset()
+		reported = false
+		peer := shared.PeerIP(conn.RemoteAddr())
+		if s.acceptor != nil {
+			if reason := s.acceptor.TryAccept(peer); reason != shared.AcceptOK {
+				if s.rt != nil {
+					s.rt.Metrics().IncCounter("sessions_rejected_total")
+				}
+				conn.Close()
+				continue
+			}
 		}
 		s.connWG.Add(1)
 		go func() {
 			defer s.connWG.Done()
-			defer s.acceptor.Done()
+			if s.acceptor != nil {
+				defer s.acceptor.Done(peer)
+			}
 			s.handleConn(conn)
 		}()
 	}
 }
 
+// handshakeTLS completes the TLS handshake under its own deadline, before the
+// session exists.
+//
+// tls.NewListener defers the handshake to the first Read, which means the
+// expensive part of the connection setup was previously bounded only by
+// ReadTimeout - five minutes by default, during which the peer occupied a
+// connection slot and a goroutine while contributing nothing. Doing it here
+// gives it a budget of its own and a place to count failures.
+//
+// With no TLSHandshakeTimeout configured the bound falls back to ReadTimeout,
+// which is exactly what the old code enforced (the session's read deadline was
+// already in place before the handshake data arrived). Falling back to "no
+// bound at all" would have been a regression hiding inside a new feature.
+//
+// A non-TLS connection is returned unchanged, so the plaintext path pays only a
+// failed type assertion.
+func (s *Server) handshakeTLS(conn net.Conn) (net.Conn, bool) {
+	tlsConn, ok := conn.(*tls.Conn)
+	if !ok {
+		return conn, true
+	}
+	timeout := s.opts.TLSHandshakeTimeout
+	if timeout <= 0 {
+		timeout = s.opts.ReadTimeout
+	}
+	if timeout > 0 {
+		_ = tlsConn.SetDeadline(time.Now().Add(timeout))
+	}
+	// The deadline, not a context timeout, is what enforces the budget.
+	// HandshakeContext with a deadline context closes the socket from a
+	// context callback goroutine, so the peer can observe the disconnect
+	// before the failure is counted and logged - the accounting then depends
+	// on goroutine scheduling. SetDeadline fails the read synchronously, so
+	// the counter and the log always precede the close.
+	err := tlsConn.HandshakeContext(context.Background())
+	if err != nil {
+		if s.rt != nil {
+			s.rt.Metrics().IncCounter("tls_handshake_failed_total")
+			s.rt.Logger().Debug("tls handshake failed", "remote", conn.RemoteAddr(), "error", err)
+		}
+		_ = conn.Close()
+		return nil, false
+	}
+	// The session's own read and write deadlines must start from now, not from
+	// the handshake: leaving the handshake deadline in place would close the
+	// connection on schedule even though it is healthy.
+	_ = tlsConn.SetDeadline(time.Time{})
+	return conn, true
+}
+
 func (s *Server) handleConn(conn net.Conn) {
+	conn, ok := s.handshakeTLS(conn)
+	if !ok {
+		return
+	}
 	id := s.rt.Sessions().NextID()
 	sess := newSession(id, conn, sessionConfig{
 		framer:              s.opts.Framer,
