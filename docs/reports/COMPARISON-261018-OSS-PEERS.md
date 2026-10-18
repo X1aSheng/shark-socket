@@ -669,6 +669,23 @@ P2 = 工程效率与生态. 每项给出证据 (file:line), 对标, 改法, 验�
   两轮原始输出都落盘, 人工仍可 `benchstat base.txt head.txt`
 - **E3 fuzz 覆盖窄.** 5 个 `Fuzz` 目标集中于 TCP framer, CoAP message,
   LwM2M TLV; 缺 gRPC-Web framing, WS 帧, config JSON, QUIC 路径
+- **已实施 (2026-10-18)**: 目标 9 -> 13, 并补上"只跑种子"的漏洞。
+  **新增 4 个**: `FuzzParseDataFrames` / `FuzzDataFrameRoundTrip` (gRPC-Web 帧,
+  长度字段来自线上 32 位整数), `FuzzReadProxyHeader` (PROXY 协议头 -- 这是全项目
+  唯一由对端写下、之后被信任的地址, 黑名单/配额/审计/TLS 会话绑定都基于它),
+  `FuzzDecodeConfig` (配置文件; 为此把解码拆成 `decodeConfig` 接缝, 不碰文件与
+  环境变量)。**重新分类两项**: WS 帧由 gorilla/websocket 解析, QUIC 线格式由
+  quic-go 解析, 对它们做 fuzz 是 fuzz 依赖而不是 fuzz 本项目 -- 报告原来把它们
+  记成"缺口"是不准确的, 真正属于本项目而没覆盖的是 PROXY 头, 已补。
+  **第二个漏洞更值钱**: 此前 fuzz 只在 `go test` 里跑种子, 没有任何持续在找。
+  新增 `.github/workflows/fuzz.yml`, 13 个目标各一个 matrix job, 每晚跑
+  (并支持 `workflow_dispatch` 指定 `fuzztime`), `fail-fast: false`, 失败时把
+  crasher 作为 artifact 上传 -- 它可以原样提交成回归种子。不放 PR 路径上:
+  让每个 PR 都等的检查, 最后会被跳过。
+  **实测 (srv2, Linux, 45s/目标, `-parallel 2`)**: PROXY 27.4 万次执行,
+  gRPC-Web 60.3 万次, config 48.0 万次, 均无发现。PROXY 目标第一版每轮跑 15 次
+  解析 (3 种模式 x 5 种分块, 其中一种逐字节), 只有 142 execs/s -- 那是在 fuzz
+  自己; 改成"分块不变性只在 Auto 模式下跑一遍"后提升 42 倍。
 - **E4 发布成熟度.** 仅 `v0.1.0` 与 `v0.1.0-rc.1`; v0.x 允许破坏性变更, 但应有一页
   "兼容承诺" 说明哪些包已冻结 (core 接口), 哪些会变
 - **E5 README 定位页缺失.** 现在的 README 以功能矩阵开篇, 读者会拿它和 gnet

@@ -79,7 +79,7 @@ jobs:
         # over the runner's cores; throughput per worker matters less than
         # coverage of the interesting paths.
         run: |
-          go test -run '^$' -fuzz '^${{ matrix.target }}$' -fuzztime "${{ github.event.inputs.fuzztime || '60s' }}" \
+          go test -fuzz '^${{ matrix.target }}$' -fuzztime "${{ github.event.inputs.fuzztime || '60s' }}" \
             -parallel 2 '${{ matrix.pkg }}'
         shell: bash
 

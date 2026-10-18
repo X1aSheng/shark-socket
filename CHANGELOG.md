@@ -7,6 +7,35 @@ This project uses semantic versioning. Pre-release tags use the form
 
 ## Unreleased
 
+### fuzz: 补上四个目标, 并让它每晚真的在跑 (2026-10-18)
+
+报告 E3 说 fuzz 覆盖窄. 窄的部分是目标清单, 更窄的部分是**没人跑** -- 此前
+fuzz 只在 `go test` 里执行种子, 种子不会变, 于是永远不会发现新东西.
+
+**新增 4 个目标 (9 -> 13), 按"字节由谁写"挑**:
+
+| 目标 | 包的职责 | 关键性质 |
+| --- | --- | --- |
+| `FuzzParseDataFrames` / `FuzzDataFrameRoundTrip` | gRPC-Web 帧 | 长度字段是线上 32 位整数: 解析出的载荷不得超过请求体; 宽松模式永不失败 (同端口上的非 gRPC-Web 客户端必须照常工作) |
+| `FuzzReadProxyHeader` | PROXY 协议头 | 不 panic; 结论与地址不随分块方式改变; 成功时**恰好**消费掉头部 (v1 到 CRLF, v2 到 16+length), 不能吃掉后面的帧; 每种拒绝都带导出的哨兵错误 |
+| `FuzzDecodeConfig` | 配置文件 | 任何通过校验的配置必须能 marshal -> decode -> validate 往返, 否则读写配置文件的工具链就是坏的 |
+
+`FuzzReadProxyHeader` 覆盖的是全项目唯一"由对端写下、之后被信任"的地址: 黑名单、
+每 IP 配额、审计日志、TLS 会话绑定都建在它上面.
+
+**WS 帧与 QUIC 线格式不是缺口**: 前者由 gorilla/websocket 解析, 后者由 quic-go
+解析, 对它们 fuzz 是 fuzz 依赖. 报告原来的措辞已改正.
+
+**新增 `.github/workflows/fuzz.yml`**: 13 个目标各一个 matrix job, 每晚 03:17 UTC,
+`fail-fast: false`, 失败时上传 crasher 作为 artifact (可直接提交成回归种子).
+不放 PR 路径上 -- 让每个 PR 都等的检查最后会被跳过.
+
+**实测 (srv2, 45s/目标, `-parallel 2`)**: PROXY 27.4 万次、gRPC-Web 60.3 万次、
+config 48.0 万次执行, 无发现. 第一版 PROXY 目标每轮跑 15 次解析 (3 模式 x 5 分块,
+含逐字节), 只有 142 execs/s, 等于在 fuzz 自己; 改成"分块不变性只在 Auto 模式下跑
+一遍"后提升 42 倍, 性质一条没丢.
+
+
 ### 同机对等基准: 本项目 vs gnet vs netpoll (2026-10-18)
 
 报告 E1 的挂账是"没有同一台 Linux、同一 echo 负载、同一个客户端的横向基准". 现在有了:
