@@ -124,7 +124,7 @@ func FuzzReadProxyHeader(f *testing.F) {
 		data = append(data, marker...)
 
 		for _, mode := range []ProxyProtocolMode{ProxyProtocolV1, ProxyProtocolV2, ProxyProtocolAuto} {
-			parsed, rest, err := parseProxyAt(data, len(data)+1, mode)
+			_, rest, err := parseProxyAt(data, len(data)+1, mode)
 
 			if err != nil {
 				if !errors.Is(err, ErrProxyHeaderInvalid) &&
@@ -140,30 +140,30 @@ func FuzzReadProxyHeader(f *testing.F) {
 					mode, len(data)-len(rest), want)
 			}
 
-			// Same bytes, different chunk boundaries: same answer. Only for
-			// header-sized inputs: a 1-byte read loop over a megabyte is the
-			// harness being slow, not the parser being wrong, and a real header
-			// is bounded by proxyV2MaxPayload (plus 16) by construction.
-			if len(data) > proxyV2MaxPayload+16 {
-				continue
-			}
-			for _, step := range []int{1, 2, 3, 7} {
-				chunked, chunkedRest, chunkedErr := parseProxyAt(data, step, mode)
-				if (chunkedErr == nil) != (err == nil) {
-					t.Fatalf("mode %s: chunking at %d bytes changed the verdict: %v vs %v",
-						mode, step, chunkedErr, err)
+		}
+
+		// Same bytes, different chunk boundaries: same answer. This runs once,
+		// in Auto mode, because chunking is a property of the reader, not of the
+		// configured version -- and because each extra parse costs coverage:
+		// the first version of this target ran 15 parses per execution and
+		// managed 142 execs/sec, which is a fuzz target that mostly fuzzes
+		// itself.
+		if len(data) <= 512 {
+			whole, wholeRest, wholeErr := parseProxyAt(data, len(data)+1, ProxyProtocolAuto)
+			for _, step := range []int{1, 3} {
+				chunked, chunkedRest, chunkedErr := parseProxyAt(data, step, ProxyProtocolAuto)
+				if (chunkedErr == nil) != (wholeErr == nil) {
+					t.Fatalf("chunking at %d bytes changed the verdict: %v vs %v", step, chunkedErr, wholeErr)
 				}
-				if err != nil {
+				if wholeErr != nil {
 					continue
 				}
-				if proxyAddrString(chunked.source) != proxyAddrString(parsed.source) ||
-					proxyAddrString(chunked.dest) != proxyAddrString(parsed.dest) {
-					t.Fatalf("mode %s: chunking at %d bytes changed the addresses: %s -> %s vs %s -> %s",
-						mode, step, proxyAddrString(parsed.source), proxyAddrString(parsed.dest),
-						proxyAddrString(chunked.source), proxyAddrString(chunked.dest))
+				if proxyAddrString(chunked.source) != proxyAddrString(whole.source) ||
+					proxyAddrString(chunked.dest) != proxyAddrString(whole.dest) {
+					t.Fatalf("chunking at %d bytes changed the addresses", step)
 				}
-				if !bytes.Equal(chunkedRest, rest) {
-					t.Fatalf("mode %s: chunking at %d bytes changed how much was consumed", mode, step)
+				if !bytes.Equal(chunkedRest, wholeRest) {
+					t.Fatalf("chunking at %d bytes changed how much was consumed", step)
 				}
 			}
 		}

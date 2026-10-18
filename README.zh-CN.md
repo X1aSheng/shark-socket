@@ -241,6 +241,9 @@ go test -race ./... -count=1
 go test ./internal/transport/tcp -run='^$' -fuzz=FuzzLengthPrefixFramer -fuzztime=2s
 go test ./internal/transport/tcp -run='^$' -fuzz=FuzzLineFramerRead -fuzztime=2s
 go test ./internal/transport/coap -run='^$' -fuzz=FuzzParseMessage -fuzztime=2s
+go test ./internal/transport/grpcweb -run='^$' -fuzz=FuzzParseDataFrames -fuzztime=2s
+go test ./internal/transport/shared -run='^$' -fuzz=FuzzReadProxyHeader -fuzztime=2s
+go test ./internal/app -run='^$' -fuzz=FuzzDecodeConfig -fuzztime=2s
 go test './internal/transport/tcp' './internal/transport/coap' '-run=^$' '-bench=.' '-benchmem'
 ```
 
